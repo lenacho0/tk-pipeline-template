@@ -1,0 +1,330 @@
+{
+  "date": "2026-03-25",
+  "launched": {
+    "脚本分析": 32,
+    "产品脚本生成": 16,
+    "分镜图生成": 33,
+    "逐镜头图片生成": 74,
+    "逐镜头脚本生成": 3
+  },
+  "success": {
+    "脚本分析": 27,
+    "产品脚本生成": 16,
+    "分镜图生成": 23,
+    "逐镜头图片生成": 30,
+    "逐镜头脚本生成": 3
+  },
+  "failed": {
+    "脚本分析": 3,
+    "分镜图生成": 6,
+    "逐镜头图片生成": 14
+  },
+  "retried": {
+    "脚本分析": 2,
+    "分镜图生成": 4,
+    "逐镜头图片生成": 30
+  },
+  "timeouts": {},
+  "last_errors": [
+    {
+      "time": "2026-03-25 17:04:44",
+      "watch": "逐镜头脚本生成",
+      "record_id": "TABLE",
+      "reason": "读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblRf9jAD00Jma9p/records?page_size=100 (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:04:49",
+      "watch": "逐镜头图片生成",
+      "record_id": "TABLE",
+      "reason": "读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblRVg5Ob7VW2zCI/records?page_size=100 (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:04:55",
+      "watch": "视频制作",
+      "record_id": "TABLE",
+      "reason": "读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:07:11",
+      "watch": "系统",
+      "record_id": "TOKEN",
+      "reason": "HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:36:34",
+      "watch": "系统",
+      "record_id": "TOKEN",
+      "reason": "HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:37:04",
+      "watch": "系统",
+      "record_id": "TOKEN",
+      "reason": "HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')))"
+    },
+    {
+      "time": "2026-03-25 17:44:49",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqZX7j",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:44:51",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqRZdB",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:45:37",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqZX7j",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:45:38",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqRZdB",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:46:25",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqZX7j",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:46:26",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqRZdB",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:47:12",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqHxpV",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:47:15",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqj1d3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:47:59",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqHxpV",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:48:01",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqj1d3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:48:49",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqHxpV",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:48:50",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqj1d3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:49:33",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqf3Tb",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:49:35",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqAz2l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:50:19",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqf3Tb",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:50:21",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqAz2l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:51:07",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqf3Tb",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 17:51:08",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveReBEqAz2l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:46:45",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3KcZy",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:46:47",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3TZav",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:47:31",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3KcZy",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:47:33",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3TZav",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:48:21",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3KcZy",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:48:22",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3TZav",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:49:05",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK38DkJ",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:49:07",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3UtA3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:49:51",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK38DkJ",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:49:52",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3UtA3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:50:36",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK38DkJ",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:50:37",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3UtA3",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:51:19",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3NXu5",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:51:21",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3ZUFt",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:52:04",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3NXu5",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:52:05",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3ZUFt",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:52:49",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3NXu5",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:52:50",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSiIK3ZUFt",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:56:07",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kPc9l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:56:09",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kwJf6",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:56:53",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kPc9l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:56:54",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kwJf6",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:57:38",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kPc9l",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:57:39",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kwJf6",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:58:21",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69kCGI1",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    },
+    {
+      "time": "2026-03-25 18:58:23",
+      "watch": "逐镜头图片生成",
+      "record_id": "recveSl69keSNT",
+      "reason": "ou are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.\n  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+    }
+  ]
+}

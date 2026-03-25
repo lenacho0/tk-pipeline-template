@@ -1,0 +1,39 @@
+{
+  "feishu": {
+    "app_id": "cli_a93014c004799cd1",
+    "app_secret": "i0BCefP8L9zkChw9tpGSfdXpRN6WYAbz",
+    "bitable_app_token": "LBWUbgRfEavAgjsXNIhcpo0Dnvb",
+    "tables": {
+      "config": "tblPUVFtpjogYOGn",
+      "fetch_config": "tbl4cIPQYHSHbFzV",
+      "data": "tblKNlGHJKwJWyRW",
+      "analysis": "tblozrImDy0r4dBN",
+      "script_gen": "tbl2Yp6T4jDN8Rfr",
+      "shot_script_gen": "tblRf9jAD00Jma9p",
+      "shot_storyboard": "tblRVg5Ob7VW2zCI",
+      "product": "tblF2cZmbQEJMiUH",
+      "model_appearance": "tblvpVOYockZmCG8",
+      "video": "tblQdTGSsmQbPMQd"
+    }
+  },
+  "fastmoss": {
+    "token": ""
+  },
+  "config_records": {
+    "fetch": "recveiIeCBik6u",
+    "analysis": "recveizDqAaxWy",
+    "script_gen": "recveizDqAB9Xo",
+    "shot_script_gen": "recveQZPORmm33",
+    "storyboard": "recveizDqA44fi",
+    "shot_storyboard": "recveQZRZc7NUI",
+    "video": "recveppNaVCcyd"
+  },
+  "products": {
+    "宠物尿味分解除臭喷雾": "recveikpqWjEiB",
+    "宠物皮肤护理喷雾": "recveikpqWDayE"
+  },
+  "notification": {
+    "feishu_user_id": "ou_0e8b1b4dfca5a47166f0fa12c7a7a880"
+  },
+  "workspace": "/Users/ryanlynn/.openclaw/workspace-tk"
+}
