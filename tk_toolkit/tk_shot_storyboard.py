@@ -307,6 +307,8 @@ def render_shot(token, record_id):
         '分镜图': [{'file_token': file_token}],
         '提示词': prompt[:10000],
         '生成状态': '成功',
+        '错误信息': '',
+        '失败分类': '',
         '生成时间': int(time.time() * 1000),
     })
     log_event('INFO', 'shot storyboard render success', record_id=record_id)
