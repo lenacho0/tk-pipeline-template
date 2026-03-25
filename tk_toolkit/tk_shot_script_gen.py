@@ -46,6 +46,10 @@ DEFAULT_SHOT_PROMPT = """
 - shots 至少 5 个，最多 9 个
 - 每个 shot 都要有明确画面目标
 - 必须适合后续逐镜头生成分镜图
+- 默认单主角叙事：整组 shot 必须是同一个主角，禁止每个镜头切换不同人物设定
+- 除非脚本明确不可避免，否则不要新增清晰可辨识的配角；其他人只能作为弱化背景存在
+- 除非剧情明确切场，否则保持主场景、世界观、光线和色调连续
+- product_focus / character_focus / scene 都要服务于后续单镜头稳定出图，描述具体，不要抽象空话
 - 不要输出任何多余解释
 """.strip()
 
@@ -139,9 +143,11 @@ def build_visual_bible(task_fields, product_info, model_info, strategy_summary):
         'script_style': script_style,
         'consistency_rules': [
             '所有分镜默认同一主角，不允许更换人物身份、脸型、体态、服装逻辑',
+            '除非剧情强制要求，否则不要新增清晰可辨识的新配角；背景人物只能弱化存在，不能抢主体',
             '所有分镜保持统一产品外观、颜色、标签、logo、瓶型和比例',
             '所有分镜保持统一风格、灯光倾向、色调和环境世界观',
-            '除非脚本明确说明，不要改变主场景类型，只做镜头切换和景别变化'
+            '除非脚本明确说明，不要改变主场景类型，只做镜头切换和景别变化',
+            '即使镜头节奏变化，也要保持同一条短视频内部的人物、产品、空间逻辑连续'
         ],
         'strategy_summary': strategy_summary,
     }, ensure_ascii=False, indent=2)[:MAX_VISUAL_BIBLE_CHARS]
@@ -179,9 +185,12 @@ def build_prompt(task_fields, product_info, model_info, strategy_summary, prompt
 
 ## 强约束（如果上方基础模板没有覆盖，请额外遵守）
 1. 所有镜头默认使用同一主角，不允许每个镜头更换人物设定
-2. 所有镜头必须保持统一分镜风格：{storyboard_style}
-3. character_focus 必须体现同一主角在不同镜头中的连续性
-4. visual 和 scene 必须为后续单镜头出图服务，描述清晰，不要抽象空话
+2. 除非剧情必须，不要新增清晰可辨识配角；如果需要他人出现，只能作为模糊背景或陪衬
+3. 所有镜头必须保持统一分镜风格：{storyboard_style}
+4. character_focus 必须体现同一主角在不同镜头中的连续性
+5. scene 必须尽量围绕同一空间体系连续变化；若切场，需让切场理由非常明确
+6. visual 和 scene 必须为后续单镜头出图服务，描述清晰，不要抽象空话
+7. narration、visual、scene、character_focus 之间不能互相打架，不能一边写单人一边画面又变双人主戏
 """.strip()
 
 

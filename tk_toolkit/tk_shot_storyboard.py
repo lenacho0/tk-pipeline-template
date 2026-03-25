@@ -152,6 +152,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     scene = extract_text(shot_fields.get('场景描述', ''))
     product_focus = extract_text(shot_fields.get('产品焦点', ''))
     shot_no = extract_text(shot_fields.get('分镜序号', ''))
+    total_shots = extract_text(shot_fields.get('总分镜数', ''))
 
     base_prompt = (base_prompt or '').replace('{storyboard_style}', style).strip()
 
@@ -164,7 +165,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
 {visual_bible}
 
 ## 当前 Shot 信息
-- Shot No: {shot_no}
+- Shot No: {shot_no}/{total_shots}
 - Narration/Subtitles: {narration}
 - Visual Description: {visual}
 - Character Focus: {character}
@@ -177,8 +178,12 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
 - 不要文字，不要字幕，不要贴纸，不要水印
 - 必须保持产品外观与参考图完全一致
 - 如果提供了模特图，必须保持主角身份、长相、体态、气质一致
+- 默认单主角叙事：不要凭空新增第二主角、第三主角、明确配角
+- 如必须出现其他人，只能作为弱化背景、模糊路人或环境陪衬，不能形成清晰可辨识角色，不能抢主体
+- 保持场景连续性：除非当前 shot 明确要求切场，否则不要突然改变空间类型、时间段、主色调、布光逻辑
 - 如果提供了组参考图，必须在人物、产品、风格、环境连续性上尽量向组参考图对齐
 - 风格必须严格遵守：{style}
+- 优先做“同一条视频里连续镜头”的感觉，而不是把每张图都做成独立海报
 """
     return (base_prompt + shot_block).strip()
 
@@ -210,6 +215,23 @@ def _render_single_image(client, model_name, parts, prompt, out_path):
                 raise
             log_event('WARN', 'single shot image generation retry', attempt=attempt, error=str(e)[:300])
             time.sleep(5)
+
+
+def classify_render_error(err):
+    msg = extract_text(str(err)).lower()
+    if '缺少 api key' in str(err) or 'api key' in msg or 'config' in msg:
+        return '配置错误'
+    if '产品图片缺失' in str(err) or '缺少源逐镜头脚本记录id' in str(err) or '为空' in str(err):
+        return '素材缺失'
+    if '未返回图片内容' in str(err) or '返回图片过小' in str(err):
+        return '模型返回空'
+    if 'upload' in msg and 'feishu' in msg:
+        return '上传飞书失败'
+    if '写回' in str(err) or 'fieldnamenotfound' in msg:
+        return '写回失败'
+    if 'prompt' in msg:
+        return 'prompt构造错误'
+    return '运行时bug'
 
 
 def render_shot(token, record_id):
@@ -314,6 +336,7 @@ def main():
                 safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, {
                     '生成状态': '失败',
                     '错误信息': err,
+                    '失败分类': classify_render_error(e),
                 })
             except Exception:
                 pass
