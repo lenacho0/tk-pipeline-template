@@ -154,6 +154,16 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     shot_no = extract_text(shot_fields.get('分镜序号', ''))
     total_shots = extract_text(shot_fields.get('总分镜数', ''))
 
+    style_extra = ''
+    if style == '全动画':
+        style_extra = """
+- 本任务中的“全动画”明确指 Disney / Pixar 向 3D 动画商业短片风格
+- 采用 3D cinematic animated look，角色、场景、道具都应有明确体积感、材质感、电影化光影
+- 不要输出 2D flat cartoon、扁平插画、手绘动画、低幼 flash 风
+- 动物角色应具有 Pixar 式可爱、情绪清晰、动作夸张但高级的动画表演感
+- 广告画面仍需干净、精致、明快，不能变成儿童简笔卡通
+""".strip()
+
     base_prompt = (base_prompt or '').replace('{storyboard_style}', style).strip()
 
     shot_block = f"""
@@ -183,6 +193,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
 - 保持场景连续性：除非当前 shot 明确要求切场，否则不要突然改变空间类型、时间段、主色调、布光逻辑
 - 如果提供了组参考图，必须在人物、产品、风格、环境连续性上尽量向组参考图对齐
 - 风格必须严格遵守：{style}
+{style_extra}
 - 优先做“同一条视频里连续镜头”的感觉，而不是把每张图都做成独立海报
 """
     return (base_prompt + shot_block).strip()

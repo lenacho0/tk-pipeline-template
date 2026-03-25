@@ -161,6 +161,17 @@ def build_prompt(task_fields, product_info, model_info, strategy_summary, prompt
     duration = extract_text(task_fields.get('视频时长', '25s'))
     shot_count = extract_text(task_fields.get('镜头数量', '6'))
 
+    style_extra = ''
+    if storyboard_style == '全动画':
+        style_extra = """
+## 动画风格强约束
+- “全动画”在本任务中明确指：Disney / Pixar 方向的 3D 商业动画风格
+- 默认采用 3D 动画电影质感、立体角色、体积光、电影化布光、细腻材质、具有情绪表现力的角色表演
+- 不要输出 2D动画、扁平插画、手绘卡通、平面矢量风、低幼 flash 风
+- 所有镜头的 visual / scene / character_focus 都要服务于 Disney / Pixar 向 3D 动画短片质感
+- 如果出现动物角色，角色应具备 Pixar 式可爱、夸张、清晰情绪表达，但仍需保持商业广告画面的干净与高级感
+""".strip()
+
     base = (prompt_template or DEFAULT_SHOT_PROMPT).strip()
 
     return f"""
@@ -183,14 +194,17 @@ def build_prompt(task_fields, product_info, model_info, strategy_summary, prompt
 ## 爆款策略摘要
 {json.dumps(strategy_summary, ensure_ascii=False, indent=2)}
 
+{style_extra}
+
 ## 强约束（如果上方基础模板没有覆盖，请额外遵守）
 1. 所有镜头默认使用同一主角，不允许每个镜头更换人物设定
 2. 除非剧情必须，不要新增清晰可辨识配角；如果需要他人出现，只能作为模糊背景或陪衬
 3. 所有镜头必须保持统一分镜风格：{storyboard_style}
-4. character_focus 必须体现同一主角在不同镜头中的连续性
-5. scene 必须尽量围绕同一空间体系连续变化；若切场，需让切场理由非常明确
-6. visual 和 scene 必须为后续单镜头出图服务，描述清晰，不要抽象空话
-7. narration、visual、scene、character_focus 之间不能互相打架，不能一边写单人一边画面又变双人主戏
+4. 如果分镜风格=全动画，则默认理解为 Disney / Pixar 向 3D 动画风格，不允许擅自改写成 2D 动画
+5. character_focus 必须体现同一主角在不同镜头中的连续性
+6. scene 必须尽量围绕同一空间体系连续变化；若切场，需让切场理由非常明确
+7. visual 和 scene 必须为后续单镜头出图服务，描述清晰，不要抽象空话
+8. narration、visual、scene、character_focus 之间不能互相打架，不能一边写单人一边画面又变双人主戏
 """.strip()
 
 
