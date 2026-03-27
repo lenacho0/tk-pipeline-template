@@ -1,27 +1,35 @@
 # Media Bulk Downloader
 
-A local bulk downloader powered by the Henghengmao API.
+A local bulk downloader powered by the Henghengmao / Meowload API.
 
-## v1 goals
-- Start with Instagram as the primary use case
-- Keep the tool generic enough for TikTok, YouTube, Douyin, Xiaohongshu, and other supported platforms
-- Optimize for simplicity, resumability, and high success rate
+## What it does
+- Batch download media from supported platforms
+- Currently verified with Instagram and TikTok
+- Structured to support YouTube, Douyin, Xiaohongshu, and other supported platforms later
+- Provides both CLI and local web UI
 
-## Features
-- Accept URLs from CSV, TXT, or command-line args
-- Normalize and de-duplicate input URLs
-- Resolve media through the Media Downloader API (`https://api.meowload.net/openapi/extract/post`)
+## Core features
+- Accept URLs from direct input, TXT, or CSV
+- Normalize and de-duplicate URLs
+- Resolve media through the Media Downloader API
 - Download files with retries
 - Skip existing files
-- Emit `_meta/results.csv`, `_meta/failed.csv`, and `_meta/summary.json`
-- Replay failed jobs with `--failed-only`
+- Write reports into `_meta/`
+- Rerun failed items
+- Open output folder from the web UI
 
-## Setup
-Create a `.env` file in the project root or next to where you run the command:
+## API endpoint used
+- `https://api.meowload.net/openapi/extract/post`
+
+## Local setup
+Create a `.env` file at:
+
+`/Users/ryanlynn/.openclaw/workspace-tk/.env`
+
+Example:
 
 ```env
 HHM_API_KEY=your_api_key_here
-# Optional overrides
 HHM_BASE_URL=https://api.meowload.net
 HHM_TIMEOUT_SECONDS=30
 HHM_RETRY_COUNT=3
@@ -29,68 +37,86 @@ HHM_CONCURRENCY=3
 HHM_OUTPUT_DIR=downloads
 ```
 
-## Usage
+## Recommended usage: web UI
 
-### Easiest daily workflow
-1. Paste URLs into:
-   `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/inbox/urls.txt`
-2. Run:
+### Double-click launcher (macOS)
+Double-click:
+- `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/Start Media Bulk Downloader.command`
+
+Stop later with:
+- `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/Stop Media Bulk Downloader.command`
+
+### Terminal launcher
+```bash
+bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_web.sh
+```
+
+Then open:
+
+```bash
+http://127.0.0.1:8765
+```
+
+## Daily CLI usage
+
+### Simplest batch mode
+Paste URLs into:
+
+`/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/inbox/urls.txt`
+
+Then run:
+
 ```bash
 bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_daily.sh
 ```
-3. Outputs will go to:
-   `/Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<timestamp>/`
-   - video files in platform folders like `instagram/` and `tiktok/`
-   - reports in `_meta/`
 
+## Direct CLI examples
 
 ### Download from txt
 ```bash
-python -m tools.media_bulk_downloader.cli --input urls.txt --output downloads/ig_batch_01
+cd /Users/ryanlynn/.openclaw/workspace-tk
+python3 -m tools.media_bulk_downloader.cli --input urls.txt --env-file /Users/ryanlynn/.openclaw/workspace-tk/.env --output /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/manual_run
 ```
 
 ### Download from csv
 ```bash
-python -m tools.media_bulk_downloader.cli --input urls.csv --url-column url --output downloads/ig_batch_02
+cd /Users/ryanlynn/.openclaw/workspace-tk
+python3 -m tools.media_bulk_downloader.cli --input urls.csv --url-column url --env-file /Users/ryanlynn/.openclaw/workspace-tk/.env --output /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/manual_csv_run
 ```
 
 ### Download direct URLs
 ```bash
-python -m tools.media_bulk_downloader.cli --urls "https://www.instagram.com/reel/AAA/,https://www.instagram.com/reel/BBB/"
+cd /Users/ryanlynn/.openclaw/workspace-tk
+python3 -m tools.media_bulk_downloader.cli --urls "https://www.instagram.com/reel/AAA/,https://www.tiktok.com/@user/video/123" --env-file /Users/ryanlynn/.openclaw/workspace-tk/.env --output /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/direct_run
 ```
 
-### Replay failed items
-```bash
-python -m tools.media_bulk_downloader.cli --failed-only downloads/ig_batch_02/results.csv --output downloads/ig_batch_02_rerun
-```
+## Output structure
+Each batch writes to a timestamped directory, for example:
 
-## Design notes
-- v1 uses the Media Downloader API as the primary resolution path.
-- The internal structure is platform-agnostic so the provider client can be extended later.
-- Playlist Downloader API can be added later as a fallback path for complex or collection-based URLs.
+`/Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/20260327_110500/`
 
-## Verified sample
-Using the provided real URLs, the current build successfully downloaded:
-- 4 Instagram reels
-- 1 TikTok video
+Inside it:
+- platform folders like `instagram/`, `tiktok/`
+- reports in `_meta/`
 
-Example output root:
-- `/Users/ryanlynn/.openclaw/workspace-tk/downloads/test_batch_01/`
-
-## Report files
+Report files:
 - `_meta/results.csv`
 - `_meta/failed.csv`
 - `_meta/summary.json`
 
-## Included convenience files
+## Convenience files
 - `run_daily.sh` — one-command daily batch runner
-- `inbox/urls.txt` — paste links here
-- `archive/` — processed queue snapshots
+- `run_web.sh` — terminal launcher for local web UI
+- `Start Media Bulk Downloader.command` — double-click launcher on macOS
+- `Stop Media Bulk Downloader.command` — double-click stop script on macOS
 - `QUICKSTART.md` — fast usage guide
 
-## Next extensions
-- Platform-specific resolution tweaks
-- Playlist fallback support
-- Better file naming from returned metadata
-- Optional thumbnail/metadata exports
-- Smarter content-type validation
+## Verified sample
+Using real sample URLs, the tool successfully downloaded:
+- 4 Instagram reels
+- 1 TikTok video
+
+## Notes
+- The current web UI is local-only and runs on `127.0.0.1:8765`
+- The tool depends on your local `.env` and network access to the API
+- Playlist-style extraction can be added later as a fallback if needed
