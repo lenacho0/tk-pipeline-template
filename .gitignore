@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# local env
+.env
+
+# runtime outputs
+downloads/
+
+# media bulk downloader runtime files
+tools/media_bulk_downloader/archive/
+tools/media_bulk_downloader/inbox/urls.txt
+
+# python cache
+__pycache__/
+*.pyc
