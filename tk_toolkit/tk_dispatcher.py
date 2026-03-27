@@ -26,6 +26,7 @@ HEALTHCHECK_DONE_FILE = os.path.join(SCRIPTS_DIR, '.healthcheck_today')
 RUNNING_TASKS_FILE = os.path.join(SCRIPTS_DIR, '.running_tasks.json')
 RETRY_STATE_FILE = os.path.join(SCRIPTS_DIR, '.retry_state.json')
 METRICS_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_metrics.json')
+HEARTBEAT_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_heartbeat.json')
 
 WATCH_LIST = [
     {
@@ -484,6 +485,16 @@ def bootstrap_running_state():
             pass
 
 
+def write_heartbeat(status='running', note=None):
+    payload = {
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'status': status,
+        'note': note or '',
+        'pid': os.getpid(),
+    }
+    save_json_file(HEARTBEAT_FILE, payload)
+
+
 def main():
     log.info("🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）")
     log.info(f"   轮询间隔: {POLL_INTERVAL}秒")
@@ -495,6 +506,7 @@ def main():
     last_metrics_log = 0
 
     while True:
+        write_heartbeat(status='running')
         if time.time() - token_time > 1200:
             try:
                 token = get_feishu_token()
@@ -520,4 +532,12 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        try:
+            write_heartbeat(status='crashed', note=str(e)[:500])
+        except Exception:
+            pass
+        log.exception(f'💥 dispatcher crashed: {e}')
+        raise

@@ -13,20 +13,22 @@ FASTMOSS_BASE = 'https://openapi.fastmoss.com'
 
 def check_fastmoss():
     try:
+        token = get_feishu_token()
+        api_cfg = get_fetch_api_config(token)
         now = int(time.time())
-        headers = {'Authorization': f'Bearer {FASTMOSS_TOKEN}', 'Content-Type': 'application/json'}
+        headers = {'Authorization': f"Bearer {api_cfg['api_key']}", 'Content-Type': 'application/json'}
         body = {
             'keywords': 'pet',
             'filter': {'publish_time_range': {'min': now - 7*86400, 'max': now}},
             'page': 1, 'pagesize': 1,
         }
-        resp = requests.post(f'{FASTMOSS_BASE}/video/v1/search',
+        resp = requests.post(f"{api_cfg['api_base']}/video/v1/search",
             json=body, headers=headers, timeout=15)
         data = resp.json()
-        if data.get('code') == 0 and data.get('data', {}).get('list'):
-            return True, f"正常 (返回 {len(data['data']['list'])} 条数据)"
+        if data.get('code') == 0:
+            return True, f"正常 (api_base={api_cfg['api_base']})"
         else:
-            return False, f"异常 code={data.get('code')}, msg={data.get('message')}"
+            return False, f"异常 code={data.get('code')}, msg={data.get('message') or data.get('msg')}"
     except Exception as e:
         return False, f"请求失败: {e}"
 
@@ -75,11 +77,24 @@ def check_sora():
 
 def check_dispatcher():
     try:
-        import subprocess
+        import subprocess, os, json, time
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        heartbeat_file = os.path.join(script_dir, '.dispatcher_heartbeat.json')
         result = subprocess.run(['pgrep', '-f', 'tk_dispatcher.py'], capture_output=True, text=True)
-        pids = result.stdout.strip().split('\n') if result.stdout.strip() else []
-        if pids and pids[0]:
+        pids = [p for p in result.stdout.strip().split('\n') if p.strip()]
+        heartbeat = None
+        if os.path.exists(heartbeat_file):
+            try:
+                with open(heartbeat_file, 'r', encoding='utf-8') as f:
+                    heartbeat = json.load(f)
+            except Exception:
+                heartbeat = None
+        if pids:
+            if heartbeat and heartbeat.get('time'):
+                return True, f"运行中 (PID: {pids[0]}, heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')})"
             return True, f"运行中 (PID: {pids[0]})"
+        if heartbeat:
+            return False, f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')} note={heartbeat.get('note','')}"
         return False, "调度器未运行！"
     except Exception as e:
         return False, f"检测失败: {e}"
