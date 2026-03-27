@@ -13,7 +13,7 @@ A local bulk downloader powered by the Henghengmao API.
 - Resolve media through the Media Downloader API (`https://api.meowload.net/openapi/extract/post`)
 - Download files with retries
 - Skip existing files
-- Emit `results.csv`, `failed.csv`, and `summary.json`
+- Emit `_meta/results.csv`, `_meta/failed.csv`, and `_meta/summary.json`
 - Replay failed jobs with `--failed-only`
 
 ## Setup
@@ -40,6 +40,8 @@ bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_dail
 ```
 3. Outputs will go to:
    `/Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<timestamp>/`
+   - video files in platform folders like `instagram/` and `tiktok/`
+   - reports in `_meta/`
 
 
 ### Download from txt

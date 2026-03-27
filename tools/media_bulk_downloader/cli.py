@@ -85,15 +85,17 @@ def main() -> int:
                 print(f"  file: {result.file_path}")
 
     results.sort(key=lambda x: (x.item.platform, x.item.normalized_url))
-    write_results_csv(output_root / "results.csv", results)
-    write_results_csv(output_root / "failed.csv", [r for r in results if r.status == "failed"])
+    meta_dir = output_root / "_meta"
+    ensure_dir(meta_dir)
+    write_results_csv(meta_dir / "results.csv", results)
+    write_results_csv(meta_dir / "failed.csv", [r for r in results if r.status == "failed"])
     manifest = {
         "total": len(results),
         "success": sum(1 for r in results if r.status == "success"),
         "failed": sum(1 for r in results if r.status == "failed"),
         "skipped": sum(1 for r in results if r.status == "skipped"),
     }
-    (output_root / "summary.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (meta_dir / "summary.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("Done.")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

@@ -17,6 +17,10 @@ bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_dail
 /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/
 ```
 
+Inside each run folder:
+- videos go into platform folders like `instagram/` and `tiktok/`
+- reports go into `_meta/`
+
 4. The input queue file will be archived automatically after a successful run.
 
 ## Retry failed items
