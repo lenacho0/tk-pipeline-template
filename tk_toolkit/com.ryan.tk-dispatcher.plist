@@ -4,19 +4,26 @@
   <dict>
     <key>Label</key>
     <string>com.ryan.tk-dispatcher</string>
+
     <key>ProgramArguments</key>
     <array>
-      <string>/bin/bash</string>
-      <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/run_dispatcher.sh</string>
+      <string>/usr/bin/env</string>
+      <string>python3</string>
+      <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py</string>
     </array>
+
     <key>WorkingDirectory</key>
     <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit</string>
+
     <key>RunAtLoad</key>
     <true/>
+
     <key>KeepAlive</key>
     <true/>
+
     <key>StandardOutPath</key>
     <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/launchd.out.log</string>
+
     <key>StandardErrorPath</key>
     <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/launchd.err.log</string>
   </dict>
