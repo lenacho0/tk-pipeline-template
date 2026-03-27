@@ -1,0 +1,93 @@
+const urlsInput = document.getElementById('urlsInput');
+const runBtn = document.getElementById('runBtn');
+const loadSampleBtn = document.getElementById('loadSampleBtn');
+const statusBadge = document.getElementById('statusBadge');
+const outputDir = document.getElementById('outputDir');
+const resultsList = document.getElementById('resultsList');
+const sumTotal = document.getElementById('sumTotal');
+const sumSuccess = document.getElementById('sumSuccess');
+const sumFailed = document.getElementById('sumFailed');
+const sumSkipped = document.getElementById('sumSkipped');
+
+function setStatus(status) {
+  statusBadge.textContent = status;
+  statusBadge.className = `badge ${status}`;
+}
+
+function renderResults(results = []) {
+  if (!results.length) {
+    resultsList.innerHTML = '<div class="result-item"><div class="result-url">还没有运行记录。</div></div>';
+    return;
+  }
+  resultsList.innerHTML = results.map(item => `
+    <article class="result-item">
+      <div class="result-top">
+        <div>
+          <div class="result-platform">${item.platform}</div>
+          <div class="result-url">${item.source_url}</div>
+        </div>
+        <strong class="result-status ${item.status}">${item.status}</strong>
+      </div>
+      ${item.file_path ? `<div class="result-file">${item.file_path}</div>` : ''}
+      ${item.error ? `<div class="result-error">${item.error}</div>` : ''}
+    </article>
+  `).join('');
+}
+
+function updateSummary(summary) {
+  sumTotal.textContent = summary?.total ?? '-';
+  sumSuccess.textContent = summary?.success ?? '-';
+  sumFailed.textContent = summary?.failed ?? '-';
+  sumSkipped.textContent = summary?.skipped ?? '-';
+}
+
+async function loadStatus() {
+  const res = await fetch('/api/status');
+  const data = await res.json();
+  setStatus(data.status || 'idle');
+  updateSummary(data.summary);
+  outputDir.textContent = data.output_dir || '-';
+  renderResults(data.results || []);
+}
+
+runBtn.addEventListener('click', async () => {
+  const urls = urlsInput.value.trim();
+  if (!urls) {
+    alert('先贴链接。');
+    return;
+  }
+  setStatus('running');
+  runBtn.disabled = true;
+  runBtn.textContent = 'Running...';
+  resultsList.innerHTML = '<div class="result-item"><div class="result-url">任务执行中，请稍等…</div></div>';
+
+  const res = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls })
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    setStatus('error');
+    alert(data.error || '执行失败');
+  } else {
+    setStatus('done');
+    updateSummary(data.summary);
+    outputDir.textContent = data.output_dir || '-';
+    renderResults(data.results || []);
+  }
+
+  runBtn.disabled = false;
+  runBtn.textContent = 'Start Download';
+});
+
+loadSampleBtn.addEventListener('click', () => {
+  urlsInput.value = [
+    'https://www.instagram.com/reel/DOz-9tTkoXx/?igsh=cjVsdmUyNjRrcmJm',
+    'https://www.instagram.com/reel/DVyGvtmD0Ba/?igsh=aW84b2F5NWxmeWVy',
+    'https://www.tiktok.com/@saitamasuhesaa/video/7620009482332032277'
+  ].join('\n');
+});
+
+loadStatus();

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Media Bulk Downloader</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="grain"></div>
+    <main class="shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">LOCAL MEDIA OPS</p>
+          <h1>Bulk Downloader</h1>
+          <p class="subtitle">一个给日常高频抓取用的轻量网页端。贴链接，开跑，直接拿结果。</p>
+        </div>
+        <div class="hero-card">
+          <div class="stat">
+            <span>Supported</span>
+            <strong>Instagram · TikTok · YouTube · 抖音 · 小红书</strong>
+          </div>
+          <div class="stat">
+            <span>Engine</span>
+            <strong>Henghengmao / Meowload API</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel composer">
+        <div class="panel-head">
+          <h2>New Batch</h2>
+          <button id="runBtn" class="run-btn">Start Download</button>
+        </div>
+        <textarea id="urlsInput" placeholder="一行一个链接，直接粘贴。"></textarea>
+        <div class="helper-row">
+          <span>支持批量粘贴；自动去重；输出会按平台分目录。</span>
+          <button id="loadSampleBtn" class="ghost-btn">Load Sample</button>
+        </div>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="panel-head">
+          <h2>Last Run</h2>
+          <span id="statusBadge" class="badge idle">idle</span>
+        </div>
+        <div class="summary-grid" id="summaryGrid">
+          <div class="summary-box"><span>Total</span><strong id="sumTotal">-</strong></div>
+          <div class="summary-box"><span>Success</span><strong id="sumSuccess">-</strong></div>
+          <div class="summary-box"><span>Failed</span><strong id="sumFailed">-</strong></div>
+          <div class="summary-box"><span>Skipped</span><strong id="sumSkipped">-</strong></div>
+        </div>
+        <div class="output-card">
+          <span>Output Directory</span>
+          <code id="outputDir">-</code>
+        </div>
+      </section>
+
+      <section class="panel results-panel">
+        <div class="panel-head">
+          <h2>Results</h2>
+        </div>
+        <div id="resultsList" class="results-list"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

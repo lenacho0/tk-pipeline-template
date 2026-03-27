@@ -1,5 +1,19 @@
 # Quick Start
 
+## Web UI
+
+Start the web UI:
+
+```bash
+bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_web.sh
+```
+
+Then open:
+
+```bash
+http://127.0.0.1:8765
+```
+
 ## Daily usage
 
 1. Open this file and paste URLs, one per line:

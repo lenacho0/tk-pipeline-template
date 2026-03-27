@@ -1,4 +1,0 @@
-# Paste one URL per line here
-# Example:
-# https://www.instagram.com/reel/xxxxx/
-# https://www.tiktok.com/@user/video/1234567890

@@ -77,6 +77,11 @@ Using the provided real URLs, the current build successfully downloaded:
 Example output root:
 - `/Users/ryanlynn/.openclaw/workspace-tk/downloads/test_batch_01/`
 
+## Report files
+- `_meta/results.csv`
+- `_meta/failed.csv`
+- `_meta/summary.json`
+
 ## Included convenience files
 - `run_daily.sh` — one-command daily batch runner
 - `inbox/urls.txt` — paste links here
