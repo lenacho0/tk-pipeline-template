@@ -22,7 +22,7 @@ Create a `.env` file in the project root or next to where you run the command:
 ```env
 HHM_API_KEY=your_api_key_here
 # Optional overrides
-HHM_BASE_URL=https://api.henghengmao.com
+HHM_BASE_URL=https://api.meowload.net
 HHM_TIMEOUT_SECONDS=30
 HHM_RETRY_COUNT=3
 HHM_CONCURRENCY=3
@@ -30,6 +30,17 @@ HHM_OUTPUT_DIR=downloads
 ```
 
 ## Usage
+
+### Easiest daily workflow
+1. Paste URLs into:
+   `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/inbox/urls.txt`
+2. Run:
+```bash
+bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_daily.sh
+```
+3. Outputs will go to:
+   `/Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<timestamp>/`
+
 
 ### Download from txt
 ```bash
@@ -55,6 +66,20 @@ python -m tools.media_bulk_downloader.cli --failed-only downloads/ig_batch_02/re
 - v1 uses the Media Downloader API as the primary resolution path.
 - The internal structure is platform-agnostic so the provider client can be extended later.
 - Playlist Downloader API can be added later as a fallback path for complex or collection-based URLs.
+
+## Verified sample
+Using the provided real URLs, the current build successfully downloaded:
+- 4 Instagram reels
+- 1 TikTok video
+
+Example output root:
+- `/Users/ryanlynn/.openclaw/workspace-tk/downloads/test_batch_01/`
+
+## Included convenience files
+- `run_daily.sh` — one-command daily batch runner
+- `inbox/urls.txt` — paste links here
+- `archive/` — processed queue snapshots
+- `QUICKSTART.md` — fast usage guide
 
 ## Next extensions
 - Platform-specific resolution tweaks
