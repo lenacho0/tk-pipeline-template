@@ -180,7 +180,7 @@ def main():
 
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {'分镜图状态': '生成中'})
 
-        product_value = task.get('选择产品', '')
+        product_value = get_task_product_value(task)
         product_record_id = get_product_record_id(token, product_value)
 
         product_path = os.path.join(task_dir, 'product.png')

@@ -79,7 +79,7 @@ def split_shots(token, source_record_id):
     if not shots:
         raise Exception('shots 为空')
 
-    product_name = extract_text(fields.get('选择产品', ''))
+    product_name = extract_text(get_task_product_value(fields))
     source_video_id = extract_text(fields.get('源视频ID', ''))
     records = []
     for idx, shot in enumerate(shots, start=1):
@@ -128,7 +128,7 @@ def _resolve_linked_record_id(link_val):
 
 
 def _download_product_and_model(token, source_fields, task_dir):
-    product_value = source_fields.get('选择产品', '')
+    product_value = get_task_product_value(source_fields)
     product_record_id = get_product_record_id(token, product_value)
     product_path = os.path.join(task_dir, 'product.png')
     if product_record_id:

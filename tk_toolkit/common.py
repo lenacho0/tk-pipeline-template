@@ -164,6 +164,13 @@ def get_product_record(token, product_value):
     return record_id, fields
 
 
+def get_task_product_value(fields):
+    linked = fields.get('关联产品')
+    if linked and extract_linked_record_ids(linked):
+        return linked
+    return fields.get('选择产品', '')
+
+
 def get_model_config(token, record_id):
     """从模型配置表读取指定环节的配置"""
     fields = get_record(token, TABLE_CONFIG, record_id)

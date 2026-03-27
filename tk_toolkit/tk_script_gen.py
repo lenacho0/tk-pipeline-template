@@ -257,7 +257,7 @@ def main():
             raise Exception('飞书配置表无产品脚本生成提示词')
 
         fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
-        product_value = fields.get('选择产品', '')
+        product_value = get_task_product_value(fields)
         product_name = extract_text(product_value)
         video_duration = extract_text(fields.get('视频时长', '25s'))
         if not product_name and not extract_linked_record_ids(product_value):

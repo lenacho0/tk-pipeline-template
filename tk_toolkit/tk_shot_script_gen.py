@@ -132,7 +132,7 @@ def safe_strategy_summary(client, model_name, references, product_info):
 
 
 def build_visual_bible(task_fields, product_info, model_info, strategy_summary):
-    product_name = extract_text(task_fields.get('选择产品', ''))
+    product_name = extract_text(get_task_product_value(task_fields))
     storyboard_style = extract_text(task_fields.get('分镜风格', ''))
     script_style = extract_text(task_fields.get('脚本风格', ''))
     return json.dumps({
@@ -226,7 +226,7 @@ def main():
         api_base = config['api_base'] or 'https://aihubmix.com/gemini'
 
         fields = safe_get_record(token, TABLE_SHOT_SCRIPT_GEN, record_id)
-        product_value = fields.get('选择产品', '')
+        product_value = get_task_product_value(fields)
         product_name = extract_text(product_value)
         if not product_name and not extract_linked_record_ids(product_value):
             raise Exception('未选择产品')
