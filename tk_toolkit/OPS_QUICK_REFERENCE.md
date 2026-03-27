@@ -52,7 +52,7 @@ bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/stop_dispatcher.sh
 
 ### 跑一遍健康巡检
 ```bash
-python3 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_healthcheck.py
+/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_healthcheck.py
 ```
 
 ### 检查 dispatcher 心跳

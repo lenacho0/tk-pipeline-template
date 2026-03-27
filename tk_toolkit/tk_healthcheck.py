@@ -89,12 +89,37 @@ def check_dispatcher():
                     heartbeat = json.load(f)
             except Exception:
                 heartbeat = None
+
+        log_summary = None
+        try:
+            predicate = '(process == "python3.12") OR (eventMessage CONTAINS[c] "tk_dispatcher") OR (senderImagePath CONTAINS[c] "tk_toolkit")'
+            log_result = subprocess.run(
+                ['log', 'show', '--last', '15m', '--predicate', predicate, '--style', 'compact'],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            log_lines = [line.strip() for line in log_result.stdout.splitlines() if line.strip()]
+            if log_lines:
+                log_summary = log_lines[-1][:240]
+        except Exception:
+            log_summary = None
+
         if pids:
+            parts = [f"运行中 (PID: {pids[0]}"]
             if heartbeat and heartbeat.get('time'):
-                return True, f"运行中 (PID: {pids[0]}, heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')})"
-            return True, f"运行中 (PID: {pids[0]})"
+                parts.append(f", heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')}")
+            if log_summary:
+                parts.append(f", 最近日志={log_summary}")
+            parts.append(')')
+            return True, ''.join(parts)
         if heartbeat:
-            return False, f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')} note={heartbeat.get('note','')}"
+            base = f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')} note={heartbeat.get('note','')}"
+            if log_summary:
+                base += f"，最近日志={log_summary}"
+            return False, base
+        if log_summary:
+            return False, f"调度器未运行，最近日志={log_summary}"
         return False, "调度器未运行！"
     except Exception as e:
         return False, f"检测失败: {e}"
