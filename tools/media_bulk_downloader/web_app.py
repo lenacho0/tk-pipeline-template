@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -30,19 +30,11 @@ LAST_RUN: dict = {
 }
 
 
-def run_batch(urls_text: str) -> dict:
+def execute_batch(items, output_root: Path) -> dict:
     config = load_config(ENV_FILE)
-    ensure_dir(DOWNLOAD_ROOT)
-    run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_root = DOWNLOAD_ROOT / run_id
-    ensure_dir(output_root)
-
-    items = load_urls_from_input(None, ','.join([line.strip() for line in urls_text.splitlines() if line.strip()]))
-    if not items:
-        raise ValueError('No valid URLs found')
-
     client = MediaProviderClient(config)
     results: list[DownloadResult] = []
+
     for item in items:
         try:
             result = process_one(client, config, item, output_root, True)
@@ -64,7 +56,6 @@ def run_batch(urls_text: str) -> dict:
     (meta_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
 
     payload = {
-        'run_id': run_id,
         'summary': summary,
         'output_dir': str(output_root),
         'results': [
@@ -78,7 +69,46 @@ def run_batch(urls_text: str) -> dict:
             for r in results
         ],
     }
+    LAST_RUN['status'] = 'done'
+    LAST_RUN['summary'] = payload['summary']
+    LAST_RUN['results'] = payload['results']
+    LAST_RUN['output_dir'] = payload['output_dir']
     return payload
+
+
+def run_batch(urls_text: str) -> dict:
+    ensure_dir(DOWNLOAD_ROOT)
+    run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_root = DOWNLOAD_ROOT / run_id
+    ensure_dir(output_root)
+    items = load_urls_from_input(None, ','.join([line.strip() for line in urls_text.splitlines() if line.strip()]))
+    if not items:
+        raise ValueError('No valid URLs found')
+    payload = execute_batch(items, output_root)
+    payload['run_id'] = run_id
+    return payload
+
+
+def rerun_failed() -> dict:
+    results = LAST_RUN.get('results') or []
+    failed_urls = [item['source_url'] for item in results if item.get('status') == 'failed' and item.get('source_url')]
+    if not failed_urls:
+        raise ValueError('No failed items to rerun')
+    ensure_dir(DOWNLOAD_ROOT)
+    run_id = datetime.now().strftime('%Y%m%d_%H%M%S') + '_rerun'
+    output_root = DOWNLOAD_ROOT / run_id
+    ensure_dir(output_root)
+    items = load_urls_from_input(None, ','.join(failed_urls))
+    payload = execute_batch(items, output_root)
+    payload['run_id'] = run_id
+    return payload
+
+
+def open_output_dir() -> None:
+    output_dir = LAST_RUN.get('output_dir')
+    if not output_dir:
+        raise ValueError('No output directory available yet')
+    subprocess.Popen(['open', output_dir])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,6 +118,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _json(self, data: dict, status: int = 200) -> None:
+        self._send(status, json.dumps(data, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -101,31 +134,35 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, APP_JS.read_bytes(), 'application/javascript; charset=utf-8')
             return
         if parsed.path == '/api/status':
-            self._send(200, json.dumps(LAST_RUN, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+            self._json(LAST_RUN)
             return
         self._send(404, b'Not Found', 'text/plain; charset=utf-8')
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path != '/api/run':
-            self._send(404, b'Not Found', 'text/plain; charset=utf-8')
-            return
         length = int(self.headers.get('Content-Length', '0'))
-        raw = self.rfile.read(length)
-        data = json.loads(raw.decode('utf-8'))
-        urls_text = str(data.get('urls', ''))
+        raw = self.rfile.read(length) if length > 0 else b'{}'
+        data = json.loads(raw.decode('utf-8')) if raw else {}
         try:
-            LAST_RUN['status'] = 'running'
-            LAST_RUN['started_at'] = datetime.now().isoformat()
-            payload = run_batch(urls_text)
-            LAST_RUN['status'] = 'done'
-            LAST_RUN['summary'] = payload['summary']
-            LAST_RUN['results'] = payload['results']
-            LAST_RUN['output_dir'] = payload['output_dir']
-            self._send(200, json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+            if parsed.path == '/api/run':
+                urls_text = str(data.get('urls', ''))
+                LAST_RUN['status'] = 'running'
+                LAST_RUN['started_at'] = datetime.now().isoformat()
+                self._json(run_batch(urls_text))
+                return
+            if parsed.path == '/api/rerun-failed':
+                LAST_RUN['status'] = 'running'
+                LAST_RUN['started_at'] = datetime.now().isoformat()
+                self._json(rerun_failed())
+                return
+            if parsed.path == '/api/open-output':
+                open_output_dir()
+                self._json({'ok': True})
+                return
+            self._send(404, b'Not Found', 'text/plain; charset=utf-8')
         except Exception as exc:  # noqa: BLE001
             LAST_RUN['status'] = 'error'
-            self._send(400, json.dumps({'error': str(exc)}, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+            self._json({'error': str(exc)}, 400)
 
 
 def main() -> None:

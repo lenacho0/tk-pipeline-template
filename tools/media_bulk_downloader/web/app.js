@@ -1,6 +1,8 @@
 const urlsInput = document.getElementById('urlsInput');
 const runBtn = document.getElementById('runBtn');
 const loadSampleBtn = document.getElementById('loadSampleBtn');
+const openOutputBtn = document.getElementById('openOutputBtn');
+const rerunFailedBtn = document.getElementById('rerunFailedBtn');
 const statusBadge = document.getElementById('statusBadge');
 const outputDir = document.getElementById('outputDir');
 const resultsList = document.getElementById('resultsList');
@@ -41,13 +43,30 @@ function updateSummary(summary) {
   sumSkipped.textContent = summary?.skipped ?? '-';
 }
 
-async function loadStatus() {
-  const res = await fetch('/api/status');
-  const data = await res.json();
-  setStatus(data.status || 'idle');
+function applyRunData(data) {
+  setStatus(data.status || 'done');
   updateSummary(data.summary);
   outputDir.textContent = data.output_dir || '-';
   renderResults(data.results || []);
+}
+
+async function loadStatus() {
+  const res = await fetch('/api/status');
+  const data = await res.json();
+  applyRunData(data);
+}
+
+async function postJson(url, payload = {}) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || '请求失败');
+  }
+  return data;
 }
 
 runBtn.addEventListener('click', async () => {
@@ -56,30 +75,39 @@ runBtn.addEventListener('click', async () => {
     alert('先贴链接。');
     return;
   }
-  setStatus('running');
-  runBtn.disabled = true;
-  runBtn.textContent = 'Running...';
-  resultsList.innerHTML = '<div class="result-item"><div class="result-url">任务执行中，请稍等…</div></div>';
-
-  const res = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ urls })
-  });
-  const data = await res.json();
-
-  if (!res.ok) {
+  try {
+    setStatus('running');
+    runBtn.disabled = true;
+    runBtn.textContent = 'Running...';
+    resultsList.innerHTML = '<div class="result-item"><div class="result-url">任务执行中，请稍等…</div></div>';
+    const data = await postJson('/api/run', { urls });
+    applyRunData({ ...data, status: 'done' });
+  } catch (err) {
     setStatus('error');
-    alert(data.error || '执行失败');
-  } else {
-    setStatus('done');
-    updateSummary(data.summary);
-    outputDir.textContent = data.output_dir || '-';
-    renderResults(data.results || []);
+    alert(err.message || '执行失败');
+  } finally {
+    runBtn.disabled = false;
+    runBtn.textContent = 'Start Download';
   }
+});
 
-  runBtn.disabled = false;
-  runBtn.textContent = 'Start Download';
+rerunFailedBtn.addEventListener('click', async () => {
+  try {
+    setStatus('running');
+    const data = await postJson('/api/rerun-failed');
+    applyRunData({ ...data, status: 'done' });
+  } catch (err) {
+    setStatus('error');
+    alert(err.message || '重跑失败');
+  }
+});
+
+openOutputBtn.addEventListener('click', async () => {
+  try {
+    await postJson('/api/open-output');
+  } catch (err) {
+    alert(err.message || '打开目录失败');
+  }
 });
 
 loadSampleBtn.addEventListener('click', () => {

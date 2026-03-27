@@ -30,12 +30,14 @@
       <section class="panel composer">
         <div class="panel-head">
           <h2>New Batch</h2>
-          <button id="runBtn" class="run-btn">Start Download</button>
+          <div class="toolbar">
+            <button id="loadSampleBtn" class="ghost-btn">Load Sample</button>
+            <button id="runBtn" class="run-btn">Start Download</button>
+          </div>
         </div>
         <textarea id="urlsInput" placeholder="一行一个链接，直接粘贴。"></textarea>
         <div class="helper-row">
           <span>支持批量粘贴；自动去重；输出会按平台分目录。</span>
-          <button id="loadSampleBtn" class="ghost-btn">Load Sample</button>
         </div>
       </section>
 
@@ -53,6 +55,10 @@
         <div class="output-card">
           <span>Output Directory</span>
           <code id="outputDir">-</code>
+        </div>
+        <div class="toolbar toolbar-bottom">
+          <button id="openOutputBtn" class="ghost-btn">Open Output Folder</button>
+          <button id="rerunFailedBtn" class="ghost-btn">Rerun Failed</button>
         </div>
       </section>
 
