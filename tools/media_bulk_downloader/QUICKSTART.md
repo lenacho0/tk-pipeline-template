@@ -2,8 +2,14 @@
 
 ## Web UI
 
-Start the web UI:
+### Easiest way (double-click on macOS)
+Double-click:
+- `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/Start Media Bulk Downloader.command`
 
+To stop it later, double-click:
+- `/Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/Stop Media Bulk Downloader.command`
+
+### Terminal way
 ```bash
 bash /Users/ryanlynn/.openclaw/workspace-tk/tools/media_bulk_downloader/run_web.sh
 ```

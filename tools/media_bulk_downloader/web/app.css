@@ -119,6 +119,14 @@ textarea {
   outline: none;
 }
 textarea:focus { border-color: rgba(184,255,109,0.45); }
+.toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.toolbar-bottom {
+  margin-top: 16px;
+}
 .run-btn, .ghost-btn {
   border: none;
   cursor: pointer;
