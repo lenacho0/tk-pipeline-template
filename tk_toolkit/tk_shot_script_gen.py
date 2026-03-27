@@ -226,13 +226,14 @@ def main():
         api_base = config['api_base'] or 'https://aihubmix.com/gemini'
 
         fields = safe_get_record(token, TABLE_SHOT_SCRIPT_GEN, record_id)
-        product_name = extract_text(fields.get('选择产品', ''))
-        if not product_name:
+        product_value = fields.get('选择产品', '')
+        product_name = extract_text(product_value)
+        if not product_name and not extract_linked_record_ids(product_value):
             raise Exception('未选择产品')
 
-        product_info = get_product_info(token, product_name)
+        product_info = get_product_info(token, product_value)
         if not product_info:
-            raise Exception(f'找不到产品: {product_name}')
+            raise Exception(f'找不到产品: {product_name or product_value}')
 
         model_info = get_model_info(token, fields)
         safe_update_record(token, TABLE_SHOT_SCRIPT_GEN, record_id, {'生成状态': '生成中'})

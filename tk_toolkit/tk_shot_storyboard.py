@@ -14,6 +14,36 @@ from common import *
 from tk_storyboard import ensure_task_dir, safe_download_attachment, upload_image_to_feishu
 
 
+_TABLE_FIELDS_CACHE = {}
+
+
+def get_table_field_names(token, table_id):
+    cache_key = f"{APP_TOKEN}:{table_id}"
+    if cache_key in _TABLE_FIELDS_CACHE:
+        return _TABLE_FIELDS_CACHE[cache_key]
+    field_names = set()
+    page_token = None
+    while True:
+        url = f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/fields?page_size=100'
+        if page_token:
+            url += f'&page_token={page_token}'
+        data = safe_request('get', url, headers=feishu_headers(token), timeout=30, max_attempts=3, acceptable_codes=(0,))
+        for item in data.get('data', {}).get('items', []):
+            name = item.get('field_name')
+            if name:
+                field_names.add(name)
+        if not data.get('data', {}).get('has_more'):
+            break
+        page_token = data.get('data', {}).get('page_token')
+    _TABLE_FIELDS_CACHE[cache_key] = field_names
+    return field_names
+
+
+def filter_existing_fields(token, table_id, fields):
+    existing = get_table_field_names(token, table_id)
+    return {k: v for k, v in fields.items() if k in existing}
+
+
 def cleanup_shots_by_source(token, source_record_id):
     items = safe_list_records(token, TABLE_SHOT_STORYBOARD)
     to_delete = []
@@ -98,8 +128,8 @@ def _resolve_linked_record_id(link_val):
 
 
 def _download_product_and_model(token, source_fields, task_dir):
-    product_name = extract_text(source_fields.get('选择产品', ''))
-    product_record_id = PRODUCT_MAP.get(product_name)
+    product_value = source_fields.get('选择产品', '')
+    product_record_id = get_product_record_id(token, product_value)
     product_path = os.path.join(task_dir, 'product.png')
     if product_record_id:
         prod_fields = safe_get_record(token, TABLE_PRODUCT, product_record_id)
@@ -319,19 +349,15 @@ def render_shot(token, record_id):
         '提示词': prompt[:10000],
         '生成状态': '成功',
         '生成时间': int(time.time() * 1000),
+        '错误信息': '',
+        '失败分类': '',
     }
-    try:
-        safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, {
-            **success_fields,
-            '错误信息': '',
-            '失败分类': '',
-        })
-    except Exception as e:
-        if 'FieldNameNotFound' in str(e):
-            log_event('WARN', 'optional success fields not found, fallback update', record_id=record_id, error=str(e)[:300])
-            safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, success_fields)
-        else:
-            raise
+    safe_update_record(
+        token,
+        TABLE_SHOT_STORYBOARD,
+        record_id,
+        filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields)
+    )
     log_event('INFO', 'shot storyboard render success', record_id=record_id)
     print(f'✅ 单张分镜图生成完成: {record_id}')
 
@@ -355,23 +381,18 @@ def main():
         err = str(e)[:500]
         log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err)
         if action == 'render':
-            fail_fields = {'生成状态': '失败'}
-            optional_fail_fields = {
+            fail_fields = {
+                '生成状态': '失败',
                 '错误信息': err,
                 '失败分类': classify_render_error(e),
             }
             try:
-                try:
-                    safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, {
-                        **fail_fields,
-                        **optional_fail_fields,
-                    })
-                except Exception as inner:
-                    if 'FieldNameNotFound' in str(inner):
-                        log_event('WARN', 'optional fail fields not found, fallback update', record_id=record_id, error=str(inner)[:300])
-                        safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, fail_fields)
-                    else:
-                        raise
+                safe_update_record(
+                    token,
+                    TABLE_SHOT_STORYBOARD,
+                    record_id,
+                    filter_existing_fields(token, TABLE_SHOT_STORYBOARD, fail_fields)
+                )
             except Exception:
                 pass
         print(f'❌ {e}')

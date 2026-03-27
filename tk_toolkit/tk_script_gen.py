@@ -26,11 +26,10 @@ def try_update_optional_fields(token, table_id, record_id, fields):
         return False
 
 
-def get_product_info(token, product_name):
-    record_id = PRODUCT_MAP.get(product_name)
-    if not record_id:
+def get_product_info(token, product_value):
+    record_id, fields = get_product_record(token, product_value)
+    if not record_id or not fields:
         return None
-    fields = safe_get_record(token, TABLE_PRODUCT, record_id)
     return {
         '产品名称-th': extract_text(fields.get('产品名称-th', '')),
         '产品规格': extract_text(fields.get('产品规格', '')),
@@ -258,14 +257,15 @@ def main():
             raise Exception('飞书配置表无产品脚本生成提示词')
 
         fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
-        product_name = extract_text(fields.get('选择产品', ''))
+        product_value = fields.get('选择产品', '')
+        product_name = extract_text(product_value)
         video_duration = extract_text(fields.get('视频时长', '25s'))
-        if not product_name:
+        if not product_name and not extract_linked_record_ids(product_value):
             raise Exception('未选择产品')
 
-        product_info = get_product_info(token, product_name)
+        product_info = get_product_info(token, product_value)
         if not product_info:
-            raise Exception(f'找不到产品: {product_name}（请检查 config.json 中的 products 映射）')
+            raise Exception(f'找不到产品: {product_name or product_value}（请检查产品信息表是否存在该产品，或选择产品字段是否已关联到产品信息表）')
 
         model_info = get_model_info(token, fields)
 

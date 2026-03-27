@@ -44,11 +44,12 @@ TABLE_VIDEO        = _TABLES['video']             # 视频制作
 # 各环节在「模型与API配置」表中的 record_id
 CONFIG_RECORDS = _CFG['config_records']
 
-# 产品名称 → record_id 映射
+# 产品名称 → record_id 映射（旧版兼容；新逻辑优先动态查产品表）
 PRODUCT_MAP = _CFG.get('products', {})
 
 # FastMoss
 FASTMOSS_TOKEN = _CFG.get('fastmoss', {}).get('token', '')
+DEFAULT_FASTMOSS_BASE = 'https://openapi.fastmoss.com'
 
 # 通知
 NOTIFICATION_USER_ID = _CFG.get('notification', {}).get('feishu_user_id', '')
@@ -113,6 +114,56 @@ def extract_text(val):
         return ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in val)
     return str(val) if val else ''
 
+
+def extract_linked_record_ids(val):
+    record_ids = []
+    if isinstance(val, list):
+        for item in val:
+            if isinstance(item, dict) and item.get('record_ids'):
+                record_ids.extend(item.get('record_ids') or [])
+    return [rid for rid in record_ids if rid]
+
+
+def get_product_record_id(token, product_value):
+    linked_ids = extract_linked_record_ids(product_value)
+    if linked_ids:
+        return linked_ids[0]
+
+    product_name = extract_text(product_value).strip()
+    if not product_name:
+        return None
+
+    mapped = PRODUCT_MAP.get(product_name)
+    if mapped:
+        return mapped
+
+    records = safe_list_records(token, TABLE_PRODUCT)
+    matched = []
+    for rec in records:
+        fields = rec.get('fields', {})
+        candidates = [
+            extract_text(fields.get('产品名称', '')).strip(),
+            extract_text(fields.get('产品名称-th', '')).strip(),
+            extract_text(fields.get('产品名', '')).strip(),
+        ]
+        if product_name in [c for c in candidates if c]:
+            matched.append(rec)
+
+    if len(matched) == 1:
+        return matched[0]['record_id']
+    if len(matched) > 1:
+        raise Exception(f'产品名称重名，无法唯一匹配: {product_name}')
+    return None
+
+
+def get_product_record(token, product_value):
+    record_id = get_product_record_id(token, product_value)
+    if not record_id:
+        return None, None
+    fields = safe_get_record(token, TABLE_PRODUCT, record_id)
+    return record_id, fields
+
+
 def get_model_config(token, record_id):
     """从模型配置表读取指定环节的配置"""
     fields = get_record(token, TABLE_CONFIG, record_id)
@@ -126,6 +177,21 @@ def get_model_config(token, record_id):
 def get_gemini_client(api_key, api_base):
     from google import genai
     return genai.Client(api_key=api_key, http_options={'base_url': api_base})
+
+
+def get_fetch_api_config(token):
+    """FastMoss 配置唯一从飞书配置表读取；本地 token 仅作为兜底兼容。"""
+    config = get_model_config(token, CONFIG_RECORDS['fetch'])
+    api_base = (config.get('api_base') or DEFAULT_FASTMOSS_BASE).rstrip('/')
+    api_key = (config.get('api_key') or '').strip()
+    if not api_key:
+        api_key = (FASTMOSS_TOKEN or '').strip()
+    if not api_key:
+        raise Exception('抓取配置缺少 FastMoss API Key（飞书配置表未配置，且本地兜底也为空）')
+    return {
+        'api_base': api_base,
+        'api_key': api_key,
+    }
 
 # ============================================================
 # 稳定性增强：重试 / 安全请求 / 安全写回
