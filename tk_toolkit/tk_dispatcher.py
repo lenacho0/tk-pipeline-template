@@ -70,6 +70,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_GEN,
         'status_field': '分镜图状态',
         'trigger_value': '待执行',
+        'trigger_values': ['待执行', '待生成'],
         'running_value': '生成中',
         'script': 'tk_storyboard.py',
         'args': [],
@@ -323,7 +324,8 @@ def try_claim_task(token, watch, record_id):
     try:
         latest = safe_get_record(token, watch['table'], record_id)
         latest_status = extract_text(latest.get(watch['status_field'], ''))
-        if latest_status != watch['trigger_value']:
+        valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
+        if latest_status not in valid_trigger_values:
             return False
         safe_update_record(token, watch['table'], record_id, {
             watch['status_field']: watch['running_value']

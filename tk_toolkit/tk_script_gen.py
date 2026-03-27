@@ -298,10 +298,15 @@ def main():
         if not result.strip():
             raise Exception('Gemini 返回空脚本')
 
-        safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
+        current_fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
+        storyboard_status = extract_text(current_fields.get('分镜图状态', '')).strip()
+        update_fields = {
             '生成的脚本': result[:10000],
             '生成状态': '成功',
-        })
+        }
+        if storyboard_status not in ('生成中', '待执行'):
+            update_fields['分镜图状态'] = '待执行'
+        safe_update_record(token, TABLE_SCRIPT_GEN, record_id, update_fields)
 
         log_event(
             'INFO', 'script generation task success',
