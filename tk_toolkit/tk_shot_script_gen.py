@@ -283,16 +283,17 @@ def main():
         print(f'✅ 逐镜头脚本生成完成并已重建shot记录 ({len(shots)}个镜头)')
 
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'shot script task failed', record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='generate_shot_script')
+        err = payload['message']
+        log_event('ERROR', 'shot script task failed', record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         try:
             safe_update_record(token, TABLE_SHOT_SCRIPT_GEN, record_id, {
                 '生成状态': '失败',
-                '逐镜头脚本': f'错误: {err}'
+                '逐镜头脚本': f"错误[{payload['error_code']}]: {err}"
             })
         except Exception:
             pass
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
 
 
