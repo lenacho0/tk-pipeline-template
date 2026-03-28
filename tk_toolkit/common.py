@@ -225,6 +225,10 @@ def build_error_payload(error, stage='unknown'):
         error_code = 'UPSTREAM_NETWORK'
         retryable = True
         failure_status = 'failed_retryable'
+    elif 'server disconnected without sending a response' in lower or 'remoteprotocolerror' in lower or 'connection reset by peer' in lower or 'remote end closed connection' in lower:
+        error_code = 'UPSTREAM_NETWORK'
+        retryable = True
+        failure_status = 'failed_retryable'
     elif 'ssl' in lower or 'connection' in lower or 'httpsconnectionpool' in lower or 'max retries exceeded' in lower:
         error_code = 'UPSTREAM_NETWORK'
         retryable = True
