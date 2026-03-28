@@ -8,6 +8,7 @@ TK 任务调度器 —— 轮询飞书多维表格，发现「待执行」任务
 """
 import json, os, sys, time, subprocess, logging
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
@@ -18,6 +19,16 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 log = logging.getLogger('dispatcher')
+log.handlers.clear()
+log.setLevel(logging.INFO)
+log.propagate = False
+_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S')
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(_formatter)
+log.addHandler(_stream_handler)
+_file_handler = RotatingFileHandler(RUNTIME_LOG_FILE, maxBytes=2_000_000, backupCount=5, encoding='utf-8')
+_file_handler.setFormatter(_formatter)
+log.addHandler(_file_handler)
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 POLL_INTERVAL = int(DISPATCHER_CFG.get('poll_interval', 30) or 30)
@@ -35,7 +46,7 @@ TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, '.table_scan_state.json')
 RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, '.record_state_cache.json')
 SCAN_CFG = DISPATCHER_CFG.get('scan', {})
 TABLE_MIN_INTERVAL_SECONDS = int(SCAN_CFG.get('table_min_interval_seconds', 20) or 20)
-RECORD_STATE_CACHE_TTL_SECONDS = int(SCAN_CFG.get('record_state_cache_ttl_seconds', 300) or 300)
+RUNTIME_LOG_FILE = os.path.join(SCRIPTS_DIR, 'dispatcher-runtime.log')
 
 WATCH_LIST = [
     {
