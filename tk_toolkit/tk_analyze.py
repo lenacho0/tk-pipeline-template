@@ -4,7 +4,7 @@
 用法: python3 tk_analyze.py <record_id>
 从飞书配置表读取提示词和模型 → 获取视频文件（本地 / 飞书附件 / 视频链接补拉）→ 上传视频到 Gemini → 分析 → 输出结构化摘要 + 详细分析 → 写回脚本结构 → 更新状态
 """
-import json, os, sys, time, requests, re
+import json, os, sys, time, requests, re, shutil, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 
@@ -79,20 +79,58 @@ def download_feishu_media(token, file_token, save_path):
     return save_path
 
 
+def get_yt_dlp_executable():
+    candidates = [
+        shutil.which('yt-dlp'),
+        os.path.expanduser('~/Library/Python/3.9/bin/yt-dlp'),
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def download_with_yt_dlp(source_url, save_path):
+    yt_dlp_bin = get_yt_dlp_executable()
+    if not yt_dlp_bin:
+        raise Exception('yt-dlp 不可用')
+    outtmpl = save_path
+    cmd = [
+        yt_dlp_bin,
+        '--no-playlist',
+        '--format', 'mp4/best',
+        '--output', outtmpl,
+        source_url,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if result.returncode != 0:
+        err = ((result.stderr or '') + '\n' + (result.stdout or '')).strip()
+        err_lower = err.lower()
+        if 'your ip address is blocked' in err_lower:
+            raise Exception('yt-dlp 下载失败: 源站限制，当前 IP 被 TikTok 拦截')
+        raise Exception(f'yt-dlp 下载失败: {err[:300]}')
+    if not os.path.exists(save_path) or os.path.getsize(save_path) < 1000:
+        raise Exception('yt-dlp 下载后文件缺失或过小')
+    return save_path
+
+
 def download_from_video_link(video_url, save_path):
-    candidate_urls = [video_url]
+    candidate_urls = []
     m = re.search(r'(\d{10,})', video_url or '')
     if m:
         video_id = m.group(1)
         for extra in [
-            f'https://www.tiktok.com/@user/video/{video_id}',
+            video_url,
             f'https://www.tiktok.com/video/{video_id}',
+            f'https://www.tiktok.com/@user/video/{video_id}',
             f'https://m.tiktok.com/v/{video_id}.html',
         ]:
-            if extra not in candidate_urls:
+            if extra and extra not in candidate_urls:
                 candidate_urls.append(extra)
+    elif video_url:
+        candidate_urls.append(video_url)
 
-    def _download(source_url):
+    def _download_via_tikwm(source_url):
         resp = requests.get('https://www.tikwm.com/api/', params={'url': source_url}, timeout=30)
         data = resp.json()
         play_url = data.get('data', {}).get('play') or data.get('data', {}).get('hdplay')
@@ -111,15 +149,25 @@ def download_from_video_link(video_url, save_path):
     last_error = None
     for source_url in candidate_urls:
         try:
-            return with_retry(lambda url=source_url: _download(url), max_attempts=2, label=f'download analysis video from link via {source_url}')
+            return with_retry(lambda url=source_url: _download_via_tikwm(url), max_attempts=2, label=f'download analysis video from link via {source_url}')
         except Exception as e:
             last_error = e
-            log_event('WARN', 'analysis download fallback failed', source_url=source_url, error=str(e)[:200])
+            log_event('WARN', 'analysis download fallback failed', source_url=source_url, downloader='tikwm', error=str(e)[:200])
             if os.path.exists(save_path):
                 try:
                     os.remove(save_path)
                 except Exception:
                     pass
+            try:
+                return with_retry(lambda url=source_url: download_with_yt_dlp(url, save_path), max_attempts=1, label=f'download analysis video from yt-dlp via {source_url}')
+            except Exception as ytdlp_err:
+                last_error = ytdlp_err
+                log_event('WARN', 'analysis download fallback failed', source_url=source_url, downloader='yt-dlp', error=str(ytdlp_err)[:200])
+                if os.path.exists(save_path):
+                    try:
+                        os.remove(save_path)
+                    except Exception:
+                        pass
 
     raise last_error or Exception('视频链接补拉失败')
 
@@ -140,6 +188,7 @@ def ensure_video_file(token, analysis_fields, video_id):
     if os.path.exists(video_path) and os.path.getsize(video_path) >= 1000:
         return video_path, 'local'
 
+    link_errors = []
     data_rec = find_data_record_by_video_id(token, video_id)
     if data_rec:
         data_fields = data_rec.get('fields', {})
@@ -159,17 +208,24 @@ def ensure_video_file(token, analysis_fields, video_id):
         if isinstance(video_link, dict):
             url = video_link.get('link', '')
             if url:
-                path = download_from_video_link(url, video_path)
-                return path, 'video_link'
+                try:
+                    path = download_from_video_link(url, video_path)
+                    return path, 'video_link'
+                except Exception as e:
+                    link_errors.append(f'data.video_link: {str(e)}')
 
     direct_link = analysis_fields.get('视频链接', {})
     if isinstance(direct_link, dict):
         url = direct_link.get('link', '')
         if url:
-            path = download_from_video_link(url, video_path)
-            return path, 'analysis_link'
+            try:
+                path = download_from_video_link(url, video_path)
+                return path, 'analysis_link'
+            except Exception as e:
+                link_errors.append(f'analysis.video_link: {str(e)}')
 
-    raise Exception(f'视频文件不存在，且无法从飞书附件或视频链接补拉: {video_id}')
+    detail = (' | '.join(link_errors))[:400] if link_errors else '无可用附件，且无有效视频链接'
+    raise Exception(f'视频补拉失败: {video_id} | {detail}')
 
 
 def upload_and_wait_active(client, video_path, max_wait=180):
@@ -326,16 +382,17 @@ def main():
         print(f'✅ 分析完成 ({len(saved_result)}字)')
 
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'analysis task failed', record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='analyze_video')
+        err = payload['message']
+        log_event('ERROR', 'analysis task failed', record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         try:
             safe_update_record(token, TABLE_ANALYSIS, record_id, {
                 '分析状态': '失败',
-                '脚本结构': f'错误: {err}'
+                '脚本结构': f"错误[{payload['error_code']}]: {err}"
             })
         except Exception as write_err:
             log_event('ERROR', 'analysis failure writeback failed', record_id=record_id, error=str(write_err)[:500])
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
     finally:
         if uploaded is not None:
