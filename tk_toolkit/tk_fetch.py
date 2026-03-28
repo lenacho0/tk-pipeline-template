@@ -9,7 +9,6 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 
-DEFAULT_FASTMOSS_BASE = 'https://openapi.fastmoss.com'
 DEDUP_FILE = os.path.join(WORKSPACE, 'video_dedup.json')
 VIDEO_DIR = os.path.join(WORKSPACE, 'tiktok_videos')
 
@@ -28,18 +27,6 @@ def save_dedup(ids):
 
 def time_range_to_days(text):
     return {'近1天': 1, '近3天': 3, '近7天': 7, '近15天': 15, '近30天': 30}.get(text, 7)
-
-
-def get_fetch_api_config(token):
-    config = get_model_config(token, CONFIG_RECORDS['fetch'])
-    api_base = (config.get('api_base') or DEFAULT_FASTMOSS_BASE).rstrip('/')
-    api_key = config.get('api_key') or FASTMOSS_TOKEN
-    if not api_key:
-        raise Exception('抓取配置缺少 FastMoss API Key')
-    return {
-        'api_base': api_base,
-        'api_key': api_key,
-    }
 
 
 def fastmoss_headers(api_key):
@@ -428,17 +415,18 @@ def main():
         print(f'✅ {summary}')
 
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'fetch task failed', record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='fetch_trending')
+        err = payload['message']
+        log_event('ERROR', 'fetch task failed', record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         try:
             safe_update_record(token, TABLE_FETCH_CONFIG, record_id, {
                 '执行状态': '失败',
-                '抓取结果': err,
+                '抓取结果': f"错误[{payload['error_code']}]: {err}",
                 '执行时间': datetime.now().strftime('%Y-%m-%d %H:%M')
             })
         except Exception as write_err:
             log_event('ERROR', 'fetch failure writeback failed', record_id=record_id, error=str(write_err)[:500])
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
 
 
