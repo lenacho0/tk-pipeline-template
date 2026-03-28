@@ -80,6 +80,7 @@ def check_dispatcher():
         import subprocess, os, json, time
         script_dir = os.path.dirname(os.path.abspath(__file__))
         heartbeat_file = os.path.join(script_dir, '.dispatcher_heartbeat.json')
+        dispatcher_log = os.path.join(script_dir, 'dispatcher.log')
         result = subprocess.run(['pgrep', '-f', 'tk_dispatcher.py'], capture_output=True, text=True)
         pids = [p for p in result.stdout.strip().split('\n') if p.strip()]
         heartbeat = None
@@ -92,16 +93,21 @@ def check_dispatcher():
 
         log_summary = None
         try:
-            predicate = '(process == "python3.12") OR (eventMessage CONTAINS[c] "tk_dispatcher") OR (senderImagePath CONTAINS[c] "tk_toolkit")'
-            log_result = subprocess.run(
-                ['log', 'show', '--last', '15m', '--predicate', predicate, '--style', 'compact'],
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-            log_lines = [line.strip() for line in log_result.stdout.splitlines() if line.strip()]
-            if log_lines:
-                log_summary = log_lines[-1][:240]
+            if os.path.exists(dispatcher_log):
+                with open(dispatcher_log, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = [line.strip() for line in f.readlines()[-200:] if line.strip()]
+                priority = []
+                fallback = []
+                for line in reversed(lines):
+                    if any(k in line for k in ['Traceback', '❌', 'ERROR', 'Exception', '失败', '崩溃']):
+                        priority.append(line)
+                    elif any(k in line for k in ['✅', '🚀', '完成', '启动任务', 'started', 'success']):
+                        fallback.append(line)
+                    elif 'heartbeat' not in line.lower():
+                        fallback.append(line)
+                picked = priority[0] if priority else (fallback[0] if fallback else None)
+                if picked:
+                    log_summary = picked[:240]
         except Exception:
             log_summary = None
 
@@ -110,16 +116,16 @@ def check_dispatcher():
             if heartbeat and heartbeat.get('time'):
                 parts.append(f", heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')}")
             if log_summary:
-                parts.append(f", 最近日志={log_summary}")
+                parts.append(f", 日志摘要={log_summary}")
             parts.append(')')
             return True, ''.join(parts)
         if heartbeat:
             base = f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')} note={heartbeat.get('note','')}"
             if log_summary:
-                base += f"，最近日志={log_summary}"
+                base += f"，日志摘要={log_summary}"
             return False, base
         if log_summary:
-            return False, f"调度器未运行，最近日志={log_summary}"
+            return False, f"调度器未运行，日志摘要={log_summary}"
         return False, "调度器未运行！"
     except Exception as e:
         return False, f"检测失败: {e}"
