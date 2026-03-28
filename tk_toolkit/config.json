@@ -43,6 +43,10 @@
       "threshold": 3,
       "cooldown_seconds": 600
     },
+    "scan": {
+      "table_min_interval_seconds": 20,
+      "record_state_cache_ttl_seconds": 300
+    },
     "stages": {
       "tk_fetch.py": {
         "max_concurrency": 2,

@@ -28,9 +28,12 @@ RETRY_STATE_FILE = os.path.join(SCRIPTS_DIR, '.retry_state.json')
 METRICS_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_metrics.json')
 HEARTBEAT_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_heartbeat.json')
 DEAD_LETTER_FILE = os.path.join(SCRIPTS_DIR, '.dead_letter_tasks.json')
-CIRCUIT_BREAKER_FILE = os.path.join(SCRIPTS_DIR, '.circuit_breakers.json')
-STAGE_CFG = DISPATCHER_CFG.get('stages', {})
-CIRCUIT_CFG = DISPATCHER_CFG.get('circuit_breaker', {})
+
+TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, '.table_scan_state.json')
+RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, '.record_state_cache.json')
+SCAN_CFG = DISPATCHER_CFG.get('scan', {})
+TABLE_MIN_INTERVAL_SECONDS = int(SCAN_CFG.get('table_min_interval_seconds', 20) or 20)
+RECORD_STATE_CACHE_TTL_SECONDS = int(SCAN_CFG.get('record_state_cache_ttl_seconds', 300) or 300)
 
 WATCH_LIST = [
     {
@@ -215,6 +218,22 @@ def save_json_file(path, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'保存状态文件失败 {path}: {e}')
+
+
+def load_table_scan_state():
+    return load_json_file(TABLE_SCAN_STATE_FILE)
+
+
+def save_table_scan_state(data):
+    save_json_file(TABLE_SCAN_STATE_FILE, data)
+
+
+def load_record_state_cache():
+    return load_json_file(RECORD_STATE_CACHE_FILE)
+
+
+def save_record_state_cache(data):
+    save_json_file(RECORD_STATE_CACHE_FILE, data)
 
 
 def load_running_tasks():
@@ -413,36 +432,94 @@ def cleanup_finished_processes(token):
         save_running_tasks(running_state)
 
 
+def should_skip_claim_by_cache(watch, record_id, observed_status):
+    cache = load_record_state_cache()
+    key = f"{watch['table']}::{record_id}::{watch['status_field']}"
+    item = cache.get(key)
+    if not item:
+        return False
+    now = int(time.time())
+    seen_at = int(item.get('seen_at', 0) or 0)
+    if now - seen_at > RECORD_STATE_CACHE_TTL_SECONDS:
+        return False
+    if item.get('status') == observed_status == watch.get('running_value'):
+        return True
+    return False
+
+
+def update_record_state_cache(watch, record_id, status):
+    cache = load_record_state_cache()
+    key = f"{watch['table']}::{record_id}::{watch['status_field']}"
+    cache[key] = {
+        'status': status,
+        'seen_at': int(time.time()),
+    }
+    # 简单清理过期项
+    now = int(time.time())
+    cleaned = {
+        k: v for k, v in cache.items()
+        if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+    }
+    save_record_state_cache(cleaned)
+
+
 def try_claim_task(token, watch, record_id):
     try:
         latest = safe_get_record(token, watch['table'], record_id)
         latest_status = extract_text(latest.get(watch['status_field'], ''))
         valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
         if latest_status not in valid_trigger_values:
+            update_record_state_cache(watch, record_id, latest_status)
             return False
         safe_update_record(token, watch['table'], record_id, {
             watch['status_field']: watch['running_value']
         })
+        update_record_state_cache(watch, record_id, watch['running_value'])
         return True
     except Exception as e:
         log.warning(f"[{watch['name']}] claim任务失败 {record_id}: {e}")
         return False
 
 
+def get_table_records_cached(token, table_id, force=False):
+    state = load_table_scan_state()
+    now = int(time.time())
+    entry = state.get(table_id, {})
+    last_scan = int(entry.get('last_scan_at', 0) or 0)
+    cache_file = os.path.join(SCRIPTS_DIR, f'.table_cache_{table_id}.json')
+
+    if not force and os.path.exists(cache_file) and now - last_scan < TABLE_MIN_INTERVAL_SECONDS:
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    records = safe_list_records(token, table_id)
+    try:
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(records, f, ensure_ascii=False)
+    except Exception:
+        pass
+    state[table_id] = {'last_scan_at': now}
+    save_table_scan_state(state)
+    return records
+
+
 def check_and_run(token, watch):
     watch = apply_stage_policy(watch)
     if is_circuit_open(watch):
         return
-    try:
-        records = safe_list_records(token, watch['table'])
-    except Exception as e:
-        log.error(f"[{watch['name']}] 读取表失败: {e}")
-        append_last_error(watch['name'], 'TABLE', f'读取表失败: {e}')
-        return
-
     current_running = count_running_by_script(watch['script'])
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
     if available_slots <= 0:
+        return
+
+    try:
+        records = get_table_records_cached(token, watch['table'])
+    except Exception as e:
+        log.error(f"[{watch['name']}] 读取表失败: {e}")
+        append_last_error(watch['name'], 'TABLE', f'读取表失败: {e}')
         return
 
     launched = 0
@@ -457,6 +534,10 @@ def check_and_run(token, watch):
         status = extract_text(fields.get(watch['status_field'], ''))
         valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
         if status not in valid_trigger_values:
+            update_record_state_cache(watch, record_id, status)
+            continue
+
+        if should_skip_claim_by_cache(watch, record_id, status):
             continue
 
         task_key = make_task_key(watch, record_id)
