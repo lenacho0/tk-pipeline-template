@@ -20,13 +20,17 @@ logging.basicConfig(
 log = logging.getLogger('dispatcher')
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-POLL_INTERVAL = 30
-HEALTHCHECK_HOUR = 8
+POLL_INTERVAL = int(DISPATCHER_CFG.get('poll_interval', 30) or 30)
+HEALTHCHECK_HOUR = int(DISPATCHER_CFG.get('healthcheck_hour', 8) or 8)
 HEALTHCHECK_DONE_FILE = os.path.join(SCRIPTS_DIR, '.healthcheck_today')
 RUNNING_TASKS_FILE = os.path.join(SCRIPTS_DIR, '.running_tasks.json')
 RETRY_STATE_FILE = os.path.join(SCRIPTS_DIR, '.retry_state.json')
 METRICS_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_metrics.json')
 HEARTBEAT_FILE = os.path.join(SCRIPTS_DIR, '.dispatcher_heartbeat.json')
+DEAD_LETTER_FILE = os.path.join(SCRIPTS_DIR, '.dead_letter_tasks.json')
+CIRCUIT_BREAKER_FILE = os.path.join(SCRIPTS_DIR, '.circuit_breakers.json')
+STAGE_CFG = DISPATCHER_CFG.get('stages', {})
+CIRCUIT_CFG = DISPATCHER_CFG.get('circuit_breaker', {})
 
 WATCH_LIST = [
     {
@@ -119,6 +123,82 @@ WATCH_LIST = [
 running_processes = {}
 
 
+def load_dead_letters():
+    return load_json_file(DEAD_LETTER_FILE)
+
+
+def save_dead_letters(data):
+    save_json_file(DEAD_LETTER_FILE, data)
+
+
+def load_circuit_breakers():
+    return load_json_file(CIRCUIT_BREAKER_FILE)
+
+
+def save_circuit_breakers(data):
+    save_json_file(CIRCUIT_BREAKER_FILE, data)
+
+
+def apply_stage_policy(watch):
+    cfg = STAGE_CFG.get(watch['script'], {})
+    merged = dict(watch)
+    for key in ('max_concurrency', 'max_retries', 'timeout'):
+        if key in cfg:
+            merged[key] = cfg[key]
+    return merged
+
+
+
+
+def register_dead_letter(watch, record_id, reason, payload=None):
+    data = load_dead_letters()
+    data[make_task_key(watch, record_id)] = {
+        'watch': watch['name'],
+        'record_id': record_id,
+        'script': watch['script'],
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'reason': str(reason)[:500],
+        'payload': payload or {},
+    }
+    save_dead_letters(data)
+
+
+def circuit_breaker_key(watch):
+    return watch['script']
+
+
+def record_circuit_failure(watch):
+    data = load_circuit_breakers()
+    key = circuit_breaker_key(watch)
+    now = int(time.time())
+    entry = data.get(key, {'failures': [], 'open_until': 0})
+    window_seconds = int(CIRCUIT_CFG.get('window_seconds', 900) or 900)
+    threshold = int(CIRCUIT_CFG.get('threshold', 3) or 3)
+    cooldown_seconds = int(CIRCUIT_CFG.get('cooldown_seconds', 600) or 600)
+    failures = [ts for ts in entry.get('failures', []) if now - ts <= window_seconds]
+    failures.append(now)
+    entry['failures'] = failures
+    if len(failures) >= threshold:
+        entry['open_until'] = now + cooldown_seconds
+        log.warning(f"[{watch['name']}] 熔断开启 {cooldown_seconds}s, failures={len(failures)}")
+    data[key] = entry
+    save_circuit_breakers(data)
+
+
+def clear_circuit_failure(watch):
+    data = load_circuit_breakers()
+    key = circuit_breaker_key(watch)
+    if key in data:
+        data[key]['failures'] = []
+        data[key]['open_until'] = 0
+        save_circuit_breakers(data)
+
+
+def is_circuit_open(watch):
+    data = load_circuit_breakers()
+    entry = data.get(circuit_breaker_key(watch), {})
+    open_until = int(entry.get('open_until', 0) or 0)
+    return open_until > int(time.time())
 def load_json_file(path):
     if os.path.exists(path):
         try:
@@ -236,31 +316,39 @@ def clear_retry_count(task_key):
         save_retry_state(state)
 
 
-def maybe_retry_task(token, watch, record_id, task_key, reason):
+def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=None):
+    error_payload = error_payload or build_error_payload(reason, stage=watch.get('script', 'unknown'))
+    if not error_payload.get('retryable'):
+        log.error(f"[{watch['name']}] 错误不可重试，直接终止: {record_id} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
+        return False
+
     retry_count = get_retry_count(task_key)
     max_retries = watch.get('max_retries', 0)
     if retry_count < max_retries:
         new_retry = retry_count + 1
         set_retry_count(task_key, new_retry, watch=watch, record_id=record_id)
         try:
+            fallback_trigger = (watch.get('trigger_values') or [watch['trigger_value']])[0]
             safe_update_record(token, watch['table'], record_id, {
-                watch['status_field']: watch['trigger_value']
+                watch['status_field']: fallback_trigger
             })
             bump_metric('retried', watch['name'])
-            log.warning(f"[{watch['name']}] 任务失败，已回退待重试: {record_id} ({new_retry}/{max_retries}) reason={reason}")
+            log.warning(f"[{watch['name']}] 任务失败，已回退待重试: {record_id} ({new_retry}/{max_retries}) error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
             return True
         except Exception as e:
             log.error(f"[{watch['name']}] 回退重试状态失败: {record_id} error={e}")
             return False
     else:
-        log.error(f"[{watch['name']}] 任务失败且超过重试上限: {record_id} retries={retry_count} reason={reason}")
+        log.error(f"[{watch['name']}] 任务失败且超过重试上限: {record_id} retries={retry_count} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
         return False
 
 
-def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout=False):
-    append_last_error(watch['name'], record_id, reason)
-    retried = maybe_retry_task(token, watch, record_id, task_key, reason)
+def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout=False, error_payload=None):
+    error_payload = error_payload or build_error_payload(reason, stage=watch.get('script', 'unknown'))
+    append_last_error(watch['name'], record_id, f"{error_payload.get('error_code')}: {error_payload.get('message')}")
+    retried = maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=error_payload)
     if retried:
+        record_circuit_failure(watch)
         return
     try:
         safe_update_record(token, watch['table'], record_id, {
@@ -268,6 +356,8 @@ def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout
         })
     except Exception as e:
         log.error(f"[{watch['name']}] 标记失败写回失败: {record_id} error={e}")
+    register_dead_letter(watch, record_id, reason, payload=error_payload)
+    record_circuit_failure(watch)
     bump_metric('failed', watch['name'])
     if timeout:
         bump_metric('timeouts', watch['name'])
@@ -302,11 +392,14 @@ def cleanup_finished_processes(token):
             if process.returncode == 0:
                 log.info(f"[{watch['name']}] ✅ 完成: {record_id}")
                 clear_retry_count(task_key)
+                clear_circuit_failure(watch)
                 bump_metric('success', watch['name'])
             else:
-                err_text = str(stderr)[-300:] if stderr else 'subprocess_nonzero_exit'
-                log.error(f"[{watch['name']}] ❌ 失败: {record_id} stderr={err_text}")
-                mark_task_failed(token, watch, record_id, task_key, reason=err_text)
+                combined = '\n'.join([x for x in [stdout or '', stderr or ''] if x]).strip()
+                err_text = combined[-1000:] if combined else 'subprocess_nonzero_exit'
+                error_payload = build_error_payload(err_text, stage=watch['script'])
+                log.error(f"[{watch['name']}] ❌ 失败: {record_id} error_code={error_payload['error_code']} retryable={error_payload['retryable']} stderr={error_payload['message']}")
+                mark_task_failed(token, watch, record_id, task_key, reason=err_text, error_payload=error_payload)
 
             if stdout and stdout.strip():
                 log.info(f"[{watch['name']}] stdout: {stdout.strip()[-300:]}")
@@ -337,6 +430,9 @@ def try_claim_task(token, watch, record_id):
 
 
 def check_and_run(token, watch):
+    watch = apply_stage_policy(watch)
+    if is_circuit_open(watch):
+        return
     try:
         records = safe_list_records(token, watch['table'])
     except Exception as e:
@@ -359,7 +455,8 @@ def check_and_run(token, watch):
         record_id = rec['record_id']
         fields = rec.get('fields', {})
         status = extract_text(fields.get(watch['status_field'], ''))
-        if status != watch['trigger_value']:
+        valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
+        if status not in valid_trigger_values:
             continue
 
         task_key = make_task_key(watch, record_id)
@@ -401,8 +498,9 @@ def check_and_run(token, watch):
             log.error(f"[{watch['name']}] 启动失败: {e}")
             append_last_error(watch['name'], record_id, f'启动失败: {e}')
             try:
+                fallback_trigger = (watch.get('trigger_values') or [watch['trigger_value']])[0]
                 safe_update_record(token, watch['table'], record_id, {
-                    watch['status_field']: watch['trigger_value']
+                    watch['status_field']: fallback_trigger
                 })
             except Exception:
                 pass

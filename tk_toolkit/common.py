@@ -53,6 +53,7 @@ DEFAULT_FASTMOSS_BASE = 'https://openapi.fastmoss.com'
 
 # 通知
 NOTIFICATION_USER_ID = _CFG.get('notification', {}).get('feishu_user_id', '')
+DISPATCHER_CFG = _CFG.get('dispatcher', {})
 
 # 工作目录
 WORKSPACE = os.path.abspath(os.path.join(_SCRIPT_DIR, _CFG.get('workspace', './workspace')))
@@ -210,6 +211,64 @@ def log_event(level, message, **kwargs):
     if payload:
         line += f" | {payload}"
     print(line, flush=True)
+
+
+def build_error_payload(error, stage='unknown'):
+    msg = extract_text(str(error))[:500]
+    lower = msg.lower()
+
+    error_code = 'RUNTIME_BUG'
+    retryable = False
+    failure_status = 'failed_terminal'
+
+    if 'read timed out' in lower or 'timeout' in lower or 'timed out' in lower:
+        error_code = 'UPSTREAM_NETWORK'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif 'ssl' in lower or 'connection' in lower or 'httpsconnectionpool' in lower or 'max retries exceeded' in lower:
+        error_code = 'UPSTREAM_NETWORK'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif '429' in lower or 'rate limit' in lower or 'too many requests' in lower:
+        error_code = 'UPSTREAM_RATE_LIMIT'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif '空文本' in msg or '未返回图片内容' in msg or '返回图片过小' in msg or 'empty output' in lower:
+        error_code = 'MODEL_EMPTY_OUTPUT'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif 'json 解析失败' in msg or '未返回有效 json' in msg or 'schema' in lower:
+        error_code = 'MODEL_SCHEMA_INVALID'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif 'prompt' in lower:
+        error_code = 'PROMPT_BUILD_FAILED'
+        retryable = False
+        failure_status = 'failed_terminal'
+    elif '产品图片缺失' in msg or '缺少' in msg or '为空' in msg or '无脚本内容' in msg:
+        error_code = 'INPUT_MISSING'
+        retryable = False
+        failure_status = 'failed_terminal'
+    elif 'api key' in lower or '配置' in msg:
+        error_code = 'CONFIG_INVALID'
+        retryable = False
+        failure_status = 'failed_terminal'
+    elif 'upload' in lower and 'feishu' in lower:
+        error_code = 'UPLOAD_FAILED'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif '写回' in msg or 'fieldnamenotfound' in lower:
+        error_code = 'WRITEBACK_FAILED'
+        retryable = True
+        failure_status = 'failed_retryable'
+
+    return {
+        'stage': stage,
+        'status': failure_status,
+        'error_code': error_code,
+        'retryable': retryable,
+        'message': msg,
+    }
 
 
 def sleep_backoff(attempt, base=1.5, cap=20):

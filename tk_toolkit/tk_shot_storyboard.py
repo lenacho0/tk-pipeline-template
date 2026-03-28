@@ -259,20 +259,20 @@ def _render_single_image(client, model_name, parts, prompt, out_path):
 
 
 def classify_render_error(err):
-    msg = extract_text(str(err)).lower()
-    if '缺少 api key' in str(err) or 'api key' in msg or 'config' in msg:
-        return '配置错误'
-    if '产品图片缺失' in str(err) or '缺少源逐镜头脚本记录id' in str(err) or '为空' in str(err):
-        return '素材缺失'
-    if '未返回图片内容' in str(err) or '返回图片过小' in str(err):
-        return '模型返回空'
-    if 'upload' in msg and 'feishu' in msg:
-        return '上传飞书失败'
-    if '写回' in str(err) or 'fieldnamenotfound' in msg:
-        return '写回失败'
-    if 'prompt' in msg:
-        return 'prompt构造错误'
-    return '运行时bug'
+    payload = build_error_payload(err, stage='generate_shot_image')
+    mapping = {
+        'CONFIG_INVALID': '配置错误',
+        'INPUT_MISSING': '素材缺失',
+        'MODEL_EMPTY_OUTPUT': '模型返回空',
+        'UPLOAD_FAILED': '上传飞书失败',
+        'WRITEBACK_FAILED': '写回失败',
+        'PROMPT_BUILD_FAILED': 'prompt构造错误',
+        'RUNTIME_BUG': '运行时bug',
+        'UPSTREAM_NETWORK': '上游网络异常',
+        'UPSTREAM_RATE_LIMIT': '上游限流',
+        'MODEL_SCHEMA_INVALID': '模型结构异常',
+    }
+    return mapping.get(payload['error_code'], '运行时bug')
 
 
 def render_shot(token, record_id):
@@ -378,8 +378,9 @@ def main():
         else:
             raise Exception(f'未知 action: {action}')
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='generate_shot_image' if action == 'render' else action)
+        err = payload['message']
+        log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         if action == 'render':
             fail_fields = {
                 '生成状态': '失败',
@@ -395,7 +396,7 @@ def main():
                 )
             except Exception:
                 pass
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
 
 

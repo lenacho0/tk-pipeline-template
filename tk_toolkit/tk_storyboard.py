@@ -79,23 +79,39 @@ def upload_image_to_feishu(token, file_path, file_name):
 
 
 def generate_shots_json(client, parts, prompt_template, style, script):
-    full_prompt = prompt_template.replace('{storyboard_style}', style) + "\n\n## 脚本\n" + script
-    parts_step1 = parts + [types.Part.from_text(text=full_prompt)]
-    resp = with_retry(
-        lambda: client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[types.Content(role='user', parts=parts_step1)],
-            config=types.GenerateContentConfig(temperature=0.7)
-        ),
-        max_attempts=3,
-        label='storyboard shots generate_content'
-    )
-    raw = getattr(resp, 'text', '') or ''
-    shots_data = extract_json_block(raw)
-    shots = shots_data.get('shots', [])
-    if len(shots) < 9:
-        raise Exception(f'只生成了 {len(shots)} 个分镜，需至少9个')
-    return shots_data
+    prompt_variants = [
+        prompt_template.replace('{storyboard_style}', style) + "\n\n## 脚本\n" + script,
+        (
+            "你是短视频电商分镜规划器。请只输出严格 JSON，不要解释，不要 markdown。"
+            "必须返回 {\"shots\": [...]}，其中至少包含9个shots。"
+            "每个shot至少包含 prompt_text 字段，可附带 scene / product_focus / character_focus。"
+            f"\n\n风格：{style}\n\n脚本：\n{script}"
+        )
+    ]
+
+    last_error = None
+    for idx, prompt in enumerate(prompt_variants, start=1):
+        try:
+            parts_step1 = parts + [types.Part.from_text(text=prompt)]
+            resp = with_retry(
+                lambda: client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[types.Content(role='user', parts=parts_step1)],
+                    config=types.GenerateContentConfig(temperature=0.7 if idx == 1 else 0.2)
+                ),
+                max_attempts=2,
+                label=f'storyboard shots generate_content v{idx}'
+            )
+            raw = getattr(resp, 'text', '') or ''
+            shots_data = extract_json_block(raw)
+            shots = shots_data.get('shots', [])
+            if len(shots) < 9:
+                raise Exception(f'只生成了 {len(shots)} 个分镜，需至少9个')
+            return shots_data
+        except Exception as e:
+            last_error = e
+            log_event('WARN', 'storyboard shots fallback retry', variant=idx, error=str(e)[:300])
+    raise last_error
 
 
 def build_grid_prompt(shots):
@@ -249,16 +265,17 @@ def main():
         print(f'✅ 分镜图生成完成: {out_path}')
 
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'storyboard task failed', record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='generate_storyboard_grid')
+        err = payload['message']
+        log_event('ERROR', 'storyboard task failed', record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         try:
             safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
                 '分镜图状态': '失败',
-                '分镜图提示词': f'错误: {err}'
+                '分镜图提示词': f"错误[{payload['error_code']}]: {err}"
             })
         except Exception as write_err:
             log_event('ERROR', 'storyboard failure writeback failed', record_id=record_id, error=str(write_err)[:500])
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
 
 
