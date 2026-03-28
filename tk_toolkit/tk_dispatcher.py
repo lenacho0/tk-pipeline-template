@@ -35,6 +35,7 @@ TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, '.table_scan_state.json')
 RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, '.record_state_cache.json')
 SCAN_CFG = DISPATCHER_CFG.get('scan', {})
 TABLE_MIN_INTERVAL_SECONDS = int(SCAN_CFG.get('table_min_interval_seconds', 20) or 20)
+RECORD_STATE_CACHE_TTL_SECONDS = int(SCAN_CFG.get('record_state_cache_ttl_seconds', 300) or 300)
 RUNTIME_LOG_FILE = os.path.join(SCRIPTS_DIR, 'dispatcher-runtime.log')
 
 log = logging.getLogger('dispatcher')
