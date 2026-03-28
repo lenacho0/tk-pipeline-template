@@ -271,6 +271,7 @@ def main():
 
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '生成状态': '生成中',
+            'record_id': record_id,
         })
         try_update_optional_fields(token, TABLE_SCRIPT_GEN, record_id, {**{k: v for k, v in product_info.items()}})
 
@@ -303,6 +304,7 @@ def main():
         update_fields = {
             '生成的脚本': result[:10000],
             '生成状态': '成功',
+            'record_id': record_id,
         }
         if storyboard_status not in ('生成中', '待执行'):
             update_fields['分镜图状态'] = '待执行'
@@ -318,16 +320,17 @@ def main():
         print(f'✅ 脚本生成完成 ({len(result)}字)')
 
     except Exception as e:
-        err = str(e)[:500]
-        log_event('ERROR', 'script generation task failed', record_id=record_id, error=err)
+        payload = build_error_payload(e, stage='generate_product_script')
+        err = payload['message']
+        log_event('ERROR', 'script generation task failed', record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
         try:
             safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
                 '生成状态': '失败',
-                '生成的脚本': f'错误: {err}'
+                '生成的脚本': f"错误[{payload['error_code']}]: {err}"
             })
         except Exception as write_err:
             log_event('ERROR', 'script generation failure writeback failed', record_id=record_id, error=str(write_err)[:500])
-        print(f'❌ {e}')
+        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
         sys.exit(1)
 
 
