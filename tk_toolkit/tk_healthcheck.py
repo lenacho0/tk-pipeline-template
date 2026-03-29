@@ -78,30 +78,46 @@ def check_sora():
 def check_dispatcher():
     try:
         import subprocess, os, json, time
+        from datetime import datetime
+
         script_dir = os.path.dirname(os.path.abspath(__file__))
         heartbeat_file = os.path.join(script_dir, '.dispatcher_heartbeat.json')
-        dispatcher_log = os.path.join(script_dir, 'dispatcher.log')
+        runtime_log = os.path.join(script_dir, 'dispatcher-runtime.log')
+        legacy_log = os.path.join(script_dir, 'dispatcher.log')
+        heartbeat_fresh_seconds = 180
+
         result = subprocess.run(['pgrep', '-f', 'tk_dispatcher.py'], capture_output=True, text=True)
         pids = [p for p in result.stdout.strip().split('\n') if p.strip()]
+
         heartbeat = None
+        heartbeat_age = None
+        heartbeat_fresh = False
         if os.path.exists(heartbeat_file):
             try:
                 with open(heartbeat_file, 'r', encoding='utf-8') as f:
                     heartbeat = json.load(f)
+                hb_time = heartbeat.get('time')
+                if hb_time:
+                    hb_dt = datetime.strptime(hb_time, '%Y-%m-%d %H:%M:%S')
+                    heartbeat_age = int(time.time() - hb_dt.timestamp())
+                    heartbeat_fresh = heartbeat_age <= heartbeat_fresh_seconds
             except Exception:
                 heartbeat = None
+                heartbeat_age = None
+                heartbeat_fresh = False
 
         log_summary = None
         try:
-            if os.path.exists(dispatcher_log):
-                with open(dispatcher_log, 'r', encoding='utf-8', errors='ignore') as f:
+            log_path = runtime_log if os.path.exists(runtime_log) else legacy_log
+            if os.path.exists(log_path):
+                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = [line.strip() for line in f.readlines()[-200:] if line.strip()]
                 priority = []
                 fallback = []
                 for line in reversed(lines):
                     if any(k in line for k in ['Traceback', '❌', 'ERROR', 'Exception', '失败', '崩溃']):
                         priority.append(line)
-                    elif any(k in line for k in ['✅', '🚀', '完成', '启动任务', 'started', 'success']):
+                    elif any(k in line for k in ['✅', '🚀', '完成', '启动任务', 'started', 'success', '运行统计']):
                         fallback.append(line)
                     elif 'heartbeat' not in line.lower():
                         fallback.append(line)
@@ -111,16 +127,23 @@ def check_dispatcher():
         except Exception:
             log_summary = None
 
-        if pids:
-            parts = [f"运行中 (PID: {pids[0]}"]
+        if pids or (heartbeat_fresh and heartbeat and heartbeat.get('status') == 'running'):
+            parts = []
+            if pids:
+                parts.append(f"运行中 (PID: {pids[0]}")
+            else:
+                parts.append("运行中 (基于新鲜 heartbeat 判定")
             if heartbeat and heartbeat.get('time'):
-                parts.append(f", heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')}")
+                age_text = f", age={heartbeat_age}s" if heartbeat_age is not None else ''
+                parts.append(f", heartbeat={heartbeat.get('time')}, status={heartbeat.get('status')}{age_text}")
             if log_summary:
                 parts.append(f", 日志摘要={log_summary}")
             parts.append(')')
             return True, ''.join(parts)
+
         if heartbeat:
-            base = f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')} note={heartbeat.get('note','')}"
+            age_text = f" age={heartbeat_age}s" if heartbeat_age is not None else ''
+            base = f"调度器未运行，最近心跳={heartbeat.get('time')} status={heartbeat.get('status')}{age_text} note={heartbeat.get('note','')}"
             if log_summary:
                 base += f"，日志摘要={log_summary}"
             return False, base
