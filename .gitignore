@@ -10,7 +10,43 @@ downloads/
 # media bulk downloader runtime files
 tools/media_bulk_downloader/archive/
 tools/media_bulk_downloader/inbox/urls.txt
+tools/media_bulk_downloader/runtime/
 
 # python cache
 __pycache__/
 *.pyc
+
+# local virtualenvs
+.venv/
+venv/
+*/.venv/
+*/.venv*/
+
+# TK pipeline runtime / state / logs
+**/*.pid
+**/*.log
+**/launchd.*.log
+**/dispatcher*.pid
+**/dispatcher-runtime*.log
+**/dispatcher*.log
+
+# TK runtime state snapshots
+**/.dispatcher_heartbeat*.json
+**/.dispatcher_metrics*.json
+**/.retry_state*.json
+**/.running_tasks*.json
+**/.record_state_cache*.json
+**/.table_cache_*.json
+**/.table_scan_state*.json
+**/.dead_letter_tasks*.json
+**/.circuit_breakers*.json
+**/.healthcheck_today
+
+# local/generated work dirs
+storyboard_work/
+video_work/
+tiktok_videos/
+archive_from_autoclaw_*/
+
+# generated artifacts
+video_dedup.json
