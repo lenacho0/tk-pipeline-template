@@ -57,6 +57,14 @@ TK_INSTANCE=colleague ./stop_dispatcher_instance.sh
 
 ## 注意
 
-- 当前 `config.ryan.json` 和 `config.colleague.json` 里的表 ID 还是同一套旧值。
-- 真正切双表前，需要把 `config.colleague.json` 里的业务表 ID 换成同事那套新表。
+- `config.ryan.json` 仍指向老项目当前使用的原表。
+- `config.colleague.json` 已切到你提供的新 Bitable：`南-TK爆款视频全自动生产🦞`
 - 老项目 `tk_toolkit/` 没有被改动。
+- 当前新项目已清理复制时带入的运行态垃圾文件和重复 `.venv312`，默认继续复用老项目的 Python 虚拟环境路径。
+- 已新增双 launchd 配置与实例化 healthcheck：
+  - `com.ryan.tk-dispatcher.ryan.plist`
+  - `com.ryan.tk-dispatcher.colleague.plist`
+  - `install_launchd_instances.sh`
+  - `uninstall_launchd_instances.sh`
+  - `launchd_usage_dual.md`
+  - `tk_healthcheck.py`（支持 `TK_INSTANCE` / `TK_CONFIG_FILE`）

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ryan.tk-dispatcher.colleague</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/run_dispatcher_instance.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.colleague.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.colleague.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>TK_INSTANCE</key>
+        <string>colleague</string>
+        <key>TK_CONFIG_FILE</key>
+        <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.colleague.json</string>
+        <key>PYTHON_BIN</key>
+        <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python</string>
+    </dict>
+</dict>
+</plist>
