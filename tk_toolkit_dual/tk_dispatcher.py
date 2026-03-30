@@ -95,9 +95,11 @@ WATCH_LIST = [
         'trigger_value': '待执行',
         'trigger_values': ['待执行', '待生成'],
         'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '分镜图提示词',
         'script': 'tk_storyboard.py',
         'args': [],
-        'timeout': 1200,
+        'timeout': 2400,
         'max_concurrency': 2,
         'max_retries': 2,
     },
@@ -385,12 +387,18 @@ def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout
     if retried:
         record_circuit_failure(watch)
         return
+    failed_value = watch.get('failed_value', '失败')
+    payload = {
+        watch['status_field']: failed_value
+    }
+    error_field = watch.get('error_field')
+    error_message = error_payload.get('message') if error_payload else str(reason)
+    if error_field and error_message:
+        payload[error_field] = f"dispatcher兜底失败回写[{error_payload.get('error_code', 'UNKNOWN')}]: {error_message}"[:1000]
     try:
-        safe_update_record(token, watch['table'], record_id, {
-            watch['status_field']: '失败'
-        })
+        safe_update_record(token, watch['table'], record_id, payload)
     except Exception as e:
-        log.error(f"[{watch['name']}] 标记失败写回失败: {record_id} error={e}")
+        log.error(f"[{watch['name']}] 标记失败写回失败: {record_id} payload={payload} error={e}")
     register_dead_letter(watch, record_id, reason, payload=error_payload)
     record_circuit_failure(watch)
     bump_metric('failed', watch['name'])
