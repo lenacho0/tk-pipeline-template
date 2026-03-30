@@ -1,0 +1,1429 @@
+2026-03-28 09:21:50 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:21:50 [INFO]    轮询间隔: 30秒
+2026-03-28 09:21:50 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:21:53 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:00 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:00 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:00 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:02 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:11 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:11 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:11 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:13 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:22 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:22 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:22 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:23 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:32 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:32 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:32 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:34 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:43 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:43 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:43 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:44 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:22:53 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:22:53 [INFO]    轮询间隔: 30秒
+2026-03-28 09:22:53 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:22:55 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:23:04 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:04 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:04 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:05 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:23:16 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:16 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:16 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:25 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:25 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:25 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:27 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:23:35 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:35 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:35 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:36 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:23:46 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:46 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:46 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:48 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:23:57 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:23:57 [INFO]    轮询间隔: 30秒
+2026-03-28 09:23:57 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:23:58 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:24:08 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:24:08 [INFO]    轮询间隔: 30秒
+2026-03-28 09:24:08 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:24:11 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:24:18 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:24:18 [INFO]    轮询间隔: 30秒
+2026-03-28 09:24:18 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:24:19 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:24:29 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:24:29 [INFO]    轮询间隔: 30秒
+2026-03-28 09:24:29 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:24:31 [ERROR] 💥 dispatcher crashed: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined
+Traceback (most recent call last):
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 731, in <module>
+    main()
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 720, in main
+    check_and_run(token, watch)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 551, in check_and_run
+    update_record_state_cache(watch, record_id, status)
+  File "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_dispatcher.py", line 475, in update_record_state_cache
+    if now - int(v.get('seen_at', 0) or 0) <= RECORD_STATE_CACHE_TTL_SECONDS
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'RECORD_STATE_CACHE_TTL_SECONDS' is not defined. Did you mean: 'RECORD_STATE_CACHE_FILE'?
+2026-03-28 09:24:39 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:24:39 [INFO]    轮询间隔: 30秒
+2026-03-28 09:24:39 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:24:47 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 09:26:44 [INFO] 🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）
+2026-03-28 09:26:44 [INFO]    轮询间隔: 30秒
+2026-03-28 09:26:44 [INFO]    监控环节: 爆款抓取, 脚本分析, 产品脚本生成, 分镜图生成, 逐镜头脚本生成, 逐镜头图片生成, 视频制作
+2026-03-28 09:26:48 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 09:36:57 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 09:47:26 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 09:57:52 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 10:19:37 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 10:20:25 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 11:08:07 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 11:23:55 [ERROR] [视频同步] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:24:01 [ERROR] [爆款抓取] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl4cIPQYHSHbFzV/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:24:06 [ERROR] [脚本分析] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblozrImDy0r4dBN/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:24:11 [ERROR] [产品脚本生成] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl2Yp6T4jDN8Rfr/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:24:17 [ERROR] [分镜图生成] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl2Yp6T4jDN8Rfr/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:30:25 [ERROR] [逐镜头脚本生成] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblRf9jAD00Jma9p/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:30:31 [ERROR] [逐镜头图片生成] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblRVg5Ob7VW2zCI/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:30:36 [ERROR] [视频制作] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 11:30:36 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 11:31:07 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 12:06:52 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 12:07:22 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 12:26:50 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 13:06:28 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 13:10:33 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-28 13:11:11 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1} success={'分镜图生成': 1} failed={} retried={} timeouts={}
+2026-03-28 13:15:35 [INFO] [爆款抓取] 🚀 已启动任务: 全球近7天喷雾视频 (recvf8v0Mue1XB) retry=0
+2026-03-28 13:18:06 [INFO] [爆款抓取] ✅ 完成: recvf8v0Mue1XB
+2026-03-28 13:18:06 [INFO] [爆款抓取] stdout: 620737551929740552... ✅ 已上传
+  下载视频 7620374822735875348... ✅ 已上传
+  下载视频 7620744855966289160... ✅ 已上传
+  下载视频 7621045356117232917... ✅ 已上传
+  下载视频 7620839365211671821... ✅ 已上传
+[2026-03-28 13:17:59] [INFO] fetch task success | record_id='recvf8v0Mue1XB' summary='新增10条，写入10条，下载10个视频'
+✅ 新增10条，写入10条，下载10个视频
+2026-03-28 13:21:16 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 13:31:30 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 13:41:41 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 13:51:57 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 14:02:20 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 14:12:39 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1} success={'分镜图生成': 1, '爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-28 14:20:31 [INFO] [脚本分析] 🚀 已启动任务: recvf8Ll5putLT (recvf8Ll5putLT) retry=0
+2026-03-28 14:20:33 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFILRq (recvf8LlHFILRq) retry=0
+2026-03-28 14:20:35 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFWO6V (recvf8LlHFWO6V) retry=0
+2026-03-28 14:20:37 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHF5bPE (recvf8LlHF5bPE) retry=0
+2026-03-28 14:22:25 [INFO] [脚本分析] ✅ 完成: recvf8Ll5putLT
+2026-03-28 14:22:25 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:21:21] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8Ll5putLT' video_id='7620557666544340255'
+[2026-03-28 14:21:54] [INFO] analysis task success | record_id='recvf8Ll5putLT' video_id='7620557666544340255' result_len=3619 has_summary=True
+✅ 分析完成 (3619字)
+2026-03-28 14:22:25 [INFO] [脚本分析] ✅ 完成: recvf8LlHFILRq
+2026-03-28 14:22:25 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:21:24] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFILRq' video_id='7620060588542151966'
+[2026-03-28 14:21:54] [INFO] analysis task success | record_id='recvf8LlHFILRq' video_id='7620060588542151966' result_len=4149 has_summary=True
+✅ 分析完成 (4149字)
+2026-03-28 14:22:25 [INFO] [脚本分析] ✅ 完成: recvf8LlHFWO6V
+2026-03-28 14:22:25 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:21:25] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFWO6V' video_id='7620830459617905938'
+[2026-03-28 14:22:02] [INFO] analysis task success | record_id='recvf8LlHFWO6V' video_id='7620830459617905938' result_len=3844 has_summary=True
+✅ 分析完成 (3844字)
+2026-03-28 14:22:25 [INFO] [脚本分析] ✅ 完成: recvf8LlHF5bPE
+2026-03-28 14:22:25 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:21:42] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHF5bPE' video_id='7620793294171180296'
+[2026-03-28 14:22:16] [INFO] analysis task success | record_id='recvf8LlHF5bPE' video_id='7620793294171180296' result_len=4333 has_summary=True
+✅ 分析完成 (4333字)
+2026-03-28 14:22:29 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFhOOd (recvf8LlHFhOOd) retry=0
+2026-03-28 14:22:31 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFHb34 (recvf8LlHFHb34) retry=0
+2026-03-28 14:22:33 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHF7O4P (recvf8LlHF7O4P) retry=0
+2026-03-28 14:22:35 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFK3BF (recvf8LlHFK3BF) retry=0
+2026-03-28 14:23:14 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1, '脚本分析': 8} success={'分镜图生成': 1, '爆款抓取': 1, '脚本分析': 4} failed={} retried={} timeouts={}
+2026-03-28 14:24:20 [INFO] [脚本分析] ✅ 完成: recvf8LlHFhOOd
+2026-03-28 14:24:20 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:23:23] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFhOOd' video_id='7620737551929740552'
+[2026-03-28 14:23:59] [INFO] analysis task success | record_id='recvf8LlHFhOOd' video_id='7620737551929740552' result_len=3592 has_summary=True
+✅ 分析完成 (3592字)
+2026-03-28 14:24:20 [INFO] [脚本分析] ✅ 完成: recvf8LlHFHb34
+2026-03-28 14:24:20 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:23:20] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFHb34' video_id='7620374822735875348'
+[2026-03-28 14:24:00] [INFO] analysis task success | record_id='recvf8LlHFHb34' video_id='7620374822735875348' result_len=3708 has_summary=True
+✅ 分析完成 (3708字)
+2026-03-28 14:24:20 [INFO] [脚本分析] ✅ 完成: recvf8LlHF7O4P
+2026-03-28 14:24:20 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:23:20] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHF7O4P' video_id='7620744855966289160'
+[2026-03-28 14:23:51] [INFO] analysis task success | record_id='recvf8LlHF7O4P' video_id='7620744855966289160' result_len=2530 has_summary=True
+✅ 分析完成 (2530字)
+2026-03-28 14:24:20 [INFO] [脚本分析] ✅ 完成: recvf8LlHFK3BF
+2026-03-28 14:24:20 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:23:21] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFK3BF' video_id='7621045356117232917'
+[2026-03-28 14:23:52] [INFO] analysis task success | record_id='recvf8LlHFK3BF' video_id='7621045356117232917' result_len=3587 has_summary=True
+✅ 分析完成 (3587字)
+2026-03-28 14:24:24 [INFO] [脚本分析] 🚀 已启动任务: recvf8LlHFu1DC (recvf8LlHFu1DC) retry=0
+2026-03-28 14:26:11 [INFO] [脚本分析] ✅ 完成: recvf8LlHFu1DC
+2026-03-28 14:26:11 [INFO] [脚本分析] stdout: 
+[2026-03-28 14:25:13] [WARN] analysis missing structured summary, retry reformat | record_id='recvf8LlHFu1DC' video_id='7620839365211671821'
+[2026-03-28 14:25:47] [INFO] analysis task success | record_id='recvf8LlHFu1DC' video_id='7620839365211671821' result_len=3736 has_summary=True
+✅ 分析完成 (3736字)
+2026-03-28 14:33:32 [INFO] 📊 今日运行统计 launched={'分镜图生成': 1, '爆款抓取': 1, '脚本分析': 9} success={'分镜图生成': 1, '爆款抓取': 1, '脚本分析': 9} failed={} retried={} timeouts={}
+2026-03-28 14:37:53 [INFO] [产品脚本生成] 🚀 已启动任务: task0051 (recvf8PySi1U91) retry=0
+2026-03-28 14:37:55 [INFO] [产品脚本生成] 🚀 已启动任务: task0052 (recvf8PzD3tIbv) retry=0
+2026-03-28 14:37:58 [INFO] [产品脚本生成] 🚀 已启动任务: task0053 (recvf8PAlOmthn) retry=0
+2026-03-28 14:38:01 [INFO] [产品脚本生成] 🚀 已启动任务: task0054 (recvf8PAZpVwMq) retry=0
+2026-03-28 14:39:47 [INFO] [产品脚本生成] ✅ 完成: recvf8PAZpVwMq
+2026-03-28 14:39:47 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvf8PAZpVwMq'
+[2026-03-28 14:39:38] [INFO] script generation task success | record_id='recvf8PAZpVwMq' result_len=864 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (864字)
+2026-03-28 14:39:53 [INFO] [产品脚本生成] 🚀 已启动任务: task0055 (recvf8PBDgpcIu) retry=0
+2026-03-28 14:39:56 [INFO] [分镜图生成] 🚀 已启动任务: task0054 (recvf8PAZpVwMq) retry=0
+2026-03-28 14:40:29 [INFO] [产品脚本生成] ✅ 完成: recvf8PzD3tIbv
+2026-03-28 14:40:29 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-28 14:40:26] [INFO] script generation task success | record_id='recvf8PzD3tIbv' result_len=904 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (904字)
+2026-03-28 14:40:35 [INFO] [产品脚本生成] 🚀 已启动任务: task0056 (recvf8PIXjxMUK) retry=0
+2026-03-28 14:40:37 [INFO] [分镜图生成] 🚀 已启动任务: task0052 (recvf8PzD3tIbv) retry=0
+2026-03-28 14:41:10 [INFO] [产品脚本生成] ✅ 完成: recvf8PySi1U91
+2026-03-28 14:41:10 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-28 14:40:42] [INFO] script generation task success | record_id='recvf8PySi1U91' result_len=865 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (865字)
+2026-03-28 14:41:10 [INFO] [产品脚本生成] ✅ 完成: recvf8PAlOmthn
+2026-03-28 14:41:10 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-28 14:40:42] [INFO] script generation task success | record_id='recvf8PAlOmthn' result_len=940 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (940字)
+2026-03-28 14:41:10 [INFO] [产品脚本生成] ✅ 完成: recvf8PBDgpcIu
+2026-03-28 14:41:10 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvf8PBDgpcIu'
+[2026-03-28 14:40:58] [INFO] script generation task success | record_id='recvf8PBDgpcIu' result_len=922 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (922字)
+2026-03-28 14:41:10 [INFO] [分镜图生成] ✅ 完成: recvf8PAZpVwMq
+2026-03-28 14:41:10 [INFO] [分镜图生成] stdout: [2026-03-28 14:40:36] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-28 14:41:07] [INFO] storyboard task success | record_id='recvf8PAZpVwMq' shots=10
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PAZpVwMq/recvf8PAZpVwMq_storyboard.png
+2026-03-28 14:41:16 [INFO] [分镜图生成] 🚀 已启动任务: task0051 (recvf8PySi1U91) retry=0
+2026-03-28 14:41:49 [INFO] [分镜图生成] ✅ 完成: recvf8PzD3tIbv
+2026-03-28 14:41:49 [INFO] [分镜图生成] stdout: 
+[2026-03-28 14:41:19] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-28 14:41:48] [INFO] storyboard task success | record_id='recvf8PzD3tIbv' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PzD3tIbv/recvf8PzD3tIbv_storyboard.png
+2026-03-28 14:41:54 [INFO] [分镜图生成] 🚀 已启动任务: task0053 (recvf8PAlOmthn) retry=0
+2026-03-28 14:42:27 [INFO] [产品脚本生成] ✅ 完成: recvf8PIXjxMUK
+2026-03-28 14:42:27 [INFO] [产品脚本生成] stdout: ript generation task start | record_id='recvf8PIXjxMUK'
+[2026-03-28 14:42:09] [INFO] script generation task success | record_id='recvf8PIXjxMUK' result_len=1354 reference_count=5 selected_refs=['recvf8LlHF5bPE', 'recvf8LlHFWO6V', 'recvf8Ll5putLT', 'recvf8LlHFILRq', 'recvf8LlHFHb34']
+✅ 脚本生成完成 (1354字)
+2026-03-28 14:42:27 [INFO] [分镜图生成] ✅ 完成: recvf8PySi1U91
+2026-03-28 14:42:27 [INFO] [分镜图生成] stdout: [2026-03-28 14:41:54] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-28 14:42:26] [INFO] storyboard task success | record_id='recvf8PySi1U91' shots=12
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PySi1U91/recvf8PySi1U91_storyboard.png
+2026-03-28 14:42:33 [INFO] [分镜图生成] 🚀 已启动任务: task0055 (recvf8PBDgpcIu) retry=0
+2026-03-28 14:43:06 [INFO] [分镜图生成] ✅ 完成: recvf8PAlOmthn
+2026-03-28 14:43:06 [INFO] [分镜图生成] stdout: [2026-03-28 14:41:55] [INFO] storyboard task start | record_id='recvf8PAlOmthn'
+[2026-03-28 14:43:04] [INFO] storyboard task success | record_id='recvf8PAlOmthn' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PAlOmthn/recvf8PAlOmthn_storyboard.png
+2026-03-28 14:43:13 [INFO] [分镜图生成] 🚀 已启动任务: task0056 (recvf8PIXjxMUK) retry=0
+2026-03-28 14:43:52 [INFO] 📊 今日运行统计 launched={'分镜图生成': 7, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6} success={'分镜图生成': 5, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6} failed={} retried={} timeouts={}
+2026-03-28 14:44:22 [INFO] [分镜图生成] ✅ 完成: recvf8PBDgpcIu
+2026-03-28 14:44:22 [INFO] [分镜图生成] stdout: [2026-03-28 14:42:34] [INFO] storyboard task start | record_id='recvf8PBDgpcIu'
+[2026-03-28 14:44:02] [INFO] storyboard task success | record_id='recvf8PBDgpcIu' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PBDgpcIu/recvf8PBDgpcIu_storyboard.png
+2026-03-28 14:44:58 [INFO] [分镜图生成] ✅ 完成: recvf8PIXjxMUK
+2026-03-28 14:44:58 [INFO] [分镜图生成] stdout: [2026-03-28 14:43:14] [INFO] storyboard task start | record_id='recvf8PIXjxMUK'
+[2026-03-28 14:44:36] [INFO] storyboard task success | record_id='recvf8PIXjxMUK' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PIXjxMUK/recvf8PIXjxMUK_storyboard.png
+2026-03-28 14:54:10 [INFO] 📊 今日运行统计 launched={'分镜图生成': 7, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6} success={'分镜图生成': 7, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6} failed={} retried={} timeouts={}
+2026-03-28 14:57:51 [INFO] [分镜图生成] 🚀 已启动任务: task0052 (recvf8PzD3tIbv) retry=0
+2026-03-28 14:59:00 [INFO] [分镜图生成] ✅ 完成: recvf8PzD3tIbv
+2026-03-28 14:59:00 [INFO] [分镜图生成] stdout: 
+[2026-03-28 14:58:21] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-28 14:58:54] [INFO] storyboard task success | record_id='recvf8PzD3tIbv' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvf8PzD3tIbv/recvf8PzD3tIbv_storyboard.png
+2026-03-28 14:59:09 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf4xzUntznR (recvf4xzUntznR) retry=2
+2026-03-28 14:59:13 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf4xzUne2yq (recvf4xzUne2yq) retry=2
+2026-03-28 15:00:20 [INFO] [逐镜头图片生成] ✅ 完成: recvf4xzUne2yq
+2026-03-28 15:00:20 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:00:18] [INFO] shot storyboard render success | record_id='recvf4xzUne2yq'
+✅ 单张分镜图生成完成: recvf4xzUne2yq
+2026-03-28 15:01:00 [INFO] [逐镜头图片生成] ✅ 完成: recvf4xzUntznR
+2026-03-28 15:01:00 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:00:27] [INFO] shot storyboard render success | record_id='recvf4xzUntznR'
+✅ 单张分镜图生成完成: recvf4xzUntznR
+2026-03-28 15:04:14 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 2} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 2} failed={} retried={} timeouts={}
+2026-03-28 15:04:52 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VVTcqy91 (recvf8VVTcqy91) retry=0
+2026-03-28 15:04:55 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VWXlPwK4 (recvf8VWXlPwK4) retry=0
+2026-03-28 15:06:45 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZE84J (recvf8X8SZE84J) retry=0
+2026-03-28 15:06:47 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZNEY3 (recvf8X8SZNEY3) retry=0
+2026-03-28 15:06:49 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZSv9P (recvf8X8SZSv9P) retry=0
+2026-03-28 15:07:20 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8VVTcqy91
+2026-03-28 15:07:20 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8VVTcqy91' deleted=0
+[2026-03-28 15:06:43] [INFO] shot storyboard split success | record_id='recvf8VVTcqy91' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:06:43] [INFO] shot script task success | record_id='recvf8VVTcqy91' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:07:27 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VXNKsyQY (recvf8VXNKsyQY) retry=0
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZE84J
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:07:53] [INFO] shot storyboard render success | record_id='recvf8X8SZE84J'
+✅ 单张分镜图生成完成: recvf8X8SZE84J
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZNEY3
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:07:48] [INFO] shot storyboard render success | record_id='recvf8X8SZNEY3'
+✅ 单张分镜图生成完成: recvf8X8SZNEY3
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZSv9P
+2026-03-28 15:07:57 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:07:49] [INFO] shot storyboard render success | record_id='recvf8X8SZSv9P'
+✅ 单张分镜图生成完成: recvf8X8SZSv9P
+2026-03-28 15:08:04 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZQnw9 (recvf8X8SZQnw9) retry=0
+2026-03-28 15:08:06 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZRz1X (recvf8X8SZRz1X) retry=0
+2026-03-28 15:08:08 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8X8SZRYv3 (recvf8X8SZRYv3) retry=0
+2026-03-28 15:09:12 [ERROR] [逐镜头脚本生成] ❌ 失败: recvf8VWXlPwK4 error_code=RUNTIME_BUG retryable=False stderr=[2026-03-28 15:04:57] [INFO] shot script task start | record_id='recvf8VWXlPwK4'
+[2026-03-28 15:06:40] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:07:42] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:08:47] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:09:12 [ERROR] [逐镜头脚本生成] 错误不可重试，直接终止: recvf8VWXlPwK4 error_code=RUNTIME_BUG reason=[2026-03-28 15:04:57] [INFO] shot script task start | record_id='recvf8VWXlPwK4'
+[2026-03-28 15:06:40] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:07:42] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:08:47] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:09:13 [INFO] [逐镜头脚本生成] stdout: hout sending a response.'
+[2026-03-28 15:08:47] [ERROR] shot script task failed | record_id='recvf8VWXlPwK4' error='Server disconnected without sending a response.' error_code='RUNTIME_BUG' retryable=False
+ERROR_CODE=RUNTIME_BUG RETRYABLE=false MESSAGE=Server disconnected without sending a response.
+2026-03-28 15:09:13 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZQnw9
+2026-03-28 15:09:13 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:09:02] [INFO] shot storyboard render success | record_id='recvf8X8SZQnw9'
+✅ 单张分镜图生成完成: recvf8X8SZQnw9
+2026-03-28 15:09:13 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZRz1X
+2026-03-28 15:09:13 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:09:08] [INFO] shot storyboard render success | record_id='recvf8X8SZRz1X'
+✅ 单张分镜图生成完成: recvf8X8SZRz1X
+2026-03-28 15:09:20 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VYDmspCJ (recvf8VYDmspCJ) retry=0
+2026-03-28 15:09:23 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcsgt5m (recvf8XMcsgt5m) retry=0
+2026-03-28 15:09:26 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcsIEBo (recvf8XMcsIEBo) retry=0
+2026-03-28 15:09:56 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8VXNKsyQY
+2026-03-28 15:09:56 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8VXNKsyQY' deleted=0
+[2026-03-28 15:09:15] [INFO] shot storyboard split success | record_id='recvf8VXNKsyQY' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:09:15] [INFO] shot script task success | record_id='recvf8VXNKsyQY' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:09:56 [INFO] [逐镜头图片生成] ✅ 完成: recvf8X8SZRYv3
+2026-03-28 15:09:56 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:09:14] [INFO] shot storyboard render success | record_id='recvf8X8SZRYv3'
+✅ 单张分镜图生成完成: recvf8X8SZRYv3
+2026-03-28 15:10:05 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VZB9z6rW (recvf8VZB9z6rW) retry=0
+2026-03-28 15:10:08 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcsaPSK (recvf8XMcsaPSK) retry=0
+2026-03-28 15:10:39 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcsgt5m
+2026-03-28 15:10:39 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:10:20] [INFO] shot storyboard render success | record_id='recvf8XMcsgt5m'
+✅ 单张分镜图生成完成: recvf8XMcsgt5m
+2026-03-28 15:10:39 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcsIEBo
+2026-03-28 15:10:39 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:10:25] [INFO] shot storyboard render success | record_id='recvf8XMcsIEBo'
+✅ 单张分镜图生成完成: recvf8XMcsIEBo
+2026-03-28 15:10:45 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcsWo8k (recvf8XMcsWo8k) retry=0
+2026-03-28 15:10:47 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcsPARM (recvf8XMcsPARM) retry=0
+2026-03-28 15:11:18 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcsaPSK
+2026-03-28 15:11:18 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:11:06] [INFO] shot storyboard render success | record_id='recvf8XMcsaPSK'
+✅ 单张分镜图生成完成: recvf8XMcsaPSK
+2026-03-28 15:11:26 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8XMcs3b2x (recvf8XMcs3b2x) retry=0
+2026-03-28 15:11:57 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcsWo8k
+2026-03-28 15:11:57 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:11:44] [INFO] shot storyboard render success | record_id='recvf8XMcsWo8k'
+✅ 单张分镜图生成完成: recvf8XMcsWo8k
+2026-03-28 15:11:57 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcsPARM
+2026-03-28 15:11:57 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:11:52] [INFO] shot storyboard render success | record_id='recvf8XMcsPARM'
+✅ 单张分镜图生成完成: recvf8XMcsPARM
+2026-03-28 15:12:33 [INFO] [逐镜头图片生成] ✅ 完成: recvf8XMcs3b2x
+2026-03-28 15:12:33 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:12:21] [INFO] shot storyboard render success | record_id='recvf8XMcs3b2x'
+✅ 单张分镜图生成完成: recvf8XMcs3b2x
+2026-03-28 15:13:45 [ERROR] [逐镜头脚本生成] ❌ 失败: recvf8VYDmspCJ error_code=RUNTIME_BUG retryable=False stderr=[2026-03-28 15:09:21] [INFO] shot script task start | record_id='recvf8VYDmspCJ'
+[2026-03-28 15:11:02] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:12:04] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:13:08] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:13:45 [ERROR] [逐镜头脚本生成] 错误不可重试，直接终止: recvf8VYDmspCJ error_code=RUNTIME_BUG reason=[2026-03-28 15:09:21] [INFO] shot script task start | record_id='recvf8VYDmspCJ'
+[2026-03-28 15:11:02] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:12:04] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:13:08] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:13:46 [INFO] [逐镜头脚本生成] stdout: hout sending a response.'
+[2026-03-28 15:13:08] [ERROR] shot script task failed | record_id='recvf8VYDmspCJ' error='Server disconnected without sending a response.' error_code='RUNTIME_BUG' retryable=False
+ERROR_CODE=RUNTIME_BUG RETRYABLE=false MESSAGE=Server disconnected without sending a response.
+2026-03-28 15:13:54 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W0MyOHy2 (recvf8W0MyOHy2) retry=0
+2026-03-28 15:14:26 [ERROR] [逐镜头脚本生成] ❌ 失败: recvf8VZB9z6rW error_code=RUNTIME_BUG retryable=False stderr=[2026-03-28 15:10:06] [INFO] shot script task start | record_id='recvf8VZB9z6rW'
+[2026-03-28 15:11:56] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:12:59] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:14:03] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:14:26 [ERROR] [逐镜头脚本生成] 错误不可重试，直接终止: recvf8VZB9z6rW error_code=RUNTIME_BUG reason=[2026-03-28 15:10:06] [INFO] shot script task start | record_id='recvf8VZB9z6rW'
+[2026-03-28 15:11:56] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:12:59] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 15:14:03] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 15:14:28 [INFO] [逐镜头脚本生成] stdout: hout sending a response.'
+[2026-03-28 15:14:03] [ERROR] shot script task failed | record_id='recvf8VZB9z6rW' error='Server disconnected without sending a response.' error_code='RUNTIME_BUG' retryable=False
+ERROR_CODE=RUNTIME_BUG RETRYABLE=false MESSAGE=Server disconnected without sending a response.
+2026-03-28 15:14:37 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W1RdD8rI (recvf8W1RdD8rI) retry=0
+2026-03-28 15:14:39 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 14, '逐镜头脚本生成': 7} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 14, '逐镜头脚本生成': 2} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 15:15:44 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W0MyOHy2
+2026-03-28 15:15:44 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W0MyOHy2' deleted=0
+[2026-03-28 15:15:38] [INFO] shot storyboard split success | record_id='recvf8W0MyOHy2' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:15:38] [INFO] shot script task success | record_id='recvf8W0MyOHy2' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:15:52 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W2CFlD6H (recvf8W2CFlD6H) retry=0
+2026-03-28 15:15:56 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3qBbz (recvf8ZnT3qBbz) retry=0
+2026-03-28 15:15:57 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3SpZu (recvf8ZnT3SpZu) retry=0
+2026-03-28 15:16:00 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3AFyC (recvf8ZnT3AFyC) retry=0
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3qBbz
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:16:33] [INFO] shot storyboard render success | record_id='recvf8ZnT3qBbz'
+✅ 单张分镜图生成完成: recvf8ZnT3qBbz
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3SpZu
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:16:32] [INFO] shot storyboard render success | record_id='recvf8ZnT3SpZu'
+✅ 单张分镜图生成完成: recvf8ZnT3SpZu
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3AFyC
+2026-03-28 15:17:05 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:16:43] [INFO] shot storyboard render success | record_id='recvf8ZnT3AFyC'
+✅ 单张分镜图生成完成: recvf8ZnT3AFyC
+2026-03-28 15:17:12 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3CxHw (recvf8ZnT3CxHw) retry=0
+2026-03-28 15:17:15 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3yN6H (recvf8ZnT3yN6H) retry=0
+2026-03-28 15:17:17 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZnT3kfj7 (recvf8ZnT3kfj7) retry=0
+2026-03-28 15:17:48 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W1RdD8rI
+2026-03-28 15:17:48 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W1RdD8rI' deleted=0
+[2026-03-28 15:17:31] [INFO] shot storyboard split success | record_id='recvf8W1RdD8rI' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:17:31] [INFO] shot script task success | record_id='recvf8W1RdD8rI' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:17:56 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W3ohgbC8 (recvf8W3ohgbC8) retry=0
+2026-03-28 15:18:27 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W2CFlD6H
+2026-03-28 15:18:27 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W2CFlD6H' deleted=0
+[2026-03-28 15:17:49] [INFO] shot storyboard split success | record_id='recvf8W2CFlD6H' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:17:49] [INFO] shot script task success | record_id='recvf8W2CFlD6H' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3CxHw
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:17:51] [INFO] shot storyboard render success | record_id='recvf8ZnT3CxHw'
+✅ 单张分镜图生成完成: recvf8ZnT3CxHw
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3yN6H
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:17:56] [INFO] shot storyboard render success | record_id='recvf8ZnT3yN6H'
+✅ 单张分镜图生成完成: recvf8ZnT3yN6H
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZnT3kfj7
+2026-03-28 15:18:27 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:17:55] [INFO] shot storyboard render success | record_id='recvf8ZnT3kfj7'
+✅ 单张分镜图生成完成: recvf8ZnT3kfj7
+2026-03-28 15:18:35 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W40lXZuK (recvf8W40lXZuK) retry=0
+2026-03-28 15:18:38 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqq7Yeu (recvf8ZRqq7Yeu) retry=0
+2026-03-28 15:18:40 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqqDaxc (recvf8ZRqqDaxc) retry=0
+2026-03-28 15:18:43 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqqXpKj (recvf8ZRqqXpKj) retry=0
+2026-03-28 15:19:48 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W3ohgbC8
+2026-03-28 15:19:48 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W3ohgbC8' deleted=0
+[2026-03-28 15:19:28] [INFO] shot storyboard split success | record_id='recvf8W3ohgbC8' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:19:28] [INFO] shot script task success | record_id='recvf8W3ohgbC8' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqq7Yeu
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:19:15] [INFO] shot storyboard render success | record_id='recvf8ZRqq7Yeu'
+✅ 单张分镜图生成完成: recvf8ZRqq7Yeu
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqqDaxc
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:19:26] [INFO] shot storyboard render success | record_id='recvf8ZRqqDaxc'
+✅ 单张分镜图生成完成: recvf8ZRqqDaxc
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqqXpKj
+2026-03-28 15:19:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:19:28] [INFO] shot storyboard render success | record_id='recvf8ZRqqXpKj'
+✅ 单张分镜图生成完成: recvf8ZRqqXpKj
+2026-03-28 15:19:56 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8W4Sm9ShA (recvf8W4Sm9ShA) retry=0
+2026-03-28 15:19:59 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqqsPTI (recvf8ZRqqsPTI) retry=0
+2026-03-28 15:20:01 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqqz7Mn (recvf8ZRqqz7Mn) retry=0
+2026-03-28 15:20:03 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZRqqBhAX (recvf8ZRqqBhAX) retry=0
+2026-03-28 15:20:34 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W40lXZuK
+2026-03-28 15:20:34 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W40lXZuK' deleted=0
+[2026-03-28 15:20:22] [INFO] shot storyboard split success | record_id='recvf8W40lXZuK' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:20:22] [INFO] shot script task success | record_id='recvf8W40lXZuK' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:20:41 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8WsdqS6WJ (recvf8WsdqS6WJ) retry=0
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqqsPTI
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:20:45] [INFO] shot storyboard render success | record_id='recvf8ZRqqsPTI'
+✅ 单张分镜图生成完成: recvf8ZRqqsPTI
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqqz7Mn
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:20:40] [INFO] shot storyboard render success | record_id='recvf8ZRqqz7Mn'
+✅ 单张分镜图生成完成: recvf8ZRqqz7Mn
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZRqqBhAX
+2026-03-28 15:21:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:20:54] [INFO] shot storyboard render success | record_id='recvf8ZRqqBhAX'
+✅ 单张分镜图生成完成: recvf8ZRqqBhAX
+2026-03-28 15:21:19 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR8U3EJ (recvf8ZVR8U3EJ) retry=0
+2026-03-28 15:21:21 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR8JB6e (recvf8ZVR8JB6e) retry=0
+2026-03-28 15:21:23 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR89rLZ (recvf8ZVR89rLZ) retry=0
+2026-03-28 15:21:54 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8W4Sm9ShA
+2026-03-28 15:21:54 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8W4Sm9ShA' deleted=0
+[2026-03-28 15:21:37] [INFO] shot storyboard split success | record_id='recvf8W4Sm9ShA' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:21:37] [INFO] shot script task success | record_id='recvf8W4Sm9ShA' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:22:29 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8WsdqS6WJ
+2026-03-28 15:22:29 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8WsdqS6WJ' deleted=0
+[2026-03-28 15:22:14] [INFO] shot storyboard split success | record_id='recvf8WsdqS6WJ' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 15:22:14] [INFO] shot script task success | record_id='recvf8WsdqS6WJ' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR8U3EJ
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:22:06] [INFO] shot storyboard render success | record_id='recvf8ZVR8U3EJ'
+✅ 单张分镜图生成完成: recvf8ZVR8U3EJ
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR8JB6e
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:22:11] [INFO] shot storyboard render success | record_id='recvf8ZVR8JB6e'
+✅ 单张分镜图生成完成: recvf8ZVR8JB6e
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR89rLZ
+2026-03-28 15:22:29 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:22:03] [INFO] shot storyboard render success | record_id='recvf8ZVR89rLZ'
+✅ 单张分镜图生成完成: recvf8ZVR89rLZ
+2026-03-28 15:22:38 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR8InWK (recvf8ZVR8InWK) retry=0
+2026-03-28 15:22:41 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR8egBc (recvf8ZVR8egBc) retry=0
+2026-03-28 15:22:43 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf8ZVR8oUVL (recvf8ZVR8oUVL) retry=0
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR8InWK
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:23:20] [INFO] shot storyboard render success | record_id='recvf8ZVR8InWK'
+✅ 单张分镜图生成完成: recvf8ZVR8InWK
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR8egBc
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:23:27] [INFO] shot storyboard render success | record_id='recvf8ZVR8egBc'
+✅ 单张分镜图生成完成: recvf8ZVR8egBc
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf8ZVR8oUVL
+2026-03-28 15:23:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:23:27] [INFO] shot storyboard render success | record_id='recvf8ZVR8oUVL'
+✅ 单张分镜图生成完成: recvf8ZVR8oUVL
+2026-03-28 15:23:58 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOP6S3o (recvf90lOP6S3o) retry=0
+2026-03-28 15:24:00 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOPp7Zi (recvf90lOPp7Zi) retry=0
+2026-03-28 15:24:02 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOPob3h (recvf90lOPob3h) retry=0
+2026-03-28 15:24:39 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 35, '逐镜头脚本生成': 12} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 32, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOP6S3o
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:24:49] [INFO] shot storyboard render success | record_id='recvf90lOP6S3o'
+✅ 单张分镜图生成完成: recvf90lOP6S3o
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOPp7Zi
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:24:36] [INFO] shot storyboard render success | record_id='recvf90lOPp7Zi'
+✅ 单张分镜图生成完成: recvf90lOPp7Zi
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOPob3h
+2026-03-28 15:25:09 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:24:39] [INFO] shot storyboard render success | record_id='recvf90lOPob3h'
+✅ 单张分镜图生成完成: recvf90lOPob3h
+2026-03-28 15:25:19 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOPar1s (recvf90lOPar1s) retry=0
+2026-03-28 15:25:21 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOPjyCb (recvf90lOPjyCb) retry=0
+2026-03-28 15:25:23 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90lOPhCi9 (recvf90lOPhCi9) retry=0
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOPar1s
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:25:58] [INFO] shot storyboard render success | record_id='recvf90lOPar1s'
+✅ 单张分镜图生成完成: recvf90lOPar1s
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOPjyCb
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:26:09] [INFO] shot storyboard render success | record_id='recvf90lOPjyCb'
+✅ 单张分镜图生成完成: recvf90lOPjyCb
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] ✅ 完成: recvf90lOPhCi9
+2026-03-28 15:26:30 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:26:00] [INFO] shot storyboard render success | record_id='recvf90lOPhCi9'
+✅ 单张分镜图生成完成: recvf90lOPhCi9
+2026-03-28 15:26:38 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGGhDev (recvf90zGGhDev) retry=0
+2026-03-28 15:26:40 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGGkKiN (recvf90zGGkKiN) retry=0
+2026-03-28 15:26:42 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGGG9az (recvf90zGGG9az) retry=0
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGGhDev
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:27:14] [INFO] shot storyboard render success | record_id='recvf90zGGhDev'
+✅ 单张分镜图生成完成: recvf90zGGhDev
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGGkKiN
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:27:16] [INFO] shot storyboard render success | record_id='recvf90zGGkKiN'
+✅ 单张分镜图生成完成: recvf90zGGkKiN
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGGG9az
+2026-03-28 15:27:49 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:27:18] [INFO] shot storyboard render success | record_id='recvf90zGGG9az'
+✅ 单张分镜图生成完成: recvf90zGGG9az
+2026-03-28 15:28:01 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGG9N1R (recvf90zGG9N1R) retry=0
+2026-03-28 15:28:03 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGGlKT6 (recvf90zGGlKT6) retry=0
+2026-03-28 15:28:05 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90zGGC68n (recvf90zGGC68n) retry=0
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGG9N1R
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:28:39] [INFO] shot storyboard render success | record_id='recvf90zGG9N1R'
+✅ 单张分镜图生成完成: recvf90zGG9N1R
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGGlKT6
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:28:44] [INFO] shot storyboard render success | record_id='recvf90zGGlKT6'
+✅ 单张分镜图生成完成: recvf90zGGlKT6
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] ✅ 完成: recvf90zGGC68n
+2026-03-28 15:29:12 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:28:42] [INFO] shot storyboard render success | record_id='recvf90zGGC68n'
+✅ 单张分镜图生成完成: recvf90zGGC68n
+2026-03-28 15:29:23 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HYVZM (recvf90T6HYVZM) retry=0
+2026-03-28 15:29:25 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HWiSL (recvf90T6HWiSL) retry=0
+2026-03-28 15:29:27 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HQXR1 (recvf90T6HQXR1) retry=0
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HYVZM
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:30:05] [INFO] shot storyboard render success | record_id='recvf90T6HYVZM'
+✅ 单张分镜图生成完成: recvf90T6HYVZM
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HWiSL
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:30:06] [INFO] shot storyboard render success | record_id='recvf90T6HWiSL'
+✅ 单张分镜图生成完成: recvf90T6HWiSL
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HQXR1
+2026-03-28 15:30:34 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:30:06] [INFO] shot storyboard render success | record_id='recvf90T6HQXR1'
+✅ 单张分镜图生成完成: recvf90T6HQXR1
+2026-03-28 15:30:43 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HBogf (recvf90T6HBogf) retry=0
+2026-03-28 15:30:45 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HRdCJ (recvf90T6HRdCJ) retry=0
+2026-03-28 15:30:47 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf90T6HSN9J (recvf90T6HSN9J) retry=0
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HBogf
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:31:24] [INFO] shot storyboard render success | record_id='recvf90T6HBogf'
+✅ 单张分镜图生成完成: recvf90T6HBogf
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HRdCJ
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:31:29] [INFO] shot storyboard render success | record_id='recvf90T6HRdCJ'
+✅ 单张分镜图生成完成: recvf90T6HRdCJ
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] ✅ 完成: recvf90T6HSN9J
+2026-03-28 15:31:54 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:31:25] [INFO] shot storyboard render success | record_id='recvf90T6HSN9J'
+✅ 单张分镜图生成完成: recvf90T6HSN9J
+2026-03-28 15:32:04 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912Uwcviq (recvf912Uwcviq) retry=0
+2026-03-28 15:32:06 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912UwbMmD (recvf912UwbMmD) retry=0
+2026-03-28 15:32:08 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912UwhQ9W (recvf912UwhQ9W) retry=0
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] ✅ 完成: recvf912Uwcviq
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:32:45] [INFO] shot storyboard render success | record_id='recvf912Uwcviq'
+✅ 单张分镜图生成完成: recvf912Uwcviq
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] ✅ 完成: recvf912UwbMmD
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:32:41] [INFO] shot storyboard render success | record_id='recvf912UwbMmD'
+✅ 单张分镜图生成完成: recvf912UwbMmD
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] ✅ 完成: recvf912UwhQ9W
+2026-03-28 15:33:16 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:32:54] [INFO] shot storyboard render success | record_id='recvf912UwhQ9W'
+✅ 单张分镜图生成完成: recvf912UwhQ9W
+2026-03-28 15:33:25 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912UwX9hg (recvf912UwX9hg) retry=0
+2026-03-28 15:33:27 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912UwyIAM (recvf912UwyIAM) retry=0
+2026-03-28 15:33:29 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf912UwznOc (recvf912UwznOc) retry=0
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] ✅ 完成: recvf912UwX9hg
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:34:18] [INFO] shot storyboard render success | record_id='recvf912UwX9hg'
+✅ 单张分镜图生成完成: recvf912UwX9hg
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] ✅ 完成: recvf912UwyIAM
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:34:08] [INFO] shot storyboard render success | record_id='recvf912UwyIAM'
+✅ 单张分镜图生成完成: recvf912UwyIAM
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] ✅ 完成: recvf912UwznOc
+2026-03-28 15:34:36 [INFO] [逐镜头图片生成] stdout: [2026-03-28 15:34:05] [INFO] shot storyboard render success | record_id='recvf912UwznOc'
+✅ 单张分镜图生成完成: recvf912UwznOc
+2026-03-28 15:34:43 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 12} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 15:44:48 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 12} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 15:54:51 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 12} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 16:04:58 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 12} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 16:13:48 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VWXlPwK4 (recvf8VWXlPwK4) retry=0
+2026-03-28 16:13:51 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VYDmspCJ (recvf8VYDmspCJ) retry=0
+2026-03-28 16:15:08 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 14} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 56, '逐镜头脚本生成': 9} failed={'逐镜头脚本生成': 3} retried={} timeouts={}
+2026-03-28 16:16:53 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8VYDmspCJ
+2026-03-28 16:16:53 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8VYDmspCJ' deleted=0
+[2026-03-28 16:16:49] [INFO] shot storyboard split success | record_id='recvf8VYDmspCJ' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 16:16:49] [INFO] shot script task success | record_id='recvf8VYDmspCJ' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 16:17:00 [INFO] [逐镜头脚本生成] 🚀 已启动任务: recvf8VZB9z6rW (recvf8VZB9z6rW) retry=0
+2026-03-28 16:17:06 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCuiD7s (recvf9eMCuiD7s) retry=0
+2026-03-28 16:17:08 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCuqAUM (recvf9eMCuqAUM) retry=0
+2026-03-28 16:17:11 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCusEUg (recvf9eMCusEUg) retry=0
+2026-03-28 16:17:41 [ERROR] [逐镜头脚本生成] ❌ 失败: recvf8VWXlPwK4 error_code=RUNTIME_BUG retryable=False stderr=[2026-03-28 16:13:49] [INFO] shot script task start | record_id='recvf8VWXlPwK4'
+[2026-03-28 16:15:25] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 16:16:29] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 16:17:33] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 16:17:41 [ERROR] [逐镜头脚本生成] 错误不可重试，直接终止: recvf8VWXlPwK4 error_code=RUNTIME_BUG reason=[2026-03-28 16:13:49] [INFO] shot script task start | record_id='recvf8VWXlPwK4'
+[2026-03-28 16:15:25] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 16:16:29] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'
+[2026-03-28 16:17:33] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser
+2026-03-28 16:17:42 [INFO] [逐镜头脚本生成] stdout: ding a response.'
+[2026-03-28 16:17:33] [ERROR] shot script task failed | record_id='recvf8VWXlPwK4' error='Server disconnected without sending a response.' error_code='UPSTREAM_NETWORK' retryable=True
+ERROR_CODE=UPSTREAM_NETWORK RETRYABLE=true MESSAGE=Server disconnected without sending a response.
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCuiD7s
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:18:27] [INFO] shot storyboard render success | record_id='recvf9eMCuiD7s'
+✅ 单张分镜图生成完成: recvf9eMCuiD7s
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCuqAUM
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:18:30] [INFO] shot storyboard render success | record_id='recvf9eMCuqAUM'
+✅ 单张分镜图生成完成: recvf9eMCuqAUM
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCusEUg
+2026-03-28 16:18:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:18:29] [INFO] shot storyboard render success | record_id='recvf9eMCusEUg'
+✅ 单张分镜图生成完成: recvf9eMCusEUg
+2026-03-28 16:19:05 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCuYKZj (recvf9eMCuYKZj) retry=0
+2026-03-28 16:19:07 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCu47Bf (recvf9eMCu47Bf) retry=0
+2026-03-28 16:19:09 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9eMCu7DfA (recvf9eMCu7DfA) retry=0
+2026-03-28 16:20:16 [INFO] [逐镜头脚本生成] ✅ 完成: recvf8VZB9z6rW
+2026-03-28 16:20:16 [INFO] [逐镜头脚本生成] stdout: d | record_id='recvf8VZB9z6rW' deleted=0
+[2026-03-28 16:19:51] [INFO] shot storyboard split success | record_id='recvf8VZB9z6rW' created=6
+✅ 已拆分 6 条 shot 记录
+[2026-03-28 16:19:51] [INFO] shot script task success | record_id='recvf8VZB9z6rW' shot_count=6 split_rebuilt=True
+✅ 逐镜头脚本生成完成并已重建shot记录 (6个镜头)
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCuYKZj
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:20:23] [INFO] shot storyboard render success | record_id='recvf9eMCuYKZj'
+✅ 单张分镜图生成完成: recvf9eMCuYKZj
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCu47Bf
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:20:21] [INFO] shot storyboard render success | record_id='recvf9eMCu47Bf'
+✅ 单张分镜图生成完成: recvf9eMCu47Bf
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] ✅ 完成: recvf9eMCu7DfA
+2026-03-28 16:20:55 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:20:19] [INFO] shot storyboard render success | record_id='recvf9eMCu7DfA'
+✅ 单张分镜图生成完成: recvf9eMCu7DfA
+2026-03-28 16:21:05 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg3OPaF (recvf9fyg3OPaF) retry=0
+2026-03-28 16:21:07 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg3cZM5 (recvf9fyg3cZM5) retry=0
+2026-03-28 16:21:09 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg3Laux (recvf9fyg3Laux) retry=0
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg3OPaF
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:22:18] [INFO] shot storyboard render success | record_id='recvf9fyg3OPaF'
+✅ 单张分镜图生成完成: recvf9fyg3OPaF
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg3cZM5
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:22:19] [INFO] shot storyboard render success | record_id='recvf9fyg3cZM5'
+✅ 单张分镜图生成完成: recvf9fyg3cZM5
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg3Laux
+2026-03-28 16:22:52 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:22:19] [INFO] shot storyboard render success | record_id='recvf9fyg3Laux'
+✅ 单张分镜图生成完成: recvf9fyg3Laux
+2026-03-28 16:23:00 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg3c7VW (recvf9fyg3c7VW) retry=0
+2026-03-28 16:23:03 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg33Huu (recvf9fyg33Huu) retry=0
+2026-03-28 16:23:05 [INFO] [逐镜头图片生成] 🚀 已启动任务: recvf9fyg3EnME (recvf9fyg3EnME) retry=0
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg3c7VW
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:24:19] [INFO] shot storyboard render success | record_id='recvf9fyg3c7VW'
+✅ 单张分镜图生成完成: recvf9fyg3c7VW
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg33Huu
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:24:39] [INFO] shot storyboard render success | record_id='recvf9fyg33Huu'
+✅ 单张分镜图生成完成: recvf9fyg33Huu
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] ✅ 完成: recvf9fyg3EnME
+2026-03-28 16:24:48 [INFO] [逐镜头图片生成] stdout: [2026-03-28 16:24:24] [INFO] shot storyboard render success | record_id='recvf9fyg3EnME'
+✅ 单张分镜图生成完成: recvf9fyg3EnME
+2026-03-28 16:25:33 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 16:35:50 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 16:46:06 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 16:56:07 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:06:15 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:16:19 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:26:32 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:36:38 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:46:51 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 17:57:03 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:07:12 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:17:22 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:27:22 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:37:24 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:47:57 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 18:58:26 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 19:09:00 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 19:19:03 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 19:29:39 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 19:40:16 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 19:50:52 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:01:24 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:11:55 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:22:32 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:33:07 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:43:37 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 20:53:40 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:04:16 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:14:52 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:25:00 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:35:01 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:45:34 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 21:55:41 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:05:41 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:15:42 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:25:42 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:35:45 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:46:19 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 22:56:51 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:07:25 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:17:57 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:28:29 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:39:05 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:49:05 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-28 23:59:34 [INFO] 📊 今日运行统计 launched={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 15} success={'分镜图生成': 8, '爆款抓取': 1, '脚本分析': 9, '产品脚本生成': 6, '逐镜头图片生成': 68, '逐镜头脚本生成': 11} failed={'逐镜头脚本生成': 4} retried={} timeouts={}
+2026-03-29 00:09:34 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 00:20:11 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 00:30:44 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 00:41:19 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 00:51:48 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:02:24 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:12:58 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:23:29 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:33:58 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:44:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 01:54:56 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:05:27 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:15:56 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:26:23 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:36:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:47:22 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 02:57:49 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 03:08:17 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 03:18:45 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 03:29:12 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 03:39:42 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 03:50:09 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 04:00:35 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 04:11:04 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 04:21:31 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 08:22:26 [ERROR] [视频制作] 读取表失败: 400 Client Error: Bad Request for url: https://open.feishu.cn/open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100
+2026-03-29 08:22:26 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 08:22:57 [INFO] 🔍 开始每日健康巡检...
+2026-03-29 08:38:12 [INFO]   [巡检] 🔍 TK Pipeline 健康巡检 — 2026-03-29 08:23
+2026-03-29 08:38:12 [INFO]   [巡检] 
+2026-03-29 08:38:12 [INFO]   [巡检] 检测 飞书 Token... ✅ 正常
+2026-03-29 08:38:12 [INFO]   [巡检] 检测 FastMoss API... ✅ 正常 (api_base=https://openapi.fastmoss.com)
+2026-03-29 08:38:12 [INFO]   [巡检] 检测 Gemini API... ✅ 正常 (模型: gemini-3.1-pro-preview)
+2026-03-29 08:38:12 [INFO]   [巡检] 检测 Sora API... ✅ 正常 (代理: https://own-jarvis-api.com/v1)
+2026-03-29 08:38:12 [INFO]   [巡检] 检测 调度器... ❌ 调度器未运行，最近心跳=2026-03-29 08:22:56 status=running note=
+2026-03-29 08:38:12 [INFO]   [巡检] 
+2026-03-29 08:38:12 [INFO]   [巡检] ✅ 报告已发送到飞书
+2026-03-29 08:38:20 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 08:51:48 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:02:23 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:12:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:23:05 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:33:40 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:43:40 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 09:53:46 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:04:23 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:14:31 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:24:31 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:34:34 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:45:10 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 10:55:14 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:05:15 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:15:19 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:25:55 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:35:57 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:46:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 11:56:38 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 12:06:45 [ERROR] [视频同步] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 12:06:50 [ERROR] [爆款抓取] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl4cIPQYHSHbFzV/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 12:06:56 [ERROR] [脚本分析] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblozrImDy0r4dBN/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 12:09:21 [ERROR] [产品脚本生成] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl2Yp6T4jDN8Rfr/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 12:09:38 [ERROR] [分镜图生成] 读取表失败: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))
+2026-03-29 12:09:49 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 12:51:20 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 12:59:07 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:09:17 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:19:24 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:29:39 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:39:45 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:49:49 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 13:59:55 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 14:10:05 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 14:20:09 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 14:30:18 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 14:40:23 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 14:50:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:00:39 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:10:48 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:20:54 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:31:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:41:10 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 15:51:18 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:01:29 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:11:40 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:21:54 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:32:03 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:42:13 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:50:04 [ERROR] [视频同步] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 16:50:25 [ERROR] [爆款抓取] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tbl4cIPQYHSHbFzV/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 16:52:33 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 16:54:40 [ERROR] [视频同步] 读取表失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/bitable/v1/apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblQdTGSsmQbPMQd/records?page_size=100 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-29 17:03:02 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 17:13:06 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 17:23:08 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 17:33:15 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 17:43:31 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 17:53:59 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:04:36 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:14:43 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:24:48 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:34:53 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:44:55 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 18:55:30 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:05:39 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:15:46 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:25:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:35:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:45:59 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 19:56:33 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:07:09 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:17:43 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:28:18 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:38:21 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:48:21 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 20:58:49 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 21:08:50 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 21:19:09 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 21:29:11 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 21:39:44 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 21:50:19 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:00:53 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:11:26 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:22:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:32:03 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:42:33 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 22:52:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:03:25 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:13:43 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:23:45 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:34:17 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:44:50 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-29 23:55:20 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:05:50 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:15:58 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:26:31 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:37:03 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:47:33 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 00:57:58 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 01:08:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 01:18:30 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 01:29:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 01:39:32 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 01:49:59 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:00:24 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:10:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:21:19 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:31:46 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:42:13 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 02:52:38 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:03:04 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:13:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:23:52 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:34:18 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:44:46 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 03:55:11 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:05:34 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:16:00 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:26:24 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:36:51 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:47:13 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 04:57:35 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 05:08:01 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 05:18:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 05:28:57 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 08:38:09 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable')))
+2026-03-30 08:38:40 [INFO] 🔍 开始每日健康巡检...
+2026-03-30 08:38:53 [INFO]   [巡检] 🔍 TK Pipeline 健康巡检 — 2026-03-30 08:38
+2026-03-30 08:38:53 [INFO]   [巡检] 
+2026-03-30 08:38:53 [INFO]   [巡检] 检测 飞书 Token... ✅ 正常
+2026-03-30 08:38:53 [INFO]   [巡检] 检测 FastMoss API... ✅ 正常 (api_base=https://openapi.fastmoss.com)
+2026-03-30 08:38:53 [INFO]   [巡检] 检测 Gemini API... ✅ 正常 (模型: gemini-3.1-pro-preview)
+2026-03-30 08:38:53 [INFO]   [巡检] 检测 Sora API... ✅ 正常 (代理: https://own-jarvis-api.com/v1)
+2026-03-30 08:38:53 [INFO]   [巡检] 检测 调度器... ✅ 运行中 (基于新鲜 heartbeat 判定, heartbeat=2026-03-30 08:38:39, status=running, age=13s, 日志摘要=2026-03-30 08:38:09 [ERROR] 刷新 token 失败: HTTPSConnectionPool(host='open.feishu.cn', port=443): Max retries exceeded with url: /open-apis/auth/v3/tenant_access_token/internal (Caused by ProxyError('Unable to connect to proxy', OSError('Tunne)
+2026-03-30 08:38:53 [INFO]   [巡检] 
+2026-03-30 08:38:53 [INFO]   [巡检] ✅ 报告已发送到飞书
+2026-03-30 08:40:59 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 08:51:07 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:01:18 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:11:37 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:21:55 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:32:28 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:42:33 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:53:08 [INFO] 📊 今日运行统计 launched={} success={} failed={} retried={} timeouts={}
+2026-03-30 09:57:03 [INFO] [爆款抓取] 🚀 已启动任务: recvfjbp11rrVk (recvfjbp11rrVk) retry=0
+2026-03-30 09:59:38 [INFO] [爆款抓取] ✅ 完成: recvfjbp11rrVk
+2026-03-30 09:59:38 [INFO] [爆款抓取] stdout: 621015113616739604... ✅ 已上传
+  下载视频 7621363774682893588... ✅ 已上传
+  下载视频 7620317830692474133... ✅ 已上传
+  下载视频 7621634673675914518... ✅ 已上传
+  下载视频 7621521256772341014... ✅ 已上传
+[2026-03-30 09:59:26] [INFO] fetch task success | record_id='recvfjbp11rrVk' summary='新增10条，写入10条，下载10个视频'
+✅ 新增10条，写入10条，下载10个视频
+2026-03-30 10:03:16 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1} success={'爆款抓取': 1} failed={} retried={} timeouts={}
+2026-03-30 10:05:54 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnjr3cSQ (recvfjqnjr3cSQ) retry=0
+2026-03-30 10:05:57 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPRAKJ (recvfjqnNPRAKJ) retry=0
+2026-03-30 10:05:59 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPp37p (recvfjqnNPp37p) retry=0
+2026-03-30 10:06:02 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPvv1O (recvfjqnNPvv1O) retry=0
+2026-03-30 10:08:00 [INFO] [脚本分析] ✅ 完成: recvfjqnjr3cSQ
+2026-03-30 10:08:00 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:06:46] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnjr3cSQ' video_id='7621469220768976149'
+[2026-03-30 10:07:24] [INFO] analysis task success | record_id='recvfjqnjr3cSQ' video_id='7621469220768976149' result_len=3542 has_summary=True
+✅ 分析完成 (3542字)
+2026-03-30 10:08:00 [INFO] [脚本分析] ✅ 完成: recvfjqnNPp37p
+2026-03-30 10:08:00 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:06:49] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPp37p' video_id='7621356994510720269'
+[2026-03-30 10:07:26] [INFO] analysis task success | record_id='recvfjqnNPp37p' video_id='7621356994510720269' result_len=4030 has_summary=True
+✅ 分析完成 (4030字)
+2026-03-30 10:08:00 [INFO] [脚本分析] ✅ 完成: recvfjqnNPvv1O
+2026-03-30 10:08:00 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:06:56] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPvv1O' video_id='7621147012712434952'
+[2026-03-30 10:07:31] [INFO] analysis task success | record_id='recvfjqnNPvv1O' video_id='7621147012712434952' result_len=3440 has_summary=True
+✅ 分析完成 (3440字)
+2026-03-30 10:08:05 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPZFdT (recvfjqnNPZFdT) retry=0
+2026-03-30 10:08:08 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPB2uK (recvfjqnNPB2uK) retry=0
+2026-03-30 10:08:11 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPhFQX (recvfjqnNPhFQX) retry=0
+2026-03-30 10:10:08 [INFO] [脚本分析] ✅ 完成: recvfjqnNPRAKJ
+2026-03-30 10:10:08 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:09:17] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPRAKJ' video_id='7621310178050198785'
+[2026-03-30 10:09:51] [INFO] analysis task success | record_id='recvfjqnNPRAKJ' video_id='7621310178050198785' result_len=3034 has_summary=True
+✅ 分析完成 (3034字)
+2026-03-30 10:10:08 [INFO] [脚本分析] ✅ 完成: recvfjqnNPZFdT
+2026-03-30 10:10:08 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:09:00] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPZFdT' video_id='7621796968083361032'
+[2026-03-30 10:09:35] [INFO] analysis task success | record_id='recvfjqnNPZFdT' video_id='7621796968083361032' result_len=3447 has_summary=True
+✅ 分析完成 (3447字)
+2026-03-30 10:10:08 [INFO] [脚本分析] ✅ 完成: recvfjqnNPB2uK
+2026-03-30 10:10:08 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:09:01] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPB2uK' video_id='7621015113616739604'
+[2026-03-30 10:09:33] [INFO] analysis task success | record_id='recvfjqnNPB2uK' video_id='7621015113616739604' result_len=3561 has_summary=True
+✅ 分析完成 (3561字)
+2026-03-30 10:10:08 [INFO] [脚本分析] ✅ 完成: recvfjqnNPhFQX
+2026-03-30 10:10:08 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:08:59] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPhFQX' video_id='7621363774682893588'
+[2026-03-30 10:09:36] [INFO] analysis task success | record_id='recvfjqnNPhFQX' video_id='7621363774682893588' result_len=3351 has_summary=True
+✅ 分析完成 (3351字)
+2026-03-30 10:10:14 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPpt6i (recvfjqnNPpt6i) retry=0
+2026-03-30 10:10:16 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPvbi3 (recvfjqnNPvbi3) retry=0
+2026-03-30 10:10:19 [INFO] [脚本分析] 🚀 已启动任务: recvfjqnNPBfwx (recvfjqnNPBfwx) retry=0
+2026-03-30 10:12:20 [INFO] [脚本分析] ✅ 完成: recvfjqnNPpt6i
+2026-03-30 10:12:20 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:11:13] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPpt6i' video_id='7620317830692474133'
+[2026-03-30 10:11:49] [INFO] analysis task success | record_id='recvfjqnNPpt6i' video_id='7620317830692474133' result_len=3569 has_summary=True
+✅ 分析完成 (3569字)
+2026-03-30 10:12:20 [INFO] [脚本分析] ✅ 完成: recvfjqnNPvbi3
+2026-03-30 10:12:20 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:11:14] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPvbi3' video_id='7621634673675914518'
+[2026-03-30 10:11:46] [INFO] analysis task success | record_id='recvfjqnNPvbi3' video_id='7621634673675914518' result_len=3581 has_summary=True
+✅ 分析完成 (3581字)
+2026-03-30 10:12:20 [INFO] [脚本分析] ✅ 完成: recvfjqnNPBfwx
+2026-03-30 10:12:20 [INFO] [脚本分析] stdout: 
+[2026-03-30 10:11:20] [WARN] analysis missing structured summary, retry reformat | record_id='recvfjqnNPBfwx' video_id='7621521256772341014'
+[2026-03-30 10:12:02] [INFO] analysis task success | record_id='recvfjqnNPBfwx' video_id='7621521256772341014' result_len=4175 has_summary=True
+✅ 分析完成 (4175字)
+2026-03-30 10:13:53 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1, '脚本分析': 10} success={'爆款抓取': 1, '脚本分析': 10} failed={} retried={} timeouts={}
+2026-03-30 10:24:09 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1, '脚本分析': 10} success={'爆款抓取': 1, '脚本分析': 10} failed={} retried={} timeouts={}
+2026-03-30 10:25:31 [INFO] [产品脚本生成] 🚀 已启动任务: task0057 (recvfjuvKS85uV) retry=0
+2026-03-30 10:25:35 [INFO] [产品脚本生成] 🚀 已启动任务: task0058 (recvfjuxVLJ6nC) retry=0
+2026-03-30 10:25:39 [INFO] [产品脚本生成] 🚀 已启动任务: task0059 (recvfjuyDlz932) retry=0
+2026-03-30 10:25:44 [INFO] [产品脚本生成] 🚀 已启动任务: task0060 (recvfjuzctgBXi) retry=0
+2026-03-30 10:27:03 [INFO] [产品脚本生成] ✅ 完成: recvfjuvKS85uV
+2026-03-30 10:27:03 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuvKS85uV'
+[2026-03-30 10:26:46] [INFO] script generation task success | record_id='recvfjuvKS85uV' result_len=894 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (894字)
+2026-03-30 10:27:03 [INFO] [产品脚本生成] ✅ 完成: recvfjuxVLJ6nC
+2026-03-30 10:27:03 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuxVLJ6nC'
+[2026-03-30 10:26:53] [INFO] script generation task success | record_id='recvfjuxVLJ6nC' result_len=800 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (800字)
+2026-03-30 10:27:03 [INFO] [产品脚本生成] ✅ 完成: recvfjuyDlz932
+2026-03-30 10:27:03 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuyDlz932'
+[2026-03-30 10:27:02] [INFO] script generation task success | record_id='recvfjuyDlz932' result_len=834 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (834字)
+2026-03-30 10:27:12 [INFO] [产品脚本生成] 🚀 已启动任务: task0061 (recvfjuzYanFin) retry=0
+2026-03-30 10:27:16 [INFO] [产品脚本生成] 🚀 已启动任务: task0062 (recvfjuAjIcHKI) retry=0
+2026-03-30 10:27:19 [INFO] [产品脚本生成] 🚀 已启动任务: task0063 (recvfjuABQRxaS) retry=0
+2026-03-30 10:27:23 [INFO] [分镜图生成] 🚀 已启动任务: task0057 (recvfjuvKS85uV) retry=0
+2026-03-30 10:27:28 [INFO] [分镜图生成] 🚀 已启动任务: task0058 (recvfjuxVLJ6nC) retry=0
+2026-03-30 10:28:03 [INFO] [产品脚本生成] ✅ 完成: recvfjuzctgBXi
+2026-03-30 10:28:03 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuzctgBXi'
+[2026-03-30 10:27:06] [INFO] script generation task success | record_id='recvfjuzctgBXi' result_len=805 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (805字)
+2026-03-30 10:28:14 [INFO] [产品脚本生成] 🚀 已启动任务: task0064 (recvfjuAWv51m5) retry=0
+2026-03-30 10:28:50 [INFO] [产品脚本生成] ✅ 完成: recvfjuzYanFin
+2026-03-30 10:28:50 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuzYanFin'
+[2026-03-30 10:28:36] [INFO] script generation task success | record_id='recvfjuzYanFin' result_len=765 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (765字)
+2026-03-30 10:28:50 [INFO] [产品脚本生成] ✅ 完成: recvfjuAjIcHKI
+2026-03-30 10:28:50 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:28:36] [INFO] script generation task success | record_id='recvfjuAjIcHKI' result_len=788 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (788字)
+2026-03-30 10:28:50 [INFO] [产品脚本生成] ✅ 完成: recvfjuABQRxaS
+2026-03-30 10:28:50 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuABQRxaS'
+[2026-03-30 10:28:40] [INFO] script generation task success | record_id='recvfjuABQRxaS' result_len=853 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (853字)
+2026-03-30 10:28:50 [INFO] [分镜图生成] ✅ 完成: recvfjuvKS85uV
+2026-03-30 10:28:50 [INFO] [分镜图生成] stdout: [2026-03-30 10:27:26] [INFO] storyboard task start | record_id='recvfjuvKS85uV'
+[2026-03-30 10:28:45] [INFO] storyboard task success | record_id='recvfjuvKS85uV' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuvKS85uV/recvfjuvKS85uV_storyboard.png
+2026-03-30 10:28:50 [INFO] [分镜图生成] ✅ 完成: recvfjuxVLJ6nC
+2026-03-30 10:28:50 [INFO] [分镜图生成] stdout: [2026-03-30 10:27:29] [INFO] storyboard task start | record_id='recvfjuxVLJ6nC'
+[2026-03-30 10:28:38] [INFO] storyboard task success | record_id='recvfjuxVLJ6nC' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuxVLJ6nC/recvfjuxVLJ6nC_storyboard.png
+2026-03-30 10:28:59 [INFO] [产品脚本生成] 🚀 已启动任务: task0065 (recvfjuBlgXNdC) retry=0
+2026-03-30 10:29:03 [INFO] [产品脚本生成] 🚀 已启动任务: task0066 (recvfjuByR5ey9) retry=0
+2026-03-30 10:29:06 [INFO] [产品脚本生成] 🚀 已启动任务: task0067 (recvfjuBOaPwqg) retry=0
+2026-03-30 10:29:10 [INFO] [分镜图生成] 🚀 已启动任务: task0059 (recvfjuyDlz932) retry=0
+2026-03-30 10:29:13 [INFO] [分镜图生成] 🚀 已启动任务: task0060 (recvfjuzctgBXi) retry=0
+2026-03-30 10:29:49 [INFO] [产品脚本生成] ✅ 完成: recvfjuAWv51m5
+2026-03-30 10:29:49 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuAWv51m5'
+[2026-03-30 10:29:37] [INFO] script generation task success | record_id='recvfjuAWv51m5' result_len=870 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (870字)
+2026-03-30 10:29:57 [INFO] [产品脚本生成] 🚀 已启动任务: task0068 (recvfjuC2dWsoK) retry=0
+2026-03-30 10:30:33 [INFO] [产品脚本生成] ✅ 完成: recvfjuBlgXNdC
+2026-03-30 10:30:33 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuBlgXNdC'
+[2026-03-30 10:30:03] [INFO] script generation task success | record_id='recvfjuBlgXNdC' result_len=712 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (712字)
+2026-03-30 10:30:33 [INFO] [产品脚本生成] ✅ 完成: recvfjuByR5ey9
+2026-03-30 10:30:33 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuByR5ey9'
+[2026-03-30 10:30:27] [INFO] script generation task success | record_id='recvfjuByR5ey9' result_len=792 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (792字)
+2026-03-30 10:30:33 [INFO] [分镜图生成] ✅ 完成: recvfjuyDlz932
+2026-03-30 10:30:33 [INFO] [分镜图生成] stdout: 
+[2026-03-30 10:29:44] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:30:13] [INFO] storyboard task success | record_id='recvfjuyDlz932' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuyDlz932/recvfjuyDlz932_storyboard.png
+2026-03-30 10:30:33 [INFO] [分镜图生成] ✅ 完成: recvfjuzctgBXi
+2026-03-30 10:30:33 [INFO] [分镜图生成] stdout: [2026-03-30 10:29:46] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:30:23] [INFO] storyboard task success | record_id='recvfjuzctgBXi' shots=11
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuzctgBXi/recvfjuzctgBXi_storyboard.png
+2026-03-30 10:30:42 [INFO] [产品脚本生成] 🚀 已启动任务: task0069 (recvfjuCxJB9t8) retry=0
+2026-03-30 10:30:46 [INFO] [产品脚本生成] 🚀 已启动任务: task0070 (recvfjuCMK4IKp) retry=0
+2026-03-30 10:30:51 [INFO] [分镜图生成] 🚀 已启动任务: task0059 (recvfjuyDlz932) retry=0
+2026-03-30 10:30:57 [INFO] [分镜图生成] 🚀 已启动任务: task0061 (recvfjuzYanFin) retry=0
+2026-03-30 10:31:33 [INFO] [产品脚本生成] ✅ 完成: recvfjuBOaPwqg
+2026-03-30 10:31:33 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-30 10:31:28] [INFO] script generation task success | record_id='recvfjuBOaPwqg' result_len=839 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (839字)
+2026-03-30 10:31:33 [INFO] [产品脚本生成] ✅ 完成: recvfjuC2dWsoK
+2026-03-30 10:31:33 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuC2dWsoK'
+[2026-03-30 10:31:19] [INFO] script generation task success | record_id='recvfjuC2dWsoK' result_len=770 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (770字)
+2026-03-30 10:31:42 [INFO] [产品脚本生成] 🚀 已启动任务: task0071 (recvfjuD0uhsRo) retry=0
+2026-03-30 10:31:46 [INFO] [产品脚本生成] 🚀 已启动任务: task0072 (recvfjuDdmR0ms) retry=0
+2026-03-30 10:32:22 [INFO] [产品脚本生成] ✅ 完成: recvfjuCxJB9t8
+2026-03-30 10:32:22 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuCxJB9t8'
+[2026-03-30 10:32:03] [INFO] script generation task success | record_id='recvfjuCxJB9t8' result_len=772 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (772字)
+2026-03-30 10:32:22 [INFO] [产品脚本生成] ✅ 完成: recvfjuCMK4IKp
+2026-03-30 10:32:22 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuCMK4IKp'
+[2026-03-30 10:31:52] [INFO] script generation task success | record_id='recvfjuCMK4IKp' result_len=815 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (815字)
+2026-03-30 10:32:22 [INFO] [分镜图生成] ✅ 完成: recvfjuyDlz932
+2026-03-30 10:32:22 [INFO] [分镜图生成] stdout: [2026-03-30 10:31:24] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:31:57] [INFO] storyboard task success | record_id='recvfjuyDlz932' shots=10
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuyDlz932/recvfjuyDlz932_storyboard.png
+2026-03-30 10:32:22 [INFO] [分镜图生成] ✅ 完成: recvfjuzYanFin
+2026-03-30 10:32:22 [INFO] [分镜图生成] stdout: [2026-03-30 10:30:58] [INFO] storyboard task start | record_id='recvfjuzYanFin'
+[2026-03-30 10:32:20] [INFO] storyboard task success | record_id='recvfjuzYanFin' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuzYanFin/recvfjuzYanFin_storyboard.png
+2026-03-30 10:32:32 [INFO] [产品脚本生成] 🚀 已启动任务: task0073 (recvfjuK7JDEy3) retry=0
+2026-03-30 10:32:37 [INFO] [产品脚本生成] 🚀 已启动任务: task0074 (recvfjuKpAmy0M) retry=0
+2026-03-30 10:32:40 [INFO] [分镜图生成] 🚀 已启动任务: task0062 (recvfjuAjIcHKI) retry=0
+2026-03-30 10:32:45 [INFO] [分镜图生成] 🚀 已启动任务: task0063 (recvfjuABQRxaS) retry=0
+2026-03-30 10:33:21 [INFO] [产品脚本生成] ✅ 完成: recvfjuDdmR0ms
+2026-03-30 10:33:21 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuDdmR0ms'
+[2026-03-30 10:32:59] [INFO] script generation task success | record_id='recvfjuDdmR0ms' result_len=845 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (845字)
+2026-03-30 10:33:29 [INFO] [产品脚本生成] 🚀 已启动任务: task0075 (recvfjuKG8QEQs) retry=0
+2026-03-30 10:34:05 [INFO] [产品脚本生成] ✅ 完成: recvfjuK7JDEy3
+2026-03-30 10:34:05 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuK7JDEy3'
+[2026-03-30 10:33:48] [INFO] script generation task success | record_id='recvfjuK7JDEy3' result_len=793 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (793字)
+2026-03-30 10:34:05 [ERROR] [分镜图生成] ❌ 失败: recvfjuAjIcHKI error_code=MODEL_EMPTY_OUTPUT retryable=True stderr=[2026-03-30 10:32:41] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:33:18] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:20] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:20] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:34:07 [WARNING] [分镜图生成] 任务失败，已回退待重试: recvfjuAjIcHKI (1/2) error_code=MODEL_EMPTY_OUTPUT reason=[2026-03-30 10:32:41] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:33:18] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:20] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:20] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:34:07 [INFO] [分镜图生成] stdout: ARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:20] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 JSON
+2026-03-30 10:34:07 [INFO] [分镜图生成] ✅ 完成: recvfjuABQRxaS
+2026-03-30 10:34:07 [INFO] [分镜图生成] stdout: [2026-03-30 10:33:20] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:33:52] [INFO] storyboard task success | record_id='recvfjuABQRxaS' shots=11
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuABQRxaS/recvfjuABQRxaS_storyboard.png
+2026-03-30 10:34:17 [INFO] [产品脚本生成] 🚀 已启动任务: task0076 (recvfjuKSniZAz) retry=0
+2026-03-30 10:34:21 [INFO] [分镜图生成] 🚀 已启动任务: task0062 (recvfjuAjIcHKI) retry=1
+2026-03-30 10:34:25 [INFO] [分镜图生成] 🚀 已启动任务: task0064 (recvfjuAWv51m5) retry=0
+2026-03-30 10:34:31 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 20, '分镜图生成': 10} success={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 16, '分镜图生成': 7} failed={} retried={'分镜图生成': 1} timeouts={}
+2026-03-30 10:35:01 [INFO] [产品脚本生成] ✅ 完成: recvfjuD0uhsRo
+2026-03-30 10:35:01 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-30 10:34:08] [INFO] script generation task success | record_id='recvfjuD0uhsRo' result_len=841 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (841字)
+2026-03-30 10:35:01 [INFO] [产品脚本生成] ✅ 完成: recvfjuKpAmy0M
+2026-03-30 10:35:01 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuKpAmy0M'
+[2026-03-30 10:34:09] [INFO] script generation task success | record_id='recvfjuKpAmy0M' result_len=911 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (911字)
+2026-03-30 10:35:01 [INFO] [产品脚本生成] ✅ 完成: recvfjuKG8QEQs
+2026-03-30 10:35:01 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuKG8QEQs'
+[2026-03-30 10:34:45] [INFO] script generation task success | record_id='recvfjuKG8QEQs' result_len=764 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (764字)
+2026-03-30 10:35:01 [ERROR] [分镜图生成] ❌ 失败: recvfjuAjIcHKI error_code=MODEL_EMPTY_OUTPUT retryable=True stderr=[2026-03-30 10:34:22] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:34:53] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:34:54] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:34:54] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:35:03 [WARNING] [分镜图生成] 任务失败，已回退待重试: recvfjuAjIcHKI (2/2) error_code=MODEL_EMPTY_OUTPUT reason=[2026-03-30 10:34:22] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:34:53] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:34:54] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:34:54] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:35:03 [INFO] [分镜图生成] stdout: ARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:34:54] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 JSON
+2026-03-30 10:35:12 [INFO] [产品脚本生成] 🚀 已启动任务: task0077 (recvfjuL52NtNf) retry=0
+2026-03-30 10:35:15 [INFO] [产品脚本生成] 🚀 已启动任务: task0078 (recvfjuLiblqQC) retry=0
+2026-03-30 10:35:18 [INFO] [产品脚本生成] 🚀 已启动任务: task0079 (recvfjuLw8CB8e) retry=0
+2026-03-30 10:35:22 [INFO] [分镜图生成] 🚀 已启动任务: task0062 (recvfjuAjIcHKI) retry=2
+2026-03-30 10:35:57 [INFO] [产品脚本生成] ✅ 完成: recvfjuKSniZAz
+2026-03-30 10:35:57 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuKSniZAz'
+[2026-03-30 10:35:19] [INFO] script generation task success | record_id='recvfjuKSniZAz' result_len=802 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (802字)
+2026-03-30 10:35:57 [INFO] [分镜图生成] ✅ 完成: recvfjuAWv51m5
+2026-03-30 10:35:57 [INFO] [分镜图生成] stdout: [2026-03-30 10:34:59] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:35] [INFO] storyboard task success | record_id='recvfjuAWv51m5' shots=11
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuAWv51m5/recvfjuAWv51m5_storyboard.png
+2026-03-30 10:36:05 [INFO] [产品脚本生成] 🚀 已启动任务: task0080 (recvfjuLHO5SLQ) retry=0
+2026-03-30 10:36:10 [INFO] [分镜图生成] 🚀 已启动任务: task0065 (recvfjuBlgXNdC) retry=0
+2026-03-30 10:36:50 [INFO] [产品脚本生成] ✅ 完成: recvfjuLiblqQC
+2026-03-30 10:36:50 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuLiblqQC'
+[2026-03-30 10:36:14] [INFO] script generation task success | record_id='recvfjuLiblqQC' result_len=662 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (662字)
+2026-03-30 10:36:50 [INFO] [产品脚本生成] ✅ 完成: recvfjuLw8CB8e
+2026-03-30 10:36:50 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuLw8CB8e'
+[2026-03-30 10:36:31] [INFO] script generation task success | record_id='recvfjuLw8CB8e' result_len=744 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (744字)
+2026-03-30 10:36:50 [ERROR] [分镜图生成] ❌ 失败: recvfjuAjIcHKI error_code=MODEL_EMPTY_OUTPUT retryable=True stderr=[2026-03-30 10:35:23] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:35:54] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:55] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:55] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:36:50 [ERROR] [分镜图生成] 任务失败且超过重试上限: recvfjuAjIcHKI retries=2 error_code=MODEL_EMPTY_OUTPUT reason=[2026-03-30 10:35:23] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'
+[2026-03-30 10:35:54] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:55] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:55] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J
+2026-03-30 10:36:51 [INFO] [分镜图生成] stdout: ARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:35:55] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True
+ERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 JSON
+2026-03-30 10:36:59 [INFO] [产品脚本生成] 🚀 已启动任务: task0081 (recvfjuLVhIce2) retry=0
+2026-03-30 10:37:02 [INFO] [产品脚本生成] 🚀 已启动任务: task0082 (recvfjuM89xPVR) retry=0
+2026-03-30 10:37:06 [INFO] [分镜图生成] 🚀 已启动任务: task0066 (recvfjuByR5ey9) retry=0
+2026-03-30 10:37:40 [INFO] [产品脚本生成] ✅ 完成: recvfjuL52NtNf
+2026-03-30 10:37:40 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-30 10:37:24] [INFO] script generation task success | record_id='recvfjuL52NtNf' result_len=752 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (752字)
+2026-03-30 10:37:40 [INFO] [产品脚本生成] ✅ 完成: recvfjuLHO5SLQ
+2026-03-30 10:37:40 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuLHO5SLQ'
+[2026-03-30 10:37:30] [INFO] script generation task success | record_id='recvfjuLHO5SLQ' result_len=799 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (799字)
+2026-03-30 10:37:40 [INFO] [分镜图生成] ✅ 完成: recvfjuBlgXNdC
+2026-03-30 10:37:40 [INFO] [分镜图生成] stdout: [2026-03-30 10:36:48] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'
+[2026-03-30 10:37:22] [INFO] storyboard task success | record_id='recvfjuBlgXNdC' shots=10
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuBlgXNdC/recvfjuBlgXNdC_storyboard.png
+2026-03-30 10:37:48 [INFO] [产品脚本生成] 🚀 已启动任务: task0083 (recvfjuPkG1rC2) retry=0
+2026-03-30 10:37:54 [INFO] [产品脚本生成] 🚀 已启动任务: task0084 (recvfjuPxoMWwP) retry=0
+2026-03-30 10:37:57 [INFO] [分镜图生成] 🚀 已启动任务: task0067 (recvfjuBOaPwqg) retry=0
+2026-03-30 10:38:32 [INFO] [产品脚本生成] ✅ 完成: recvfjuLVhIce2
+2026-03-30 10:38:32 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuLVhIce2'
+[2026-03-30 10:38:17] [INFO] script generation task success | record_id='recvfjuLVhIce2' result_len=884 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (884字)
+2026-03-30 10:38:32 [INFO] [产品脚本生成] ✅ 完成: recvfjuM89xPVR
+2026-03-30 10:38:32 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuM89xPVR'
+[2026-03-30 10:38:17] [INFO] script generation task success | record_id='recvfjuM89xPVR' result_len=657 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (657字)
+2026-03-30 10:38:32 [INFO] [分镜图生成] ✅ 完成: recvfjuByR5ey9
+2026-03-30 10:38:32 [INFO] [分镜图生成] stdout: [2026-03-30 10:37:07] [INFO] storyboard task start | record_id='recvfjuByR5ey9'
+[2026-03-30 10:38:12] [INFO] storyboard task success | record_id='recvfjuByR5ey9' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuByR5ey9/recvfjuByR5ey9_storyboard.png
+2026-03-30 10:38:44 [INFO] [产品脚本生成] 🚀 已启动任务: task0085 (recvfjuQcpXrOD) retry=0
+2026-03-30 10:38:48 [INFO] [产品脚本生成] 🚀 已启动任务: task0086 (recvfjuQr5kEIs) retry=0
+2026-03-30 10:38:52 [INFO] [分镜图生成] 🚀 已启动任务: task0068 (recvfjuC2dWsoK) retry=0
+2026-03-30 10:39:28 [INFO] [产品脚本生成] ✅ 完成: recvfjuPkG1rC2
+2026-03-30 10:39:28 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuPkG1rC2'
+[2026-03-30 10:39:09] [INFO] script generation task success | record_id='recvfjuPkG1rC2' result_len=720 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (720字)
+2026-03-30 10:39:28 [INFO] [分镜图生成] ✅ 完成: recvfjuBOaPwqg
+2026-03-30 10:39:28 [INFO] [分镜图生成] stdout: [2026-03-30 10:37:57] [INFO] storyboard task start | record_id='recvfjuBOaPwqg'
+[2026-03-30 10:39:14] [INFO] storyboard task success | record_id='recvfjuBOaPwqg' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuBOaPwqg/recvfjuBOaPwqg_storyboard.png
+2026-03-30 10:39:36 [INFO] [分镜图生成] 🚀 已启动任务: task0069 (recvfjuCxJB9t8) retry=0
+2026-03-30 10:40:12 [INFO] [产品脚本生成] ✅ 完成: recvfjuQcpXrOD
+2026-03-30 10:40:12 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuQcpXrOD'
+[2026-03-30 10:40:01] [INFO] script generation task success | record_id='recvfjuQcpXrOD' result_len=748 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (748字)
+2026-03-30 10:40:12 [INFO] [产品脚本生成] ✅ 完成: recvfjuQr5kEIs
+2026-03-30 10:40:12 [INFO] [产品脚本生成] stdout: script generation task start | record_id='recvfjuQr5kEIs'
+[2026-03-30 10:39:45] [INFO] script generation task success | record_id='recvfjuQr5kEIs' result_len=673 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (673字)
+2026-03-30 10:40:53 [INFO] [分镜图生成] ✅ 完成: recvfjuC2dWsoK
+2026-03-30 10:40:53 [INFO] [分镜图生成] stdout: [2026-03-30 10:38:54] [INFO] storyboard task start | record_id='recvfjuC2dWsoK'
+[2026-03-30 10:40:25] [INFO] storyboard task success | record_id='recvfjuC2dWsoK' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuC2dWsoK/recvfjuC2dWsoK_storyboard.png
+2026-03-30 10:41:02 [INFO] [分镜图生成] 🚀 已启动任务: task0070 (recvfjuCMK4IKp) retry=0
+2026-03-30 10:41:38 [INFO] [分镜图生成] ✅ 完成: recvfjuCxJB9t8
+2026-03-30 10:41:38 [INFO] [分镜图生成] stdout: [2026-03-30 10:39:37] [INFO] storyboard task start | record_id='recvfjuCxJB9t8'
+[2026-03-30 10:40:58] [INFO] storyboard task success | record_id='recvfjuCxJB9t8' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuCxJB9t8/recvfjuCxJB9t8_storyboard.png
+2026-03-30 10:41:46 [INFO] [分镜图生成] 🚀 已启动任务: task0071 (recvfjuD0uhsRo) retry=0
+2026-03-30 10:42:22 [INFO] [产品脚本生成] ✅ 完成: recvfjuPxoMWwP
+2026-03-30 10:42:22 [INFO] [产品脚本生成] stdout: 3 error='Server disconnected without sending a response.'
+[2026-03-30 10:42:08] [INFO] script generation task success | record_id='recvfjuPxoMWwP' result_len=768 reference_count=5 selected_refs=['recvfjqnjr3cSQ', 'recvfjqnNPZFdT', 'recvfjqnNPvv1O', 'recvfjqnNPpt6i', 'recvf8LlHF5bPE']
+✅ 脚本生成完成 (768字)
+2026-03-30 10:42:22 [INFO] [分镜图生成] ✅ 完成: recvfjuCMK4IKp
+2026-03-30 10:42:22 [INFO] [分镜图生成] stdout: [2026-03-30 10:41:03] [INFO] storyboard task start | record_id='recvfjuCMK4IKp'
+[2026-03-30 10:42:16] [INFO] storyboard task success | record_id='recvfjuCMK4IKp' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuCMK4IKp/recvfjuCMK4IKp_storyboard.png
+2026-03-30 10:42:30 [INFO] [分镜图生成] 🚀 已启动任务: task0072 (recvfjuDdmR0ms) retry=0
+2026-03-30 10:43:50 [INFO] [分镜图生成] ✅ 完成: recvfjuDdmR0ms
+2026-03-30 10:43:50 [INFO] [分镜图生成] stdout: [2026-03-30 10:42:32] [INFO] storyboard task start | record_id='recvfjuDdmR0ms'
+[2026-03-30 10:43:47] [INFO] storyboard task success | record_id='recvfjuDdmR0ms' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuDdmR0ms/recvfjuDdmR0ms_storyboard.png
+2026-03-30 10:43:58 [INFO] [分镜图生成] 🚀 已启动任务: task0073 (recvfjuK7JDEy3) retry=0
+2026-03-30 10:44:45 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 30, '分镜图生成': 20} success={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 30, '分镜图生成': 15} failed={'分镜图生成': 1} retried={'分镜图生成': 2} timeouts={}
+2026-03-30 10:45:15 [INFO] [分镜图生成] ✅ 完成: recvfjuK7JDEy3
+2026-03-30 10:45:15 [INFO] [分镜图生成] stdout: [2026-03-30 10:43:59] [INFO] storyboard task start | record_id='recvfjuK7JDEy3'
+[2026-03-30 10:45:10] [INFO] storyboard task success | record_id='recvfjuK7JDEy3' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuK7JDEy3/recvfjuK7JDEy3_storyboard.png
+2026-03-30 10:45:23 [INFO] [分镜图生成] 🚀 已启动任务: task0074 (recvfjuKpAmy0M) retry=0
+2026-03-30 10:47:20 [INFO] [分镜图生成] ✅ 完成: recvfjuKpAmy0M
+2026-03-30 10:47:20 [INFO] [分镜图生成] stdout: [2026-03-30 10:45:24] [INFO] storyboard task start | record_id='recvfjuKpAmy0M'
+[2026-03-30 10:46:46] [INFO] storyboard task success | record_id='recvfjuKpAmy0M' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuKpAmy0M/recvfjuKpAmy0M_storyboard.png
+2026-03-30 10:47:28 [INFO] [分镜图生成] 🚀 已启动任务: task0075 (recvfjuKG8QEQs) retry=0
+2026-03-30 10:48:44 [INFO] [分镜图生成] ✅ 完成: recvfjuKG8QEQs
+2026-03-30 10:48:44 [INFO] [分镜图生成] stdout: [2026-03-30 10:47:29] [INFO] storyboard task start | record_id='recvfjuKG8QEQs'
+[2026-03-30 10:48:40] [INFO] storyboard task success | record_id='recvfjuKG8QEQs' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuKG8QEQs/recvfjuKG8QEQs_storyboard.png
+2026-03-30 10:48:54 [INFO] [分镜图生成] 🚀 已启动任务: task0076 (recvfjuKSniZAz) retry=0
+2026-03-30 10:50:49 [INFO] [分镜图生成] ✅ 完成: recvfjuKSniZAz
+2026-03-30 10:50:49 [INFO] [分镜图生成] stdout: [2026-03-30 10:48:55] [INFO] storyboard task start | record_id='recvfjuKSniZAz'
+[2026-03-30 10:50:18] [INFO] storyboard task success | record_id='recvfjuKSniZAz' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuKSniZAz/recvfjuKSniZAz_storyboard.png
+2026-03-30 10:51:00 [INFO] [分镜图生成] 🚀 已启动任务: task0077 (recvfjuL52NtNf) retry=0
+2026-03-30 10:52:14 [INFO] [分镜图生成] ✅ 完成: recvfjuL52NtNf
+2026-03-30 10:52:14 [INFO] [分镜图生成] stdout: [2026-03-30 10:51:01] [INFO] storyboard task start | record_id='recvfjuL52NtNf'
+[2026-03-30 10:52:04] [INFO] storyboard task success | record_id='recvfjuL52NtNf' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuL52NtNf/recvfjuL52NtNf_storyboard.png
+2026-03-30 10:52:21 [INFO] [分镜图生成] 🚀 已启动任务: task0078 (recvfjuLiblqQC) retry=0
+2026-03-30 10:53:37 [INFO] [分镜图生成] ✅ 完成: recvfjuLiblqQC
+2026-03-30 10:53:37 [INFO] [分镜图生成] stdout: [2026-03-30 10:52:22] [INFO] storyboard task start | record_id='recvfjuLiblqQC'
+[2026-03-30 10:53:25] [INFO] storyboard task success | record_id='recvfjuLiblqQC' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuLiblqQC/recvfjuLiblqQC_storyboard.png
+2026-03-30 10:53:50 [INFO] [分镜图生成] 🚀 已启动任务: task0079 (recvfjuLw8CB8e) retry=0
+2026-03-30 10:55:05 [INFO] [分镜图生成] ✅ 完成: recvfjuLw8CB8e
+2026-03-30 10:55:07 [INFO] [分镜图生成] stdout: [2026-03-30 10:53:51] [INFO] storyboard task start | record_id='recvfjuLw8CB8e'
+[2026-03-30 10:54:50] [INFO] storyboard task success | record_id='recvfjuLw8CB8e' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuLw8CB8e/recvfjuLw8CB8e_storyboard.png
+2026-03-30 10:55:18 [INFO] [分镜图生成] 🚀 已启动任务: task0080 (recvfjuLHO5SLQ) retry=0
+2026-03-30 10:55:24 [INFO] 📊 今日运行统计 launched={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 30, '分镜图生成': 27} success={'爆款抓取': 1, '脚本分析': 10, '产品脚本生成': 30, '分镜图生成': 22} failed={'分镜图生成': 1} retried={'分镜图生成': 2} timeouts={}
+2026-03-30 10:56:35 [INFO] [分镜图生成] ✅ 完成: recvfjuD0uhsRo
+2026-03-30 10:56:35 [INFO] [分镜图生成] stdout: [2026-03-30 10:41:48] [INFO] storyboard task start | record_id='recvfjuD0uhsRo'
+[2026-03-30 10:56:15] [INFO] storyboard task success | record_id='recvfjuD0uhsRo' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuD0uhsRo/recvfjuD0uhsRo_storyboard.png
+2026-03-30 10:56:35 [INFO] [分镜图生成] ✅ 完成: recvfjuLHO5SLQ
+2026-03-30 10:56:35 [INFO] [分镜图生成] stdout: [2026-03-30 10:55:21] [INFO] storyboard task start | record_id='recvfjuLHO5SLQ'
+[2026-03-30 10:56:18] [INFO] storyboard task success | record_id='recvfjuLHO5SLQ' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuLHO5SLQ/recvfjuLHO5SLQ_storyboard.png
+2026-03-30 10:56:43 [INFO] [分镜图生成] 🚀 已启动任务: task0081 (recvfjuLVhIce2) retry=0
+2026-03-30 10:56:47 [INFO] [分镜图生成] 🚀 已启动任务: task0082 (recvfjuM89xPVR) retry=0
+2026-03-30 10:58:03 [INFO] [分镜图生成] ✅ 完成: recvfjuLVhIce2
+2026-03-30 10:58:03 [INFO] [分镜图生成] stdout: [2026-03-30 10:56:44] [INFO] storyboard task start | record_id='recvfjuLVhIce2'
+[2026-03-30 10:57:46] [INFO] storyboard task success | record_id='recvfjuLVhIce2' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuLVhIce2/recvfjuLVhIce2_storyboard.png
+2026-03-30 10:58:03 [INFO] [分镜图生成] ✅ 完成: recvfjuM89xPVR
+2026-03-30 10:58:03 [INFO] [分镜图生成] stdout: [2026-03-30 10:56:48] [INFO] storyboard task start | record_id='recvfjuM89xPVR'
+[2026-03-30 10:57:50] [INFO] storyboard task success | record_id='recvfjuM89xPVR' shots=9
+✅ 分镜图生成完成: /Users/ryanlynn/.openclaw/workspace-tk/storyboard_work/recvfjuM89xPVR/recvfjuM89xPVR_storyboard.png

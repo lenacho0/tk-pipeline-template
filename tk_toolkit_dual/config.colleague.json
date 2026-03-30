@@ -1,0 +1,89 @@
+{
+  "feishu": {
+    "app_id": "cli_a93014c004799cd1",
+    "app_secret": "i0BCefP8L9zkChw9tpGSfdXpRN6WYAbz",
+    "bitable_app_token": "LBWUbgRfEavAgjsXNIhcpo0Dnvb",
+    "tables": {
+      "config": "tblPUVFtpjogYOGn",
+      "fetch_config": "tbl4cIPQYHSHbFzV",
+      "data": "tblKNlGHJKwJWyRW",
+      "analysis": "tblozrImDy0r4dBN",
+      "script_gen": "tbl2Yp6T4jDN8Rfr",
+      "shot_script_gen": "tblRf9jAD00Jma9p",
+      "shot_storyboard": "tblRVg5Ob7VW2zCI",
+      "product": "tblF2cZmbQEJMiUH",
+      "model_appearance": "tblvpVOYockZmCG8",
+      "video": "tblQdTGSsmQbPMQd"
+    }
+  },
+  "fastmoss": {
+    "token": ""
+  },
+  "config_records": {
+    "fetch": "recveiIeCBik6u",
+    "analysis": "recveizDqAaxWy",
+    "script_gen": "recveizDqAB9Xo",
+    "shot_script_gen": "recveQZPORmm33",
+    "storyboard": "recveizDqA44fi",
+    "shot_storyboard": "recveQZRZc7NUI",
+    "video": "recveppNaVCcyd"
+  },
+  "products": {
+    "宠物尿味分解除臭喷雾": "recveikpqWjEiB",
+    "宠物皮肤护理喷雾": "recveikpqWDayE"
+  },
+  "notification": {
+    "feishu_user_id": "ou_0e8b1b4dfca5a47166f0fa12c7a7a880"
+  },
+  "dispatcher": {
+    "poll_interval": 30,
+    "healthcheck_hour": 8,
+    "circuit_breaker": {
+      "window_seconds": 900,
+      "threshold": 3,
+      "cooldown_seconds": 600
+    },
+    "scan": {
+      "table_min_interval_seconds": 20,
+      "record_state_cache_ttl_seconds": 300
+    },
+    "stages": {
+      "tk_fetch.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 900
+      },
+      "tk_analyze.py": {
+        "max_concurrency": 4,
+        "max_retries": 2,
+        "timeout": 900
+      },
+      "tk_script_gen.py": {
+        "max_concurrency": 4,
+        "max_retries": 2,
+        "timeout": 600
+      },
+      "tk_storyboard.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 1200
+      },
+      "tk_shot_script_gen.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 900
+      },
+      "tk_shot_storyboard.py": {
+        "max_concurrency": 3,
+        "max_retries": 2,
+        "timeout": 1200
+      },
+      "tk_video.py": {
+        "max_concurrency": 1,
+        "max_retries": 1,
+        "timeout": 1800
+      }
+    }
+  },
+  "workspace": "/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/workspace_colleague"
+}

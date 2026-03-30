@@ -1,0 +1,58 @@
+{
+  "tk_shot_script_gen.py::recvf8VWXlPwK4": {
+    "watch": "逐镜头脚本生成",
+    "record_id": "recvf8VWXlPwK4",
+    "script": "tk_shot_script_gen.py",
+    "time": "2026-03-28 16:17:42",
+    "reason": "[2026-03-28 16:13:49] [INFO] shot script task start | record_id='recvf8VWXlPwK4'\n[2026-03-28 16:15:25] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 16:16:29] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 16:17:33] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser",
+    "payload": {
+      "stage": "tk_shot_script_gen.py",
+      "status": "failed_terminal",
+      "error_code": "RUNTIME_BUG",
+      "retryable": false,
+      "message": "[2026-03-28 16:13:49] [INFO] shot script task start | record_id='recvf8VWXlPwK4'\n[2026-03-28 16:15:25] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 16:16:29] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 16:17:33] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser"
+    }
+  },
+  "tk_shot_script_gen.py::recvf8VYDmspCJ": {
+    "watch": "逐镜头脚本生成",
+    "record_id": "recvf8VYDmspCJ",
+    "script": "tk_shot_script_gen.py",
+    "time": "2026-03-28 15:13:46",
+    "reason": "[2026-03-28 15:09:21] [INFO] shot script task start | record_id='recvf8VYDmspCJ'\n[2026-03-28 15:11:02] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:12:04] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:13:08] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser",
+    "payload": {
+      "stage": "tk_shot_script_gen.py",
+      "status": "failed_terminal",
+      "error_code": "RUNTIME_BUG",
+      "retryable": false,
+      "message": "[2026-03-28 15:09:21] [INFO] shot script task start | record_id='recvf8VYDmspCJ'\n[2026-03-28 15:11:02] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:12:04] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:13:08] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser"
+    }
+  },
+  "tk_shot_script_gen.py::recvf8VZB9z6rW": {
+    "watch": "逐镜头脚本生成",
+    "record_id": "recvf8VZB9z6rW",
+    "script": "tk_shot_script_gen.py",
+    "time": "2026-03-28 15:14:28",
+    "reason": "[2026-03-28 15:10:06] [INFO] shot script task start | record_id='recvf8VZB9z6rW'\n[2026-03-28 15:11:56] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:12:59] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:14:03] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser",
+    "payload": {
+      "stage": "tk_shot_script_gen.py",
+      "status": "failed_terminal",
+      "error_code": "RUNTIME_BUG",
+      "retryable": false,
+      "message": "[2026-03-28 15:10:06] [INFO] shot script task start | record_id='recvf8VZB9z6rW'\n[2026-03-28 15:11:56] [WARN] gemini shot script generate_content failed | attempt=1 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:12:59] [WARN] gemini shot script generate_content failed | attempt=2 max_attempts=3 error='Server disconnected without sending a response.'\n[2026-03-28 15:14:03] [WARN] gemini shot script generate_content failed | attempt=3 max_attempts=3 error='Ser"
+    }
+  },
+  "tk_storyboard.py::recvfjuAjIcHKI": {
+    "watch": "分镜图生成",
+    "record_id": "recvfjuAjIcHKI",
+    "script": "tk_storyboard.py",
+    "time": "2026-03-30 10:36:51",
+    "reason": "[2026-03-30 10:35:23] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'\n[2026-03-30 10:35:54] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'\n[2026-03-30 10:35:55] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'\n[2026-03-30 10:35:55] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True\nERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J",
+    "payload": {
+      "stage": "tk_storyboard.py",
+      "status": "failed_retryable",
+      "error_code": "MODEL_EMPTY_OUTPUT",
+      "retryable": true,
+      "message": "[2026-03-30 10:35:23] [INFO] storyboard task start | record_id='recvfjuAjIcHKI'\n[2026-03-30 10:35:54] [WARN] storyboard shots fallback retry | variant=1 error='模型返回空文本，无法提取 JSON'\n[2026-03-30 10:35:55] [WARN] storyboard shots fallback retry | variant=2 error='模型返回空文本，无法提取 JSON'\n[2026-03-30 10:35:55] [ERROR] storyboard task failed | record_id='recvfjuAjIcHKI' error='模型返回空文本，无法提取 JSON' error_code='MODEL_EMPTY_OUTPUT' retryable=True\nERROR_CODE=MODEL_EMPTY_OUTPUT RETRYABLE=true MESSAGE=模型返回空文本，无法提取 J"
+    }
+  }
+}
