@@ -11,6 +11,9 @@ from common import *
 WORK_DIR = os.path.join(WORKSPACE, 'video_from_storyboard_work')
 POLL_INTERVAL = 15
 MAX_POLL_TIME = 1800
+SUBMIT_TIMEOUT = 90
+DOWNLOAD_TIMEOUT = 120
+POLL_REQUEST_TIMEOUT = 30
 DEFAULT_SECONDS = 12
 DEFAULT_SIZE = '720x1280'
 STAGE_PREFIX = '九宫格生成视频-'
@@ -111,27 +114,55 @@ def submit_sora_task(api_base, api_key, prompt, model_name, image_path, seconds=
         'seconds': (None, str(seconds)),
         'size': (None, size),
     }
-    if image_path and os.path.exists(image_path):
-        with open(image_path, 'rb') as img:
-            form_data['image'] = (os.path.basename(image_path), img, 'image/png')
-            resp = requests.post(url, headers=headers, files=form_data, timeout=120)
-    else:
-        resp = requests.post(url, headers=headers, files=form_data, timeout=120)
+    try:
+        if image_path and os.path.exists(image_path):
+            with open(image_path, 'rb') as img:
+                form_data['image'] = (os.path.basename(image_path), img, 'image/png')
+                resp = requests.post(url, headers=headers, files=form_data, timeout=SUBMIT_TIMEOUT)
+        else:
+            resp = requests.post(url, headers=headers, files=form_data, timeout=SUBMIT_TIMEOUT)
+        resp.raise_for_status()
+    except requests.exceptions.Timeout as e:
+        raise Exception(f'Sora任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
+    except requests.exceptions.RequestException as e:
+        raise Exception(f'Sora任务提交请求失败: {e}')
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception as e:
+        body = (resp.text or '')[:500]
+        raise Exception(f'Sora任务提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
+
     if 'id' in data:
         return data['id'], data
-    raise Exception(f'Sora任务提交失败: {data}')
+    raise Exception(f'Sora任务提交失败: {str(data)[:1000]}')
 
 
-def poll_sora_task(api_base, api_key, video_id):
+def poll_sora_task(api_base, api_key, video_id, progress_cb=None):
     url = f"{api_base.rstrip('/').rsplit('/', 2)[0]}/videos/{video_id}"
     headers = {'Authorization': api_key}
     start = time.time()
+    last_status = None
+    last_progress_push_at = 0
     while time.time() - start < MAX_POLL_TIME:
-        resp = requests.get(url, headers=headers, timeout=30)
-        data = resp.json()
-        status = data.get('status', '')
+        try:
+            resp = requests.get(url, headers=headers, timeout=POLL_REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.Timeout:
+            data = {'status': 'poll_timeout'}
+        except requests.exceptions.RequestException as e:
+            raise Exception(f'Sora轮询请求失败: {e}')
+        except Exception as e:
+            raise Exception(f'Sora轮询返回异常: {e}')
+
+        status = data.get('status', '') or 'unknown'
+        elapsed = int(time.time() - start)
+        if progress_cb and (status != last_status or time.time() - last_progress_push_at >= 60):
+            progress_cb(status, elapsed, data)
+            last_progress_push_at = time.time()
+            last_status = status
+
         if status in ('completed', 'succeeded'):
             return data
         if status in ('failed', 'error'):
@@ -200,7 +231,9 @@ def main():
         })
 
         storyboard_path = os.path.join(WORK_DIR, f'{record_id}_storyboard.png')
+        log_event('INFO', 'video-from-storyboard download storyboard start', record_id=record_id, file_token=file_token)
         safe_download_attachment(token, file_token, storyboard_path)
+        log_event('INFO', 'video-from-storyboard download storyboard success', record_id=record_id, storyboard_path=storyboard_path)
 
         prompt = build_video_prompt(task, config.get('prompt', ''), script)
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
@@ -211,6 +244,10 @@ def main():
         model_name = config.get('model') or 'sora-2-all'
         api_base = config.get('api_base') or 'https://own-jarvis-api.com/v1/video/create'
 
+        safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
+            '视频错误信息': f'准备提交{video_model}任务（{seconds}s）...'
+        })
+        log_event('INFO', 'video-from-storyboard submit sora start', record_id=record_id, stage_name=stage_name, model_name=model_name, seconds=seconds, api_base=api_base)
         video_id, _ = submit_sora_task(
             api_base=api_base,
             api_key=config['api_key'],
@@ -220,11 +257,20 @@ def main():
             seconds=seconds,
             size=DEFAULT_SIZE,
         )
+        log_event('INFO', 'video-from-storyboard submit sora success', record_id=record_id, video_id=video_id)
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '视频任务ID': video_id,
+            '视频错误信息': f'已提交{video_model}任务，正在轮询（任务ID: {video_id}）'
         })
 
-        poll_sora_task(api_base, config['api_key'], video_id)
+        def push_poll_progress(status, elapsed, raw):
+            message = f'轮询中: status={status}, elapsed={elapsed}s, task_id={video_id}'
+            safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
+                '视频错误信息': message[:1000],
+            })
+            log_event('INFO', 'video-from-storyboard sora polling', record_id=record_id, video_id=video_id, status=status, elapsed=elapsed)
+
+        poll_sora_task(api_base, config['api_key'], video_id, progress_cb=push_poll_progress)
 
         out_path = os.path.join(WORK_DIR, f'{record_id}_video.mp4')
         download_sora_video(api_base, config['api_key'], video_id, out_path)
@@ -237,6 +283,7 @@ def main():
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '生成视频': [{'file_token': video_file_token}],
             '视频生成状态': '成功',
+            '视频错误信息': '',
         })
         log_event('INFO', 'video-from-storyboard task success', record_id=record_id, stage_name=stage_name, cfg_record_id=cfg_record_id, video_id=video_id)
         print(f'✅ 视频生成完成: {out_path}')
