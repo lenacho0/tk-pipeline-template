@@ -10,6 +10,7 @@ from common import *
 
 MAX_REFERENCE_SCRIPTS = 5
 MAX_REFERENCE_TOTAL_CHARS = 7000
+HANDWRITTEN_SOURCE_VALUES = {'手写脚本', '手动填写', '手写', 'manual', 'manual_script'}
 
 
 def trim_text(text, limit):
@@ -238,6 +239,46 @@ def build_script_generation_prompt(prompt_template, product_info, model_info, vi
     return base + tail
 
 
+def get_script_source(fields):
+    return extract_text(fields.get('脚本来源', '')).strip()
+
+
+def get_handwritten_script(fields):
+    return extract_text(fields.get('手写脚本内容', '')).strip()
+
+
+def is_handwritten_mode(fields):
+    return get_script_source(fields) in HANDWRITTEN_SOURCE_VALUES
+
+
+def build_handwritten_polish_prompt(product_info, model_info, video_duration, raw_script):
+    product_text = '\n'.join(f'- {k}: {v}' for k, v in product_info.items() if v)
+    return f"""
+你是电商短视频脚本整理助手。
+
+任务：把用户手写脚本整理成“可直接给九宫格分镜图生成环节使用”的标准化脚本。
+
+当前产品信息：
+{product_text or '无'}
+
+模特信息：
+{model_info or '无指定模特'}
+
+目标视频时长：
+{video_duration or '25s'}
+
+用户手写脚本：
+{raw_script}
+
+要求：
+1. 保留用户原意，不要改成另一条新脚本。
+2. 只做轻量整理与补齐，让结构更清晰、更适合后续分镜生成。
+3. 输出内容尽量包含：开场Hook、场景/痛点、产品出场、动作/演示、结果/效果、结尾CTA。
+4. 如果原文里已有镜头感，请保留；如果没有，只补最少量必要的场景/动作描述。
+5. 不要输出JSON，不要解释，不要加前言后记，只输出最终脚本文本。
+""".strip()
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python3 tk_script_gen.py <record_id>")
@@ -275,29 +316,44 @@ def main():
         })
         try_update_optional_fields(token, TABLE_SCRIPT_GEN, record_id, {**{k: v for k, v in product_info.items()}})
 
-        references = get_reference_scripts(token, product_info)
-        if not references:
-            raise Exception('没有可用的爆款视频分析结果，无法生成产品脚本')
-
         if not api_key:
             raise Exception('飞书配置表缺少 API Key')
 
         from google import genai
         client = genai.Client(api_key=api_key, http_options={'base_url': api_base})
 
-        strategy_summary = generate_strategy_summary(client, model_name, references, product_info)
-        prompt = build_script_generation_prompt(
-            prompt_template, product_info, model_info, video_duration, strategy_summary, references
-        )
+        if is_handwritten_mode(fields):
+            raw_script = get_handwritten_script(fields)
+            if not raw_script:
+                raise Exception('脚本来源为手写脚本，但手写脚本内容为空')
+            prompt = build_handwritten_polish_prompt(product_info, model_info, video_duration, raw_script)
+            response = with_retry(
+                lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+                max_attempts=3,
+                label='gemini handwritten script polish'
+            )
+            result = getattr(response, 'text', '') or ''
+            if not result.strip():
+                raise Exception('Gemini 返回空脚本')
+            references = []
+        else:
+            references = get_reference_scripts(token, product_info)
+            if not references:
+                raise Exception('没有可用的爆款视频分析结果，无法生成产品脚本')
 
-        response = with_retry(
-            lambda: client.models.generate_content(model=model_name, contents=[prompt]),
-            max_attempts=3,
-            label='gemini script generate_content'
-        )
-        result = getattr(response, 'text', '') or ''
-        if not result.strip():
-            raise Exception('Gemini 返回空脚本')
+            strategy_summary = generate_strategy_summary(client, model_name, references, product_info)
+            prompt = build_script_generation_prompt(
+                prompt_template, product_info, model_info, video_duration, strategy_summary, references
+            )
+
+            response = with_retry(
+                lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+                max_attempts=3,
+                label='gemini script generate_content'
+            )
+            result = getattr(response, 'text', '') or ''
+            if not result.strip():
+                raise Exception('Gemini 返回空脚本')
 
         current_fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
         storyboard_status = extract_text(current_fields.get('分镜图状态', '')).strip()
