@@ -11,8 +11,7 @@ from common import *
 MAX_REFERENCE_SCRIPTS = 5
 MAX_REFERENCE_TOTAL_CHARS = 7000
 HANDWRITTEN_SOURCE_VALUES = {'手写脚本', '手动填写', '手写', 'manual', 'manual_script'}
-HANDWRITTEN_PROMPT_FIELD_NAMES = ['手写脚本整理提示词', '手写脚本改写提示词', '手写脚本Prompt']
-DEFAULT_HANDWRITTEN_PROMPT_TEMPLATE = """
+DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT = """
 你是电商短视频脚本整理助手。
 
 任务：把用户手写脚本整理成“可直接给九宫格分镜图生成环节使用”的标准化脚本。
@@ -32,12 +31,34 @@ DEFAULT_HANDWRITTEN_PROMPT_TEMPLATE = """
 要求：
 1. 保留用户原意，不要改成另一条新脚本。
 2. 只做轻量整理与补齐，让结构更清晰、更适合后续分镜生成。
-3. 若手写脚本中出现与目标视频时长冲突的时长描述，必须以目标视频时长为准。
-4. 处理时长冲突时，必须最大限度保留原脚本结构、段落顺序、核心卖点、场景设定、情绪基调与CTA。
-5. 优先通过压缩、合并、删减重复内容来完成时长对齐，不要重写成另一条全新脚本。
-6. 输出内容尽量包含：开场Hook、场景/痛点、产品出场、动作/演示、结果/效果、结尾CTA。
-7. 如果原文里已有镜头感，请保留；如果没有，只补最少量必要的场景/动作描述。
-8. 不要输出JSON，不要解释，不要加前言后记，只输出最终脚本文本。
+3. 输出内容尽量包含：开场Hook、场景/痛点、产品出场、动作/演示、结果/效果、结尾CTA。
+4. 如果原文里已有镜头感，请保留；如果没有，只补最少量必要的场景/动作描述。
+5. 不要输出JSON，不要解释，不要加前言后记，只输出最终脚本文本。
+""".strip()
+DEFAULT_HANDWRITTEN_REWRITE_PROMPT = """
+你是电商短视频脚本压缩改写助手。
+
+任务：当手写脚本与目标视频时长冲突时，以目标视频时长为准，对脚本做“保真压缩改写”。
+
+当前产品信息：
+{product_info}
+
+模特信息：
+{model_info}
+
+目标视频时长：
+{video_duration}
+
+待改写脚本：
+{raw_script}
+
+改写要求：
+1. 以目标视频时长为最高优先级。
+2. 最大限度保留原脚本结构、段落顺序、核心卖点、场景设定、情绪基调与CTA。
+3. 优先通过压缩、合并、删减重复内容来完成时长对齐。
+4. 不要另起炉灶，不要重写成另一条全新脚本。
+5. 如果原文已经有明确镜头或口播结构，尽量保留。
+6. 不要输出JSON，不要解释，不要加前言后记，只输出改写后的最终脚本文本。
 """.strip()
 
 
@@ -279,23 +300,48 @@ def is_handwritten_mode(fields):
     return get_script_source(fields) in HANDWRITTEN_SOURCE_VALUES
 
 
-def get_handwritten_prompt_template(config_fields):
-    for field_name in HANDWRITTEN_PROMPT_FIELD_NAMES:
-        value = extract_text(config_fields.get(field_name, '')).strip()
-        if value:
-            return value, field_name
-    return DEFAULT_HANDWRITTEN_PROMPT_TEMPLATE, 'DEFAULT_HANDWRITTEN_PROMPT_TEMPLATE'
-
-
-def build_handwritten_polish_prompt(config_fields, product_info, model_info, video_duration, raw_script):
-    template, source_name = get_handwritten_prompt_template(config_fields)
+def fill_prompt_template(template, product_info, model_info, video_duration, raw_script):
     product_text = '\n'.join(f'- {k}: {v}' for k, v in product_info.items() if v) or '无'
     prompt = template
     prompt = prompt.replace('{product_info}', product_text)
     prompt = prompt.replace('{model_info}', model_info or '无指定模特')
     prompt = prompt.replace('{video_duration}', video_duration or '25s')
     prompt = prompt.replace('{raw_script}', raw_script)
-    return prompt, source_name
+    return prompt
+
+
+def get_handwritten_organize_prompt(config_fields):
+    value = extract_text(config_fields.get('手写脚本整理提示词', '')).strip()
+    return value or DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT
+
+
+def get_handwritten_rewrite_prompt(config_fields):
+    value = extract_text(config_fields.get('手写脚本改写提示词', '')).strip()
+    return value or DEFAULT_HANDWRITTEN_REWRITE_PROMPT
+
+
+def contains_duration_conflict(raw_script, video_duration):
+    script = (raw_script or '').lower()
+    target = (video_duration or '').lower().strip()
+    if not script or not target:
+        return False
+    normalized_target = target.replace('秒', 's').replace(' ', '')
+    duration_tokens = set(re.findall(r'\b\d+\s*s\b|\d+秒', script))
+    if not duration_tokens:
+        return False
+    return normalized_target not in {token.replace(' ', '') for token in duration_tokens}
+
+
+def run_text_prompt(client, model_name, prompt, label):
+    response = with_retry(
+        lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+        max_attempts=3,
+        label=label
+    )
+    result = getattr(response, 'text', '') or ''
+    if not result.strip():
+        raise Exception('Gemini 返回空脚本')
+    return result
 
 
 def main():
@@ -346,19 +392,24 @@ def main():
             raw_script = get_handwritten_script(fields)
             if not raw_script:
                 raise Exception('脚本来源为手写脚本，但手写脚本内容为空')
-            prompt, handwritten_prompt_source = build_handwritten_polish_prompt(
-                config_fields, product_info, model_info, video_duration, raw_script
+
+            organize_prompt = fill_prompt_template(
+                get_handwritten_organize_prompt(config_fields),
+                product_info, model_info, video_duration, raw_script
             )
-            response = with_retry(
-                lambda: client.models.generate_content(model=model_name, contents=[prompt]),
-                max_attempts=3,
-                label='gemini handwritten script polish'
-            )
-            result = getattr(response, 'text', '') or ''
-            if not result.strip():
-                raise Exception('Gemini 返回空脚本')
+            result = run_text_prompt(client, model_name, organize_prompt, 'gemini handwritten script organize')
+
+            rewrite_used = False
+            if contains_duration_conflict(raw_script, video_duration):
+                rewrite_prompt = fill_prompt_template(
+                    get_handwritten_rewrite_prompt(config_fields),
+                    product_info, model_info, video_duration, result
+                )
+                result = run_text_prompt(client, model_name, rewrite_prompt, 'gemini handwritten script rewrite')
+                rewrite_used = True
+
             references = []
-            log_event('INFO', 'handwritten prompt source selected', record_id=record_id, source=handwritten_prompt_source)
+            log_event('INFO', 'handwritten script path used', record_id=record_id, rewrite_used=rewrite_used, video_duration=video_duration)
         else:
             references = get_reference_scripts(token, product_info)
             if not references:
