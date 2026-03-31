@@ -224,7 +224,11 @@ def build_error_payload(error, stage='unknown'):
     retryable = False
     failure_status = 'failed_terminal'
 
-    if 'read timed out' in lower or 'timeout' in lower or 'timed out' in lower:
+    if '429' in lower or 'rate limit' in lower or 'too many requests' in lower:
+        error_code = 'UPSTREAM_RATE_LIMIT'
+        retryable = True
+        failure_status = 'failed_retryable'
+    elif 'read timed out' in lower or 'timeout' in lower or 'timed out' in lower:
         error_code = 'UPSTREAM_NETWORK'
         retryable = True
         failure_status = 'failed_retryable'
@@ -234,10 +238,6 @@ def build_error_payload(error, stage='unknown'):
         failure_status = 'failed_retryable'
     elif 'ssl' in lower or 'connection' in lower or 'httpsconnectionpool' in lower or 'max retries exceeded' in lower:
         error_code = 'UPSTREAM_NETWORK'
-        retryable = True
-        failure_status = 'failed_retryable'
-    elif '429' in lower or 'rate limit' in lower or 'too many requests' in lower:
-        error_code = 'UPSTREAM_RATE_LIMIT'
         retryable = True
         failure_status = 'failed_retryable'
     elif '空文本' in msg or '未返回图片内容' in msg or '返回图片过小' in msg or 'empty output' in lower:

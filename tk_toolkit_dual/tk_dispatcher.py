@@ -137,7 +137,9 @@ WATCH_LIST = [
         'args': [],
         'timeout': 3600,
         'max_concurrency': 1,
-        'max_retries': 1,
+        'max_retries': 0,
+        'circuit_threshold': 1,
+        'circuit_cooldown_seconds': 1800,
     },
     {
         'name': '视频制作',
@@ -205,9 +207,9 @@ def record_circuit_failure(watch):
     key = circuit_breaker_key(watch)
     now = int(time.time())
     entry = data.get(key, {'failures': [], 'open_until': 0})
-    window_seconds = int(CIRCUIT_CFG.get('window_seconds', 900) or 900)
-    threshold = int(CIRCUIT_CFG.get('threshold', 3) or 3)
-    cooldown_seconds = int(CIRCUIT_CFG.get('cooldown_seconds', 600) or 600)
+    window_seconds = int(watch.get('circuit_window_seconds') or CIRCUIT_CFG.get('window_seconds', 900) or 900)
+    threshold = int(watch.get('circuit_threshold') or CIRCUIT_CFG.get('threshold', 3) or 3)
+    cooldown_seconds = int(watch.get('circuit_cooldown_seconds') or CIRCUIT_CFG.get('cooldown_seconds', 600) or 600)
     failures = [ts for ts in entry.get('failures', []) if now - ts <= window_seconds]
     failures.append(now)
     entry['failures'] = failures
