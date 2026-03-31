@@ -128,6 +128,18 @@ WATCH_LIST = [
         'max_retries': 2,
     },
     {
+        'name': '003视频生成',
+        'table': TABLE_SCRIPT_GEN,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'script': 'tk_video_from_storyboard.py',
+        'args': [],
+        'timeout': 3600,
+        'max_concurrency': 1,
+        'max_retries': 1,
+    },
+    {
         'name': '视频制作',
         'table': TABLE_VIDEO,
         'status_field': '制作状态',
