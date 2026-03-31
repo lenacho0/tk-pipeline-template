@@ -11,6 +11,8 @@ from common import *
 MAX_REFERENCE_SCRIPTS = 5
 MAX_REFERENCE_TOTAL_CHARS = 7000
 HANDWRITTEN_SOURCE_VALUES = {'手写脚本', '手动填写', '手写', 'manual', 'manual_script'}
+HANDWRITTEN_ORGANIZE_STAGE_NAME = '手写脚本整理提示词'
+HANDWRITTEN_REWRITE_STAGE_NAME = '手写脚本改写提示词'
 DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT = """
 你是电商短视频脚本整理助手。
 
@@ -310,14 +312,32 @@ def fill_prompt_template(template, product_info, model_info, video_duration, raw
     return prompt
 
 
-def get_handwritten_organize_prompt(config_fields):
-    value = extract_text(config_fields.get('手写脚本整理提示词', '')).strip()
-    return value or DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT
+def find_config_record_by_stage(token, stage_name):
+    records = safe_list_records(token, TABLE_CONFIG)
+    for rec in records:
+        fields = rec.get('fields', {})
+        if extract_text(fields.get('环节', '')).strip() == stage_name:
+            return rec
+    return None
 
 
-def get_handwritten_rewrite_prompt(config_fields):
-    value = extract_text(config_fields.get('手写脚本改写提示词', '')).strip()
-    return value or DEFAULT_HANDWRITTEN_REWRITE_PROMPT
+def get_prompt_record_fields(token, stage_name, fallback_record_fields=None):
+    rec = find_config_record_by_stage(token, stage_name)
+    if rec and rec.get('fields'):
+        return rec.get('fields', {}), f'stage_record:{stage_name}'
+    return fallback_record_fields or {}, f'fallback_script_gen_record:{stage_name}'
+
+
+def get_handwritten_organize_prompt(token, fallback_record_fields):
+    fields, source = get_prompt_record_fields(token, HANDWRITTEN_ORGANIZE_STAGE_NAME, fallback_record_fields)
+    value = extract_text(fields.get('提示词', '')).strip() or extract_text(fields.get('手写脚本整理提示词', '')).strip()
+    return (value or DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT), source
+
+
+def get_handwritten_rewrite_prompt(token, fallback_record_fields):
+    fields, source = get_prompt_record_fields(token, HANDWRITTEN_REWRITE_STAGE_NAME, fallback_record_fields)
+    value = extract_text(fields.get('提示词', '')).strip() or extract_text(fields.get('手写脚本改写提示词', '')).strip()
+    return (value or DEFAULT_HANDWRITTEN_REWRITE_PROMPT), source
 
 
 def contains_duration_conflict(raw_script, video_duration):
@@ -354,7 +374,7 @@ def main():
     try:
         log_event('INFO', 'script generation task start', record_id=record_id)
         config = get_model_config(token, CONFIG_RECORDS['script_gen'])
-        config_fields = safe_get_record(token, TABLE_CONFIG, CONFIG_RECORDS['script_gen'])
+        script_gen_config_fields = safe_get_record(token, TABLE_CONFIG, CONFIG_RECORDS['script_gen'])
         model_name = config['model'] or 'gemini-2.5-flash'
         api_key = config['api_key']
         api_base = config['api_base'] or 'https://aihubmix.com/gemini'
@@ -393,23 +413,33 @@ def main():
             if not raw_script:
                 raise Exception('脚本来源为手写脚本，但手写脚本内容为空')
 
+            organize_template, organize_source = get_handwritten_organize_prompt(token, script_gen_config_fields)
             organize_prompt = fill_prompt_template(
-                get_handwritten_organize_prompt(config_fields),
+                organize_template,
                 product_info, model_info, video_duration, raw_script
             )
             result = run_text_prompt(client, model_name, organize_prompt, 'gemini handwritten script organize')
 
             rewrite_used = False
+            rewrite_source = None
             if contains_duration_conflict(raw_script, video_duration):
+                rewrite_template, rewrite_source = get_handwritten_rewrite_prompt(token, script_gen_config_fields)
                 rewrite_prompt = fill_prompt_template(
-                    get_handwritten_rewrite_prompt(config_fields),
+                    rewrite_template,
                     product_info, model_info, video_duration, result
                 )
                 result = run_text_prompt(client, model_name, rewrite_prompt, 'gemini handwritten script rewrite')
                 rewrite_used = True
 
             references = []
-            log_event('INFO', 'handwritten script path used', record_id=record_id, rewrite_used=rewrite_used, video_duration=video_duration)
+            log_event(
+                'INFO', 'handwritten script path used',
+                record_id=record_id,
+                organize_source=organize_source,
+                rewrite_source=rewrite_source,
+                rewrite_used=rewrite_used,
+                video_duration=video_duration
+            )
         else:
             references = get_reference_scripts(token, product_info)
             if not references:
