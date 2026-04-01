@@ -4,6 +4,7 @@
 用法: python3 tk_video_from_storyboard.py <record_id>
 当前版本：支持 sora 与 seeddance2.0 两种视频模型
 """
+import base64
 import os, sys, time, requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
