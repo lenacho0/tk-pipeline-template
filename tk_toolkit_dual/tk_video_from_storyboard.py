@@ -236,37 +236,54 @@ def build_data_uri(file_path, mime_type='image/png'):
     return f'data:{mime_type};base64,{encoded}'
 
 
-def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS):
+def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS, image_url=''):
     if not image_path or not os.path.exists(image_path):
         raise Exception('SeedDance 2.0 当前仅接 image_to_video，缺少九宫格分镜图文件')
 
     url = f"{api_base.rstrip('/')}/videos/generate"
-    payload = {
+
+    def _post(payload):
+        try:
+            resp = requests.post(url, headers=creaa_headers(api_key), json=payload, timeout=SUBMIT_TIMEOUT)
+            resp.raise_for_status()
+        except requests.exceptions.Timeout as e:
+            raise Exception(f'SeedDance 2.0 任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
+        except requests.exceptions.RequestException as e:
+            raise Exception(f'SeedDance 2.0 任务提交请求失败: {e}')
+
+        try:
+            return resp.json()
+        except Exception as e:
+            body = (resp.text or '')[:500]
+            raise Exception(f'SeedDance 2.0 提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
+
+    base_payload = {
         'prompt': prompt,
         'model': model_name or 'seedance-2.0',
         'mode': 'image_to_video',
         'duration': seconds,
         'aspect_ratio': '9:16',
-        'image_data': build_data_uri(image_path, mime_type='image/png'),
     }
 
-    try:
-        resp = requests.post(url, headers=creaa_headers(api_key), json=payload, timeout=SUBMIT_TIMEOUT)
-        resp.raise_for_status()
-    except requests.exceptions.Timeout as e:
-        raise Exception(f'SeedDance 2.0 任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
-    except requests.exceptions.RequestException as e:
-        raise Exception(f'SeedDance 2.0 任务提交请求失败: {e}')
-
-    try:
-        data = resp.json()
-    except Exception as e:
-        body = (resp.text or '')[:500]
-        raise Exception(f'SeedDance 2.0 提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
+    payload = dict(base_payload)
+    payload['image_data'] = build_data_uri(image_path, mime_type='image/png')
+    data = _post(payload)
 
     task_id = extract_text(data.get('task_id', '') or data.get('id', '') or data.get('data', {}).get('task_id', ''))
     if task_id:
         return task_id, data
+
+    error_text = extract_text(data.get('error', '') or data.get('message', '') or data.get('data', {}).get('error', ''))
+    should_fallback_to_url = 'failed to process image data' in error_text.lower()
+
+    if should_fallback_to_url and image_url:
+        payload = dict(base_payload)
+        payload['image_url'] = image_url
+        data = _post(payload)
+        task_id = extract_text(data.get('task_id', '') or data.get('id', '') or data.get('data', {}).get('task_id', ''))
+        if task_id:
+            return task_id, data
+
     raise Exception(f'SeedDance 2.0 任务提交失败: {str(data)[:1000]}')
 
 
@@ -380,9 +397,14 @@ def main():
         })
 
         storyboard_path = os.path.join(WORK_DIR, f'{record_id}_storyboard.png')
+        storyboard_tmp_url = ''
         log_event('INFO', 'video-from-storyboard download storyboard start', record_id=record_id, file_token=file_token)
         safe_download_attachment(token, file_token, storyboard_path)
-        log_event('INFO', 'video-from-storyboard download storyboard success', record_id=record_id, storyboard_path=storyboard_path)
+        try:
+            storyboard_tmp_url = get_attachment_tmp_download_url(token, file_token)
+        except Exception as url_err:
+            log_event('WARNING', 'video-from-storyboard get tmp url failed', record_id=record_id, file_token=file_token, error=str(url_err))
+        log_event('INFO', 'video-from-storyboard download storyboard success', record_id=record_id, storyboard_path=storyboard_path, storyboard_tmp_url=storyboard_tmp_url or None)
 
         prompt = build_video_prompt(task, config.get('prompt', ''), script)
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
@@ -416,6 +438,7 @@ def main():
                 model_name=model_name,
                 image_path=storyboard_path,
                 seconds=seconds,
+                image_url=storyboard_tmp_url,
             )
 
         log_event('INFO', 'video-from-storyboard submit success', record_id=record_id, provider=video_model, video_id=video_id)
