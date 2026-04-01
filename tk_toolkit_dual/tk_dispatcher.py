@@ -178,9 +178,55 @@ def apply_stage_policy(watch):
     cfg = STAGE_CFG.get(watch['script'], {})
     merged = dict(watch)
     for key in ('max_concurrency', 'max_retries', 'timeout'):
-        if key in cfg:
+        if key in cfg and key not in merged:
             merged[key] = cfg[key]
     return merged
+
+
+def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
+    combined_parts = [x for x in [stdout_text or '', stderr_text or ''] if x]
+    combined = '
+'.join(combined_parts).strip()
+
+    lines = []
+    for block in combined_parts:
+        lines.extend(block.splitlines())
+
+    structured_line = None
+    for line in reversed(lines):
+        text = line.strip()
+        if text.startswith('ERROR_CODE='):
+            structured_line = text
+            break
+
+    if structured_line:
+        code = 'RUNTIME_BUG'
+        retryable = False
+        message = structured_line
+
+        try:
+            if ' MESSAGE=' in structured_line:
+                prefix, message = structured_line.split(' MESSAGE=', 1)
+            else:
+                prefix = structured_line
+            for token in prefix.split():
+                if token.startswith('ERROR_CODE='):
+                    code = token.split('=', 1)[1].strip() or code
+                elif token.startswith('RETRYABLE='):
+                    retryable = token.split('=', 1)[1].strip().lower() == 'true'
+        except Exception:
+            pass
+
+        return {
+            'stage': stage,
+            'status': 'failed_retryable' if retryable else 'failed_terminal',
+            'error_code': code,
+            'retryable': retryable,
+            'message': extract_text(message)[:500],
+        }
+
+    err_text = combined[-1000:] if combined else 'subprocess_nonzero_exit'
+    return build_error_payload(err_text, stage=stage)
 
 
 
@@ -452,11 +498,11 @@ def cleanup_finished_processes(token):
                 clear_circuit_failure(watch)
                 bump_metric('success', watch['name'])
             else:
-                combined = '\n'.join([x for x in [stdout or '', stderr or ''] if x]).strip()
-                err_text = combined[-1000:] if combined else 'subprocess_nonzero_exit'
-                error_payload = build_error_payload(err_text, stage=watch['script'])
+                error_payload = parse_subprocess_error_payload(stdout, stderr, watch['script'])
+                err_text = error_payload.get('message') or 'subprocess_nonzero_exit'
                 log.error(f"[{watch['name']}] ❌ 失败: {record_id} error_code={error_payload['error_code']} retryable={error_payload['retryable']} stderr={error_payload['message']}")
                 mark_task_failed(token, watch, record_id, task_key, reason=err_text, error_payload=error_payload)
+
 
             if stdout and stdout.strip():
                 log.info(f"[{watch['name']}] stdout: {stdout.strip()[-300:]}")
