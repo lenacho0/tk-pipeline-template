@@ -409,6 +409,8 @@ def main():
     ensure_work_dir()
     token = get_feishu_token()
 
+    upstream_completed = False
+    video_id = ''
     try:
         log_event('INFO', 'video-from-storyboard task start', record_id=record_id)
         task = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
@@ -517,6 +519,7 @@ def main():
             })
             log_event('INFO', 'video-from-storyboard seeddance result resolved', record_id=record_id, provider=video_model, video_id=video_id, result_video_url=result_video_url or None)
 
+        upstream_completed = True
         out_path = os.path.join(WORK_DIR, f'{record_id}_video.mp4')
         if video_model == 'sora':
             download_sora_video(api_base, config['api_key'], video_id, out_path)
@@ -542,11 +545,16 @@ def main():
     except Exception as e:
         payload = build_error_payload(e, stage='generate_video_from_storyboard')
         err = payload['message']
-        log_event('ERROR', 'video-from-storyboard task failed', record_id=record_id, error=err, error_code=payload['error_code'])
+        if upstream_completed:
+            failure_message = f"错误[UPSTREAM_COMPLETED_LOCAL_WRITEBACK_FAILED]: 上游视频已生成成功，但本地下载/飞书回写失败。task_id={video_id or 'unknown'}，详情: {err}"
+            log_event('ERROR', 'video-from-storyboard task failed after upstream completion', record_id=record_id, video_id=video_id or None, error=err, error_code='UPSTREAM_COMPLETED_LOCAL_WRITEBACK_FAILED')
+        else:
+            failure_message = f"错误[{payload['error_code']}]: {err}"
+            log_event('ERROR', 'video-from-storyboard task failed', record_id=record_id, error=err, error_code=payload['error_code'])
         try:
             safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
                 '视频生成状态': '失败',
-                '视频错误信息': f"错误[{payload['error_code']}]: {err}",
+                '视频错误信息': failure_message[:1000],
             })
         except Exception as write_err:
             log_event('ERROR', 'video-from-storyboard failure writeback failed', record_id=record_id, error=str(write_err)[:500])
