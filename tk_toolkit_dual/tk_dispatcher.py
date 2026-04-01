@@ -185,8 +185,7 @@ def apply_stage_policy(watch):
 
 def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
     combined_parts = [x for x in [stdout_text or '', stderr_text or ''] if x]
-    combined = '
-'.join(combined_parts).strip()
+    combined = '\n'.join(combined_parts).strip()
 
     lines = []
     for block in combined_parts:
