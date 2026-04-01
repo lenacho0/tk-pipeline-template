@@ -2,7 +2,7 @@
 """
 003表内视频生成：基于九宫格分镜图直接生成视频
 用法: python3 tk_video_from_storyboard.py <record_id>
-当前第一版：仅接入 ryan 实例中的 sora 选择
+当前版本：支持 sora 与 seeddance2.0 两种视频模型
 """
 import os, sys, time, requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -185,6 +185,140 @@ def download_sora_video(api_base, api_key, video_id, save_path):
     return save_path
 
 
+def normalize_video_model_name(video_model):
+    value = (video_model or '').strip().lower()
+    aliases = {
+        'seedance2.0': 'seeddance2.0',
+        'seedance': 'seeddance2.0',
+        'seed-dance': 'seeddance2.0',
+        'seed-dance-2.0': 'seeddance2.0',
+        'seeddance': 'seeddance2.0',
+        'seeddance-2.0': 'seeddance2.0',
+        'seeddance2': 'seeddance2.0',
+        'seeddance2.0': 'seeddance2.0',
+        'sora': 'sora',
+    }
+    return aliases.get(value, value)
+
+
+def creaa_headers(api_key):
+    return {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json',
+    }
+
+
+def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS):
+    if not image_path or not os.path.exists(image_path):
+        raise Exception('SeedDance 2.0 当前仅接 image_to_video，缺少九宫格分镜图文件')
+
+    url = f"{api_base.rstrip('/')}/videos/generate"
+    payload = {
+        'prompt': prompt,
+        'model': model_name or 'seeddance2.0',
+        'mode': 'image_to_video',
+        'duration': seconds,
+        'aspect_ratio': '9:16',
+        'image_url': None,
+    }
+
+    with open(image_path, 'rb') as f:
+        upload_resp = requests.post(
+            'https://tmpfiles.org/api/v1/upload',
+            files={'file': (os.path.basename(image_path), f, 'image/png')},
+            timeout=120,
+        )
+    upload_resp.raise_for_status()
+    upload_data = upload_resp.json()
+    image_url = extract_text(upload_data.get('data', {}).get('url', ''))
+    if not image_url:
+        raise Exception(f'SeedDance 2.0 图片中转失败: {str(upload_data)[:500]}')
+    payload['image_url'] = image_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+
+    try:
+        resp = requests.post(url, headers=creaa_headers(api_key), json=payload, timeout=SUBMIT_TIMEOUT)
+        resp.raise_for_status()
+    except requests.exceptions.Timeout as e:
+        raise Exception(f'SeedDance 2.0 任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
+    except requests.exceptions.RequestException as e:
+        raise Exception(f'SeedDance 2.0 任务提交请求失败: {e}')
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        body = (resp.text or '')[:500]
+        raise Exception(f'SeedDance 2.0 提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
+
+    task_id = extract_text(data.get('task_id', '') or data.get('id', '') or data.get('data', {}).get('task_id', ''))
+    if task_id:
+        return task_id, data
+    raise Exception(f'SeedDance 2.0 任务提交失败: {str(data)[:1000]}')
+
+
+def poll_seeddance_task(api_base, api_key, task_id, progress_cb=None):
+    url = f"{api_base.rstrip('/')}/tasks/{task_id}"
+    start = time.time()
+    last_status = None
+    last_progress_push_at = 0
+    while time.time() - start < MAX_POLL_TIME:
+        try:
+            resp = requests.get(url, headers={'Authorization': f'Bearer {api_key}'}, timeout=POLL_REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.Timeout:
+            data = {'status': 'poll_timeout'}
+        except requests.exceptions.RequestException as e:
+            raise Exception(f'SeedDance 2.0 轮询请求失败: {e}')
+        except Exception as e:
+            raise Exception(f'SeedDance 2.0 轮询返回异常: {e}')
+
+        status = extract_text(data.get('status', '') or data.get('data', {}).get('status', '')).lower() or 'unknown'
+        elapsed = int(time.time() - start)
+        if progress_cb and (status != last_status or time.time() - last_progress_push_at >= 60):
+            progress_cb(status, elapsed, data)
+            last_progress_push_at = time.time()
+            last_status = status
+
+        if status in ('completed', 'succeeded', 'success', 'done'):
+            return data
+        if status in ('failed', 'error', 'cancelled', 'canceled'):
+            err = data.get('error') or data.get('message') or data.get('data', {}).get('error') or '未知错误'
+            raise Exception(f'SeedDance 2.0 生成失败: {err}')
+        time.sleep(POLL_INTERVAL)
+    raise Exception(f'SeedDance 2.0 任务超时（{MAX_POLL_TIME}秒），任务ID: {task_id}')
+
+
+def extract_seeddance_video_url(result):
+    candidates = [
+        result.get('video_url'),
+        result.get('url'),
+        result.get('data', {}).get('video_url') if isinstance(result.get('data'), dict) else None,
+        result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None,
+        result.get('output', {}).get('video_url') if isinstance(result.get('output'), dict) else None,
+        result.get('output', {}).get('url') if isinstance(result.get('output'), dict) else None,
+    ]
+    for item in candidates:
+        value = extract_text(item or '')
+        if value.startswith('http://') or value.startswith('https://'):
+            return value
+    return ''
+
+
+def download_seeddance_video(result, save_path):
+    video_url = extract_seeddance_video_url(result)
+    if not video_url:
+        raise Exception(f'SeedDance 2.0 未返回可下载视频地址: {str(result)[:1000]}')
+    resp = requests.get(video_url, stream=True, allow_redirects=True, timeout=300)
+    if resp.status_code != 200:
+        raise Exception(f'SeedDance 2.0 视频下载失败: HTTP {resp.status_code}')
+    with open(save_path, 'wb') as f:
+        for chunk in resp.iter_content(8192):
+            f.write(chunk)
+    if os.path.getsize(save_path) < 10000:
+        raise Exception('SeedDance 2.0 视频下载成功但文件过小')
+    return save_path
+
+
 def main():
     if len(sys.argv) < 2:
         print('用法: python3 tk_video_from_storyboard.py <record_id>')
@@ -200,11 +334,11 @@ def main():
         if extract_text(task.get('是否生成视频', '')).strip() != '是':
             raise Exception('未开启视频生成')
 
-        video_model = extract_text(task.get('视频模型', '')).strip().lower()
+        video_model = normalize_video_model_name(extract_text(task.get('视频模型', '')).strip())
         if not video_model:
             raise Exception('未选择视频模型')
-        if video_model != 'sora':
-            raise Exception(f'第一版仅支持 sora，当前选择: {video_model}')
+        if video_model not in ('sora', 'seeddance2.0'):
+            raise Exception(f'当前仅支持 sora / seeddance2.0，当前选择: {video_model}')
 
         stage_name = f'{STAGE_PREFIX}{video_model}'
         cfg_record_id, config = get_model_config_by_stage_name(token, stage_name)
@@ -247,33 +381,51 @@ def main():
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '视频错误信息': f'准备提交{video_model}任务（{seconds}s）...'
         })
-        log_event('INFO', 'video-from-storyboard submit sora start', record_id=record_id, stage_name=stage_name, model_name=model_name, seconds=seconds, api_base=api_base)
-        video_id, _ = submit_sora_task(
-            api_base=api_base,
-            api_key=config['api_key'],
-            prompt=prompt,
-            model_name=model_name,
-            image_path=storyboard_path,
-            seconds=seconds,
-            size=DEFAULT_SIZE,
-        )
-        log_event('INFO', 'video-from-storyboard submit sora success', record_id=record_id, video_id=video_id)
+        log_event('INFO', 'video-from-storyboard submit start', record_id=record_id, provider=video_model, stage_name=stage_name, model_name=model_name, seconds=seconds, api_base=api_base)
+
+        if video_model == 'sora':
+            video_id, _ = submit_sora_task(
+                api_base=api_base,
+                api_key=config['api_key'],
+                prompt=prompt,
+                model_name=model_name,
+                image_path=storyboard_path,
+                seconds=seconds,
+                size=DEFAULT_SIZE,
+            )
+        else:
+            video_id, _ = submit_seeddance_task(
+                api_base=api_base,
+                api_key=config['api_key'],
+                prompt=prompt,
+                model_name=model_name,
+                image_path=storyboard_path,
+                seconds=seconds,
+            )
+
+        log_event('INFO', 'video-from-storyboard submit success', record_id=record_id, provider=video_model, video_id=video_id)
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '视频任务ID': video_id,
             '视频错误信息': f'已提交{video_model}任务，正在轮询（任务ID: {video_id}）'
         })
 
         def push_poll_progress(status, elapsed, raw):
-            message = f'轮询中: status={status}, elapsed={elapsed}s, task_id={video_id}'
+            message = f'轮询中: provider={video_model}, status={status}, elapsed={elapsed}s, task_id={video_id}'
             safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
                 '视频错误信息': message[:1000],
             })
-            log_event('INFO', 'video-from-storyboard sora polling', record_id=record_id, video_id=video_id, status=status, elapsed=elapsed)
+            log_event('INFO', 'video-from-storyboard polling', record_id=record_id, provider=video_model, video_id=video_id, status=status, elapsed=elapsed)
 
-        poll_sora_task(api_base, config['api_key'], video_id, progress_cb=push_poll_progress)
+        if video_model == 'sora':
+            result = poll_sora_task(api_base, config['api_key'], video_id, progress_cb=push_poll_progress)
+        else:
+            result = poll_seeddance_task(api_base, config['api_key'], video_id, progress_cb=push_poll_progress)
 
         out_path = os.path.join(WORK_DIR, f'{record_id}_video.mp4')
-        download_sora_video(api_base, config['api_key'], video_id, out_path)
+        if video_model == 'sora':
+            download_sora_video(api_base, config['api_key'], video_id, out_path)
+        else:
+            download_seeddance_video(result, out_path)
         video_file_token = with_retry(
             lambda: upload_video_to_feishu(token, out_path, f'{record_id}_video.mp4'),
             max_attempts=3,
@@ -285,7 +437,7 @@ def main():
             '视频生成状态': '成功',
             '视频错误信息': '',
         })
-        log_event('INFO', 'video-from-storyboard task success', record_id=record_id, stage_name=stage_name, cfg_record_id=cfg_record_id, video_id=video_id)
+        log_event('INFO', 'video-from-storyboard task success', record_id=record_id, provider=video_model, stage_name=stage_name, cfg_record_id=cfg_record_id, video_id=video_id)
         print(f'✅ 视频生成完成: {out_path}')
 
     except Exception as e:
