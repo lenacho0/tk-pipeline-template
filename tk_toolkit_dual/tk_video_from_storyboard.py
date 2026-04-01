@@ -338,17 +338,49 @@ def poll_seeddance_task(api_base, api_key, task_id, progress_cb=None):
     raise Exception(f'SeedDance 2.0 任务超时（{MAX_POLL_TIME}秒），任务ID: {task_id}')
 
 
+def normalize_url_candidate(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ('url', 'video_url', 'result_url', 'download_url'):
+            nested = value.get(key)
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+        return ''
+    return str(value).strip()
+
+
 def extract_seeddance_video_url(result):
     candidates = [
         result.get('video_url'),
         result.get('url'),
+        result.get('result_url'),
+        result.get('download_url'),
         result.get('data', {}).get('video_url') if isinstance(result.get('data'), dict) else None,
         result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None,
+        result.get('data', {}).get('result_url') if isinstance(result.get('data'), dict) else None,
+        result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None,
         result.get('output', {}).get('video_url') if isinstance(result.get('output'), dict) else None,
         result.get('output', {}).get('url') if isinstance(result.get('output'), dict) else None,
+        result.get('output', {}).get('result_url') if isinstance(result.get('output'), dict) else None,
+        result.get('output', {}).get('download_url') if isinstance(result.get('output'), dict) else None,
     ]
+    result_urls = result.get('result_urls')
+    if isinstance(result_urls, list):
+        candidates.extend(result_urls)
+    elif isinstance(result_urls, str):
+        candidates.append(result_urls)
+    nested_data = result.get('data')
+    if isinstance(nested_data, dict):
+        nested_result_urls = nested_data.get('result_urls')
+        if isinstance(nested_result_urls, list):
+            candidates.extend(nested_result_urls)
+        elif isinstance(nested_result_urls, str):
+            candidates.append(nested_result_urls)
     for item in candidates:
-        value = extract_text(item or '')
+        value = normalize_url_candidate(item)
         if value.startswith('http://') or value.startswith('https://'):
             return value
     return ''
@@ -357,7 +389,7 @@ def extract_seeddance_video_url(result):
 def download_seeddance_video(result, save_path):
     video_url = extract_seeddance_video_url(result)
     if not video_url:
-        raise Exception(f'SeedDance 2.0 未返回可下载视频地址: {str(result)[:1000]}')
+        raise Exception(f'SeedDance 2.0 上游已完成，但未解析到可下载视频地址: {str(result)[:1000]}')
     resp = requests.get(video_url, stream=True, allow_redirects=True, timeout=300)
     if resp.status_code != 200:
         raise Exception(f'SeedDance 2.0 视频下载失败: HTTP {resp.status_code}')
@@ -477,11 +509,22 @@ def main():
         else:
             result = poll_seeddance_task(api_base, config['api_key'], video_id, progress_cb=push_poll_progress)
 
+        result_video_url = ''
+        if video_model == 'seeddance2.0':
+            result_video_url = extract_seeddance_video_url(result)
+            safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
+                '视频错误信息': (f'上游已完成，准备下载结果。task_id={video_id} url={result_video_url[:800]}' if result_video_url else f'上游已完成，但暂未解析到下载地址。task_id={video_id}')[:1000],
+            })
+            log_event('INFO', 'video-from-storyboard seeddance result resolved', record_id=record_id, provider=video_model, video_id=video_id, result_video_url=result_video_url or None)
+
         out_path = os.path.join(WORK_DIR, f'{record_id}_video.mp4')
         if video_model == 'sora':
             download_sora_video(api_base, config['api_key'], video_id, out_path)
         else:
             download_seeddance_video(result, out_path)
+        safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
+            '视频错误信息': f'视频下载完成，准备上传飞书。task_id={video_id}'[:1000],
+        })
         video_file_token = with_retry(
             lambda: upload_video_to_feishu(token, out_path, f'{record_id}_video.mp4'),
             max_attempts=3,
