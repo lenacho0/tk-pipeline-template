@@ -42,7 +42,6 @@ TABLE_SHOT_SCRIPT_GEN = _TABLES.get('shot_script_gen', '')   # 逐镜头脚本�
 TABLE_SHOT_STORYBOARD = _TABLES.get('shot_storyboard', '')   # 逐镜头分镜图
 TABLE_PRODUCT      = _TABLES['product']           # 产品信息
 TABLE_MODEL        = _TABLES['model_appearance']  # 模特形象
-TABLE_VIDEO        = _TABLES['video']             # 视频制作
 
 # 各环节在「模型与API配置」表中的 record_id
 CONFIG_RECORDS = _CFG['config_records']
