@@ -78,14 +78,26 @@ def upload_image_to_feishu(token, file_path, file_name):
     return data['data']['file_token']
 
 
+def strip_non_voiceover_lines(script):
+    lines = []
+    for line in (script or '').splitlines():
+        s = line.strip()
+        if s.startswith('口播（中文）') or s.startswith('口播(中文)'):
+            continue
+        lines.append(line)
+    return '\n'.join(lines).strip()
+
+
 def generate_shots_json(client, parts, prompt_template, style, script):
+    storyboard_script = strip_non_voiceover_lines(script)
     prompt_variants = [
-        prompt_template.replace('{storyboard_style}', style) + "\n\n## 脚本\n" + script,
+        prompt_template.replace('{storyboard_style}', style) + "\n\n## 脚本\n" + storyboard_script,
         (
             "你是短视频电商分镜规划器。请只输出严格 JSON，不要解释，不要 markdown。"
             "必须返回 {\"shots\": [...]}，其中至少包含9个shots。"
             "每个shot至少包含 prompt_text 字段，可附带 scene / product_focus / character_focus。"
-            f"\n\n风格：{style}\n\n脚本：\n{script}"
+            "脚本里的泰文口播是最终视频唯一有效的口播内容；中文仅为翻译参考，不参与分镜规划。"
+            f"\n\n风格：{style}\n\n脚本：\n{storyboard_script}"
         )
     ]
 
