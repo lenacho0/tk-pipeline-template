@@ -205,7 +205,14 @@ def creaa_headers(api_key):
     return {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json',
+        'X-Source': 'openclaw',
     }
+
+
+def build_data_uri(file_path, mime_type='image/png'):
+    with open(file_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('utf-8')
+    return f'data:{mime_type};base64,{encoded}'
 
 
 def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS):
@@ -215,25 +222,12 @@ def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, sec
     url = f"{api_base.rstrip('/')}/videos/generate"
     payload = {
         'prompt': prompt,
-        'model': model_name or 'seeddance2.0',
+        'model': model_name or 'seedance-2.0',
         'mode': 'image_to_video',
         'duration': seconds,
         'aspect_ratio': '9:16',
-        'image_url': None,
+        'image_data': build_data_uri(image_path, mime_type='image/png'),
     }
-
-    with open(image_path, 'rb') as f:
-        upload_resp = requests.post(
-            'https://tmpfiles.org/api/v1/upload',
-            files={'file': (os.path.basename(image_path), f, 'image/png')},
-            timeout=120,
-        )
-    upload_resp.raise_for_status()
-    upload_data = upload_resp.json()
-    image_url = extract_text(upload_data.get('data', {}).get('url', ''))
-    if not image_url:
-        raise Exception(f'SeedDance 2.0 图片中转失败: {str(upload_data)[:500]}')
-    payload['image_url'] = image_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
 
     try:
         resp = requests.post(url, headers=creaa_headers(api_key), json=payload, timeout=SUBMIT_TIMEOUT)
