@@ -67,6 +67,26 @@ def _download_or_raise(token, file_token, save_path):
     return True
 
 
+def get_attachment_tmp_download_url(token, file_token):
+    resp = requests.get(
+        'https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'file_tokens': file_token},
+        timeout=30,
+    )
+    data = resp.json()
+    if data.get('code') != 0:
+        raise Exception(f"获取附件临时下载链接失败: {data.get('msg')}")
+
+    items = (data.get('data') or {}).get('tmp_download_urls') or []
+    for item in items:
+        if item.get('file_token') == file_token:
+            url = item.get('tmp_download_url') or ''
+            if url:
+                return url
+    raise Exception(f'附件临时下载链接为空: {file_token}')
+
+
 def upload_video_to_feishu(token, file_path, file_name):
     with open(file_path, 'rb') as f:
         resp = requests.post(
