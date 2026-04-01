@@ -141,19 +141,8 @@ WATCH_LIST = [
         'circuit_threshold': 1,
         'circuit_cooldown_seconds': 1800,
     },
-    {
-        'name': '视频制作',
-        'table': TABLE_VIDEO,
-        'status_field': '制作状态',
-        'trigger_value': '待执行',
-        'running_value': '制作中',
-        'script': 'tk_video.py',
-        'args': [],
-        'timeout': 1800,
-        'max_concurrency': 1,
-        'max_retries': 1,
-    },
 ]
+
 
 running_processes = {}
 
@@ -670,51 +659,6 @@ def check_and_run(token, watch):
                 pass
 
 
-def check_video_sync(token):
-    try:
-        records = safe_list_records(token, TABLE_VIDEO)
-    except Exception as e:
-        log.error(f"[视频同步] 读取表失败: {e}")
-        append_last_error('视频同步', 'TABLE', f'读取表失败: {e}')
-        return
-
-    for rec in records:
-        fields = rec.get('fields', {})
-        sync_status = extract_text(fields.get('同步状态', ''))
-        if sync_status == '待同步':
-            record_id = rec['record_id']
-            log.info(f"[视频同步] 检测到同步触发: {record_id}")
-            try:
-                safe_update_record(token, TABLE_VIDEO, record_id, {'同步状态': '同步中'})
-            except Exception:
-                pass
-
-            script_path = os.path.join(SCRIPTS_DIR, 'tk_sync_video.py')
-            try:
-                result = subprocess.run(
-                    [sys.executable, script_path],
-                    capture_output=True, text=True, timeout=180,
-                    cwd=SCRIPTS_DIR
-                )
-                if result.returncode == 0:
-                    log.info(f"[视频同步] ✅ 同步完成")
-                else:
-                    err = result.stderr[-300:]
-                    log.error(f"[视频同步] ❌ 同步失败: {err}")
-                    append_last_error('视频同步', record_id, err)
-                if result.stdout.strip():
-                    log.info(f"  stdout: {result.stdout.strip()[-300:]}")
-            except Exception as e:
-                log.error(f"[视频同步] 执行异常: {e}")
-                append_last_error('视频同步', record_id, e)
-
-            try:
-                safe_update_record(token, TABLE_VIDEO, record_id, {'同步状态': '已完成'})
-            except Exception:
-                pass
-            break
-
-
 def check_daily_health():
     now = datetime.now()
     if now.hour != HEALTHCHECK_HOUR:
@@ -784,7 +728,6 @@ def main():
                 continue
 
         cleanup_finished_processes(token)
-        check_video_sync(token)
         check_daily_health()
 
         for watch in WATCH_LIST:
