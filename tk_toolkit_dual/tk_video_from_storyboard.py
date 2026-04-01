@@ -236,11 +236,29 @@ def build_data_uri(file_path, mime_type='image/png'):
     return f'data:{mime_type};base64,{encoded}'
 
 
+def resolve_seeddance_provider_model(model_name):
+    value = extract_text(model_name).strip().lower()
+    aliases = {
+        'seeddance2.0': 'seedance-2.0',
+        'seeddance-2.0': 'seedance-2.0',
+        'seeddance2': 'seedance-2.0',
+        'seeddance': 'seedance-2.0',
+        'seedance2.0': 'seedance-2.0',
+        'seedance2': 'seedance-2.0',
+        'seedance': 'seedance-2.0',
+        'seedance-2.0': 'seedance-2.0',
+        'seed-dance': 'seedance-2.0',
+        'seed-dance-2.0': 'seedance-2.0',
+    }
+    return aliases.get(value, model_name or 'seedance-2.0')
+
+
 def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS, image_url=''):
     if not image_path or not os.path.exists(image_path):
         raise Exception('SeedDance 2.0 当前仅接 image_to_video，缺少九宫格分镜图文件')
 
     url = f"{api_base.rstrip('/')}/videos/generate"
+    provider_model = resolve_seeddance_provider_model(model_name)
 
     def _post(payload):
         try:
@@ -259,7 +277,7 @@ def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, sec
 
     base_payload = {
         'prompt': prompt,
-        'model': model_name or 'seedance-2.0',
+        'model': provider_model,
         'mode': 'image_to_video',
         'duration': seconds,
         'aspect_ratio': '9:16',
