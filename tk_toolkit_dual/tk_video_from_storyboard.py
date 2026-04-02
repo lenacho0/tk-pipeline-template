@@ -138,10 +138,11 @@ def build_video_prompt(task_fields, prompt_template, script):
         return prompt_template.replace('{script}', cleaned_script).replace('{video_duration}', extract_text(task_fields.get('视频时长', '12s')))
 
     return (
-        "Create a professional vertical product video based on this storyboard. "
-        "Use only the Thai voiceover/script as the spoken audio content. "
-        "Any Chinese text is translation/reference only and must not be spoken or used for audio generation. "
-        f"Script:\n{cleaned_script}"
+        "请基于这个分镜脚本生成一条专业的竖屏带货视频。"
+        "所有非口播提示词、场景说明、动作说明、镜头说明统一使用中文。"
+        "只有泰文口播/台词可以作为最终需要被朗读或参与音频生成的内容。"
+        "不要把任何中文说明、中文翻译或中文文本当作配音台词。"
+        f"脚本如下：\n{cleaned_script}"
     )
 
 
