@@ -117,13 +117,32 @@ def parse_seconds(duration_text):
         return DEFAULT_SECONDS
 
 
+def strip_chinese_voiceover_lines(script):
+    lines = []
+    for line in (script or '').splitlines():
+        s = line.strip()
+        if s.startswith('口播（中文）') or s.startswith('口播(中文)'):
+            continue
+        lines.append(line)
+    return '\n'.join(lines).strip()
+
+
 def build_video_prompt(task_fields, prompt_template, script):
+    cleaned_script = strip_chinese_voiceover_lines(script)
+
     existing_prompt = extract_text(task_fields.get('视频提示词', '')).strip()
     if existing_prompt:
-        return existing_prompt
+        return strip_chinese_voiceover_lines(existing_prompt)
+
     if prompt_template:
-        return prompt_template.replace('{script}', script).replace('{video_duration}', extract_text(task_fields.get('视频时长', '12s')))
-    return f"Create a professional vertical product video based on this storyboard. Script:\n{script}"
+        return prompt_template.replace('{script}', cleaned_script).replace('{video_duration}', extract_text(task_fields.get('视频时长', '12s')))
+
+    return (
+        "Create a professional vertical product video based on this storyboard. "
+        "Use only the Thai voiceover/script as the spoken audio content. "
+        "Any Chinese text is translation/reference only and must not be spoken or used for audio generation. "
+        f"Script:\n{cleaned_script}"
+    )
 
 
 def submit_sora_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS, size=DEFAULT_SIZE):
