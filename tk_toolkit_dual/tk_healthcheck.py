@@ -68,13 +68,27 @@ def check_gemini():
 def check_sora():
     try:
         token = get_feishu_token()
-        cfg = get_model_config(token, CONFIG_RECORDS['video'])
-        if not cfg.get('api_key') or not cfg.get('api_base'):
-            return False, '飞书配置表缺少 API Key 或 Base URL'
-        api_base = cfg['api_base'].rstrip('/')
-        resp = requests.get(f'{api_base}/videos/test_nonexistent_id', headers={'Authorization': cfg['api_key']}, timeout=15)
+        records = safe_list_records(token, TABLE_CONFIG)
+        sora_cfg = None
+        for rec in records:
+            fields = rec.get('fields', {})
+            stage_name = extract_text(fields.get('环节', '')).strip()
+            if stage_name == '九宫格生成视频-sora':
+                sora_cfg = {
+                    'api_key': extract_text(fields.get('API Key', '')).strip(),
+                    'api_base': extract_text(fields.get('API 代理地址', '')).strip(),
+                }
+                break
+
+        if not sora_cfg:
+            return False, '缺少配置环节: 九宫格生成视频-sora'
+        if not sora_cfg.get('api_key') or not sora_cfg.get('api_base'):
+            return False, '九宫格生成视频-sora 缺少 API Key 或 API 代理地址'
+
+        api_base = sora_cfg['api_base'].rstrip('/')
+        resp = requests.get(f'{api_base}/videos/test_nonexistent_id', headers={'Authorization': sora_cfg['api_key']}, timeout=15)
         if resp.status_code < 500:
-            return True, f"正常 (代理: {api_base})"
+            return True, f"正常 (环节=九宫格生成视频-sora, 代理: {api_base})"
         return False, f"HTTP {resp.status_code}"
     except Exception as e:
         return False, f"失败: {e}"
