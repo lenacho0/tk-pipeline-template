@@ -80,6 +80,67 @@ def check_sora():
         return False, f"失败: {e}"
 
 
+def check_nine_grid_video():
+    try:
+        token = get_feishu_token()
+        stage_names = [
+            '九宫格生成视频-grok',
+            '九宫格生成视频-sora',
+            '九宫格生成视频-seeddance2.0',
+        ]
+        records = safe_list_records(token, TABLE_CONFIG)
+        stage_map = {}
+        legacy_stages = []
+
+        for rec in records:
+            fields = rec.get('fields', {})
+            stage_name = extract_text(fields.get('环节', '')).strip()
+            if not stage_name:
+                continue
+            if stage_name in stage_names:
+                stage_map[stage_name] = {
+                    'model': extract_text(fields.get('模型名称', '')).strip(),
+                    'api_key': extract_text(fields.get('API Key', '')).strip(),
+                    'api_base': extract_text(fields.get('API 代理地址', '')).strip(),
+                    'prompt': extract_text(fields.get('提示词', '')).strip(),
+                    'record_id': rec.get('record_id', ''),
+                }
+            if '视频生成' in stage_name and '九宫格生成视频-' not in stage_name:
+                legacy_stages.append(stage_name)
+
+        missing = [name for name in stage_names if name not in stage_map]
+        if missing:
+            return False, f"缺少配置环节: {', '.join(missing)}"
+
+        bad = []
+        summaries = []
+        for name in stage_names:
+            cfg = stage_map[name]
+            missing_fields = []
+            if not cfg['model']:
+                missing_fields.append('模型名称')
+            if not cfg['api_key']:
+                missing_fields.append('API Key')
+            if not cfg['api_base']:
+                missing_fields.append('API 代理地址')
+            if not cfg['prompt']:
+                missing_fields.append('提示词')
+            if missing_fields:
+                bad.append(f"{name} 缺少 {', '.join(missing_fields)}")
+            else:
+                summaries.append(f"{name.split('-', 1)[1]}✓")
+
+        if bad:
+            return False, '；'.join(bad)
+
+        if legacy_stages:
+            return False, f"发现残留旧环节: {', '.join(sorted(set(legacy_stages)))}"
+
+        return True, f"正常 ({', '.join(summaries)})"
+    except Exception as e:
+        return False, f"失败: {e}"
+
+
 def check_dispatcher():
     try:
         heartbeat_file = os.path.join(SCRIPT_DIR, f'.dispatcher_heartbeat.{INSTANCE}.json')
@@ -174,7 +235,8 @@ def send_feishu_report(results):
             'FastMoss API': '📺 环节① 爆款抓取',
             'feishu_token': '📋 飞书多维表格',
             'gemini': '🤖 Gemini (环节②③④)',
-            'sora': '🎬 Sora (环节⑤)',
+            'sora': '🎬 Sora 连通性',
+            'nine_grid_video': '🎞️ 九宫格生成视频',
             'dispatcher': '⚡ 调度器',
         }
         for key, (ok, msg) in results.items():
@@ -212,6 +274,7 @@ def main():
         ('FastMoss API', 'FastMoss API', check_fastmoss),
         ('gemini', 'Gemini API', check_gemini),
         ('sora', 'Sora API', check_sora),
+        ('nine_grid_video', '九宫格生成视频配置', check_nine_grid_video),
         ('dispatcher', '调度器', check_dispatcher),
     ]
     for key, label, check_fn in checks:
