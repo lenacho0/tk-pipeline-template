@@ -288,8 +288,9 @@ def build_script_generation_prompt(prompt_template, product_info, model_info, vi
 3. 必须适配当前产品卖点、目标用户、使用场景
 4. 输出一条可执行的带货脚本
 5. 脚本要明确：Hook、痛点推进、产品出场、效果证明、CTA
-6. 如果脚本中同时出现泰文口播与中文内容，必须明确区分用途：泰文口播是最终视频唯一可用于配音/朗读/音频生成的正式文案；中文内容仅用于翻译、人工阅读与检查，绝不能用于视频生成、语音合成或最终口播。
-7. 输出时应让下游一眼看清：泰文是最终配音稿，中文只是翻译说明，避免双语内容同时被当作口播输入。
+6. 最终输出脚本中，口播部分只允许保留泰文口播；不要输出 `口播（中文）`、`口播(中文)`、中文台词翻译、双语对照口播，也不要把中文台词混入任何最终脚本正文。
+7. 中文如果需要，仅允许作为模型内部理解，不允许出现在最终输出给下游的视频脚本文本中。
+8. 输出结果必须是“可直接给分镜图生成和视频生成使用”的单语终稿，默认语言为泰语口播。
 """
     return base + tail
 
@@ -356,6 +357,16 @@ def contains_duration_conflict(raw_script, video_duration):
     return normalized_target not in {token.replace(' ', '') for token in duration_tokens}
 
 
+def strip_chinese_voiceover_lines(script):
+    lines = []
+    for line in (script or '').splitlines():
+        s = line.strip()
+        if s.startswith('口播（中文）') or s.startswith('口播(中文)'):
+            continue
+        lines.append(line)
+    return '\n'.join(lines).strip()
+
+
 def run_text_prompt(client, model_name, prompt, label):
     response = with_retry(
         lambda: client.models.generate_content(model=model_name, contents=[prompt]),
@@ -365,7 +376,7 @@ def run_text_prompt(client, model_name, prompt, label):
     result = getattr(response, 'text', '') or ''
     if not result.strip():
         raise Exception('Gemini 返回空脚本')
-    return result
+    return strip_chinese_voiceover_lines(result)
 
 
 def main():
