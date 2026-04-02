@@ -128,7 +128,7 @@ WATCH_LIST = [
         'max_retries': 2,
     },
     {
-        'name': '003视频生成',
+        'name': '九宫格生成视频',
         'table': TABLE_SCRIPT_GEN,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
