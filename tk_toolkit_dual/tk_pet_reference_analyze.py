@@ -97,9 +97,25 @@ def main():
         file_size_mb=dl.get('file_size_mb', 0),
     )
 
-    # TODO: 真正接入本地视频文件上传；当前先以链接+prompt 跑通 JSON 协议与回写链路。
+    uploaded = with_retry(
+        lambda: client.files.upload(file=dl['local_path']),
+        max_attempts=3,
+        label='gemini pet reference upload'
+    )
+    waited = 0
+    while getattr(getattr(uploaded, 'state', None), 'name', '') == 'PROCESSING' and waited < 180:
+        time.sleep(3)
+        waited += 3
+        uploaded = with_retry(
+            lambda: client.files.get(name=uploaded.name),
+            max_attempts=3,
+            label='gemini pet reference upload poll'
+        )
+    if getattr(getattr(uploaded, 'state', None), 'name', '') != 'ACTIVE':
+        raise Exception(f"视频文件上传后未激活: {getattr(getattr(uploaded, 'state', None), 'name', 'UNKNOWN')}")
+
     response = with_retry(
-        lambda: client.models.generate_content(model=cfg['model'], contents=[prompt, f'视频标题: {title}', f'视频链接: {video_url}']),
+        lambda: client.models.generate_content(model=cfg['model'], contents=[uploaded, prompt, f'视频标题: {title}', f'视频链接: {video_url}']),
         max_attempts=3,
         label='gemini pet reference analyze'
     )
