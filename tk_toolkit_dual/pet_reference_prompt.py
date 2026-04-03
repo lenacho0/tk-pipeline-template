@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 
 def build_pet_reference_prompt(source_url='', normalized_url='', duration_sec=0, file_size_mb=0):
     return f'''你是一个专门分析「宠物拟人视角带货视频」的结构化视频分析器。
@@ -90,3 +91,22 @@ timeline_breakdown 中每段格式：
 }}
 
 只输出 JSON。'''
+
+
+def build_pet_reference_translation_prompt(json_payload):
+    """把英文结构化 JSON 翻译成中文保持结构版，供人工阅读。"""
+    return f'''你是一个专业的电商视频分析翻译助手。你的任务是把一份英文结构化 JSON 的所有字段值翻译成中文，同时严格保持原始 JSON 的结构、key、层级和枚举值不变。
+
+翻译原则：
+1. 只翻译 value，不改变任何 key
+2. 保持 JSON 结构完全一致（嵌套对象、数组全部保留）
+3. 枚举类 value（如 hook_type、core_strategy、pet_type、narrative_subject 等）翻译成对应的中文自然语言表达，不要保留英文原文
+4. 非枚举的自由文本也翻译成通顺中文
+5. timeline_breakdown 数组中每个对象的每个字段都翻译
+6. 不要省略任何字段，不要增删任何 key
+7. 最终输出必须是一个合法的单个 JSON 对象，不要加 markdown 代码块、不要解释、不要前言后记
+
+待翻译的 JSON：
+{json.dumps(json_payload, ensure_ascii=False)}
+
+输出翻译后的 JSON（只输出 JSON，不要其他任何内容）：'''

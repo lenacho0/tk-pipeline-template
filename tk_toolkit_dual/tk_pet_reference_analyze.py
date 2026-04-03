@@ -2,6 +2,8 @@
 import json
 import os
 import sys
+import time
+import logging
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -10,7 +12,7 @@ from pet_reference_downloader import download_reference_video
 from pet_reference_prompt import build_pet_reference_prompt
 from pet_reference_schema import parse_and_normalize_json
 
-TABLE_PET_REFERENCE = _TABLES.get('pet_reference_v1', '')
+TABLE_PET_REFERENCE = TABLE_PET_REFERENCE_V1
 PET_REFERENCE_CONFIG_RECORD_ID = CONFIG_RECORDS.get('pet_reference_analysis', '')
 WORKDIR = os.path.join(WORKSPACE, 'pet_reference_downloads')
 
@@ -40,6 +42,13 @@ def get_pet_reference_config(token):
     }
 
 
+def make_url_field(url):
+    url = extract_text(url).strip()
+    if not url:
+        return None
+    return {'link': url, 'text': url}
+
+
 def main():
     if len(sys.argv) < 2:
         print('用法: python3 tk_pet_reference_analyze.py <record_id>')
@@ -65,27 +74,33 @@ def main():
 
     dl = download_reference_video(video_url, WORKDIR)
     if not dl.get('ok'):
-        safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+        payload = {
             'record_id': record_id,
             '下载状态': '下载失败',
             '下载错误信息': extract_text(dl.get('error', '下载失败'))[:1000],
-            '标准化链接': dl.get('normalized_url', ''),
             '平台': dl.get('platform', 'Unknown')
-        })
+        }
+        normalized_url_field = make_url_field(dl.get('normalized_url', ''))
+        if normalized_url_field:
+            payload['标准化链接'] = normalized_url_field
+        safe_update_record(token, TABLE_PET_REFERENCE, record_id, payload)
         payload = build_error_payload(dl.get('error', '下载失败'), stage='pet_reference_download')
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={payload['message']}")
         sys.exit(1)
 
-    safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+    payload = {
         'record_id': record_id,
         '下载状态': '下载成功',
         '深度拆解状态': '拆解中',
-        '标准化链接': dl.get('normalized_url', ''),
         '平台': dl.get('platform', 'Unknown'),
         '视频时长(秒)': dl.get('duration_sec', 0),
         '文件大小(MB)': dl.get('file_size_mb', 0),
         '下载错误信息': ''
-    })
+    }
+    normalized_url_field = make_url_field(dl.get('normalized_url', ''))
+    if normalized_url_field:
+        payload['标准化链接'] = normalized_url_field
+    safe_update_record(token, TABLE_PET_REFERENCE, record_id, payload)
 
     cfg = get_pet_reference_config(token)
     if not cfg.get('api_key'):
@@ -147,6 +162,35 @@ def main():
         '分析时间': int(datetime.now().timestamp() * 1000),
         '完整JSON分析结果': json.dumps(payload, ensure_ascii=False)
     })
+
+    # ---- 中文翻译：保持 JSON 结构，值翻成中文，供人工阅读 ----
+    try:
+        from pet_reference_prompt import build_pet_reference_translation_prompt
+        trans_prompt = build_pet_reference_translation_prompt(payload)
+        trans_response = with_retry(
+            lambda: client.models.generate_content(model=cfg['model'], contents=[trans_prompt]),
+            max_attempts=3,
+            label='gemini pet reference translate'
+        )
+        trans_text = getattr(trans_response, 'text', '') or ''
+        if trans_text.strip():
+            trans_start = trans_text.find('{')
+            trans_end = trans_text.rfind('}')
+            if trans_start >= 0 and trans_end > trans_start:
+                translated_json = json.loads(trans_text[trans_start:trans_end+1])
+                safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+                    '完整JSON分析结果-中文翻译': json.dumps(translated_json, ensure_ascii=False, indent=2)
+                })
+            else:
+                log_event('WARNING', 'translation response not valid JSON, skipping translation writeback',
+                          record_id=record_id)
+        else:
+            log_event('WARNING', 'translation returned empty, skipping translation writeback',
+                      record_id=record_id)
+    except Exception as trans_err:
+        log_event('WARNING', 'translation step failed, continuing without translation writeback',
+                  record_id=record_id, error=str(trans_err)[:500])
+
     print(f'✅ 宠物拟人参考视频分析完成: {record_id}')
 
 

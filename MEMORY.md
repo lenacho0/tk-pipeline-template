@@ -12,6 +12,7 @@
 - When pipeline stages / naming /巡检口径 change, related daily healthcheck and monitoring descriptions should be updated together so old flow names do not linger and mislead.
 
 ## Ongoing Project Memory
+- 2026-04-03: 宠物拟人参考视频深拆链路新增 `完整JSON分析结果-中文翻译` 字段后，联调中暴露出“主流程成功但翻译静默失败”的问题；根因不是飞书字段或 dispatcher 触发本身，而是两处翻译链路代码缺失 `json` 依赖：一处在 `tk_toolkit_dual/tk_pet_reference_analyze.py`，另一处在 `tk_toolkit_dual/pet_reference_prompt.py` 的 `build_pet_reference_translation_prompt`。补齐后重新触发，中文翻译 JSON 已可正常写回。
 
 - 2026-03-28: TK pipeline 第二轮优化已从方案阶段进入真实落地阶段。
 - 已完成 dispatcher 第一轮硬化、扫描减负第一刀、runtime log 独立化，以及多个关键脚本的标准错误输出协议统一。
