@@ -7,6 +7,7 @@
 import json, os, sys, time, requests, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
+from pet_reference_schema import normalize_payload
 
 MAX_REFERENCE_SCRIPTS = 5
 MAX_REFERENCE_TOTAL_CHARS = 7000
@@ -295,6 +296,44 @@ def build_script_generation_prompt(prompt_template, product_info, model_info, vi
     return base + tail
 
 
+def get_pet_reference_payload(token, reference_record_id):
+    if not reference_record_id:
+        return None
+    fields = safe_get_record(token, TABLE_PET_REFERENCE_V1, reference_record_id)
+    if not fields.get('是否可用于脚本生成'):
+        raise Exception('参考视频未勾选为可用于脚本生成')
+    raw = extract_text(fields.get('完整JSON分析结果', '')).strip()
+    if not raw:
+        raise Exception('参考视频缺少完整JSON分析结果')
+    return normalize_payload(json.loads(raw))
+
+
+def build_pet_reference_script_prompt(prompt_template, product_info, model_info, video_duration, reference_payload):
+    product_text = '\n'.join(f'- **{k}**: {v}' for k, v in product_info.items())
+    ref_text = json.dumps(reference_payload, ensure_ascii=False, indent=2)
+    base = prompt_template
+    base = base.replace('{product_info}', product_text)
+    base = base.replace('{model_info}', model_info)
+    base = base.replace('{video_duration}', video_duration)
+    if '{reference_scripts}' in base:
+        base = base.replace('{reference_scripts}', '使用宠物拟人参考JSON，不使用旧爆款脚本文本参考')
+    tail = f"""
+
+## 宠物拟人参考视频结构化分析（必须优先遵守）
+{ref_text}
+
+要求：
+1. 你参考的是这条视频的叙事视角、转化策略、Hook机制、卖点推进顺序和可复用模板，不是照抄原视频台词。
+2. 必须围绕当前产品重新写原创脚本。
+3. 如果参考视频策略与当前产品不完全匹配，可以保留其有效机制并重构中段表达。
+4. 必须保持宠物拟人视角成立；宠物拟人不等于必须萌系，可根据参考JSON中的策略走恐吓/焦虑/问题暴露/对比/温情等路线。
+5. 最终输出脚本中，口播部分只允许保留泰文口播；不要输出 `口播（中文）`、`口播(中文)`、中文台词翻译、双语对照口播，也不要把中文台词混入任何最终脚本正文。
+6. 中文如果需要，仅允许作为模型内部理解，不允许出现在最终输出给下游的视频脚本文本中。
+7. 输出结果必须是可直接给分镜图生成和视频生成使用的单语终稿，默认语言为泰语口播。
+"""
+    return base + tail
+
+
 def get_script_source(fields):
     return extract_text(fields.get('脚本来源', '')).strip()
 
@@ -456,23 +495,40 @@ def main():
                 video_duration=video_duration
             )
         else:
-            references = get_reference_scripts(token, product_info)
-            if not references:
-                raise Exception('没有可用的爆款视频分析结果，无法生成产品脚本')
+            generation_mode = extract_text(fields.get('脚本生成模式', '')).strip()
+            pet_reference_record_id = extract_text(fields.get('参考视频记录ID', '')).strip()
+            if generation_mode == '宠物拟人参考生成' and pet_reference_record_id:
+                reference_payload = get_pet_reference_payload(token, pet_reference_record_id)
+                prompt = build_pet_reference_script_prompt(
+                    prompt_template, product_info, model_info, video_duration, reference_payload
+                )
+                response = with_retry(
+                    lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+                    max_attempts=3,
+                    label='gemini pet reference script generate_content'
+                )
+                result = getattr(response, 'text', '') or ''
+                if not result.strip():
+                    raise Exception('Gemini 返回空脚本')
+                references = []
+            else:
+                references = get_reference_scripts(token, product_info)
+                if not references:
+                    raise Exception('没有可用的爆款视频分析结果，无法生成产品脚本')
 
-            strategy_summary = generate_strategy_summary(client, model_name, references, product_info)
-            prompt = build_script_generation_prompt(
-                prompt_template, product_info, model_info, video_duration, strategy_summary, references
-            )
+                strategy_summary = generate_strategy_summary(client, model_name, references, product_info)
+                prompt = build_script_generation_prompt(
+                    prompt_template, product_info, model_info, video_duration, strategy_summary, references
+                )
 
-            response = with_retry(
-                lambda: client.models.generate_content(model=model_name, contents=[prompt]),
-                max_attempts=3,
-                label='gemini script generate_content'
-            )
-            result = getattr(response, 'text', '') or ''
-            if not result.strip():
-                raise Exception('Gemini 返回空脚本')
+                response = with_retry(
+                    lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+                    max_attempts=3,
+                    label='gemini script generate_content'
+                )
+                result = getattr(response, 'text', '') or ''
+                if not result.strip():
+                    raise Exception('Gemini 返回空脚本')
 
         current_fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
         storyboard_status = extract_text(current_fields.get('分镜图状态', '')).strip()

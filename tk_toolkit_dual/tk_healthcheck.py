@@ -155,6 +155,36 @@ def check_nine_grid_video():
         return False, f"失败: {e}"
 
 
+def check_pet_reference_analysis_config():
+    try:
+        token = get_feishu_token()
+        records = safe_list_records(token, TABLE_CONFIG)
+        target = None
+        for rec in records:
+            fields = rec.get('fields', {})
+            if extract_text(fields.get('环节', '')).strip() == '宠物拟人参考视频深拆':
+                target = fields
+                break
+        if not target:
+            return False, '缺少配置环节: 宠物拟人参考视频深拆'
+        missing = []
+        if not extract_text(target.get('模型名称', '')).strip():
+            missing.append('模型名称')
+        if not extract_text(target.get('API Key', '')).strip():
+            missing.append('API Key')
+        if not extract_text(target.get('API 代理地址', '')).strip():
+            missing.append('API 代理地址')
+        if not extract_text(target.get('提示词', '')).strip():
+            missing.append('提示词')
+        if not extract_text(target.get('调用方式', '')).strip():
+            missing.append('调用方式')
+        if missing:
+            return False, f"宠物拟人参考视频深拆缺少 {', '.join(missing)}"
+        return True, '正常'
+    except Exception as e:
+        return False, f'失败: {e}'
+
+
 def check_dispatcher():
     try:
         heartbeat_file = os.path.join(SCRIPT_DIR, f'.dispatcher_heartbeat.{INSTANCE}.json')
@@ -289,6 +319,7 @@ def main():
         ('gemini', 'Gemini API', check_gemini),
         ('sora', 'Sora API', check_sora),
         ('nine_grid_video', '九宫格生成视频配置', check_nine_grid_video),
+        ('pet_reference_analysis', '宠物拟人参考视频深拆配置', check_pet_reference_analysis_config),
         ('dispatcher', '调度器', check_dispatcher),
     ]
     for key, label, check_fn in checks:

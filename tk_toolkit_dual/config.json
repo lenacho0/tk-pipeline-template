@@ -13,7 +13,8 @@
       "shot_storyboard": "tblRVg5Ob7VW2zCI",
       "product": "tblF2cZmbQEJMiUH",
       "model_appearance": "tblvpVOYockZmCG8",
-      "video": "tblQdTGSsmQbPMQd"
+      "video": "tblQdTGSsmQbPMQd",
+      "pet_reference_v1": "tblvS7q8hmQRlXEP"
     }
   },
   "fastmoss": {
@@ -26,7 +27,8 @@
     "shot_script_gen": "recveQZPORmm33",
     "storyboard": "recveizDqA44fi",
     "shot_storyboard": "recveQZRZc7NUI",
-    "video": "recveppNaVCcyd"
+    "video": "recveppNaVCcyd",
+    "pet_reference_analysis": ""
   },
   "products": {
     "宠物尿味分解除臭喷雾": "recveikpqWjEiB",
