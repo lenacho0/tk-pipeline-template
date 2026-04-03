@@ -50,12 +50,13 @@ def main():
     record_id = sys.argv[1]
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_PET_REFERENCE, record_id)
-    title = extract_text(fields.get('标题', '')) or extract_text(fields.get('文本', ''))
+    title = extract_text(fields.get('标题', '')) or extract_text(fields.get('任务标题', '')) or extract_text(fields.get('文本', ''))
     video_url = extract_text(fields.get('视频链接', '')).strip()
     if not video_url:
         raise Exception('视频链接为空')
 
     safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+        'record_id': record_id,
         '下载状态': '下载中',
         '深度拆解状态': '待拆解',
         '下载错误信息': '',
@@ -65,6 +66,7 @@ def main():
     dl = download_reference_video(video_url, WORKDIR)
     if not dl.get('ok'):
         safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+            'record_id': record_id,
             '下载状态': '下载失败',
             '下载错误信息': extract_text(dl.get('error', '下载失败'))[:1000],
             '标准化链接': dl.get('normalized_url', ''),
@@ -75,6 +77,7 @@ def main():
         sys.exit(1)
 
     safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+        'record_id': record_id,
         '下载状态': '下载成功',
         '深度拆解状态': '拆解中',
         '标准化链接': dl.get('normalized_url', ''),
@@ -137,6 +140,7 @@ def main():
     payload['meta']['file_size_mb'] = dl.get('file_size_mb', 0)
 
     safe_update_record(token, TABLE_PET_REFERENCE, record_id, {
+        'record_id': record_id,
         '深度拆解状态': '拆解成功',
         '深度拆解错误信息': '',
         '分析模型': cfg['model'],
@@ -155,6 +159,7 @@ if __name__ == '__main__':
             token = get_feishu_token()
             if len(sys.argv) >= 2 and TABLE_PET_REFERENCE:
                 safe_update_record(token, TABLE_PET_REFERENCE, sys.argv[1], {
+                    'record_id': sys.argv[1],
                     '深度拆解状态': '拆解失败',
                     '深度拆解错误信息': payload['message'][:1000]
                 })
