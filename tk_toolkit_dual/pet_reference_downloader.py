@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
-import hashlib
 import json
 import os
 import shutil
 import subprocess
-from urllib.parse import urlparse
+import sys
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+MEDIA_TOOL_ROOT = ROOT / 'tools' / 'media_bulk_downloader'
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def _detect_platform(url):
-    u = (url or '').lower()
-    if 'tiktok.com' in u:
-        return 'TikTok'
-    if 'douyin.com' in u:
-        return 'Douyin'
-    if 'instagram.com' in u:
-        return 'Instagram'
-    if 'youtube.com/shorts' in u or 'youtu.be/' in u:
-        return 'YouTube Shorts'
-    if 'xiaohongshu.com' in u or 'xhslink.com' in u:
-        return 'Xiaohongshu'
-    return 'Unknown'
-
-
-def _normalize_url(url):
-    try:
-        parsed = urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-    except Exception:
-        return url
-
-
-def _yt_dlp_bin():
-    return shutil.which('yt-dlp') or os.path.expanduser('~/Library/Python/3.9/bin/yt-dlp')
+from tools.media_bulk_downloader.config import load_config
+from tools.media_bulk_downloader.downloader import download_media
+from tools.media_bulk_downloader.io_utils import detect_platform, normalize_url
+from tools.media_bulk_downloader.models import InputItem
+from tools.media_bulk_downloader.provider import MediaProviderClient
 
 
 def _ffprobe_bin():
@@ -56,57 +40,45 @@ def _probe_video(local_path):
 
 
 def download_reference_video(url, workspace):
-    normalized_url = _normalize_url(url)
-    platform = _detect_platform(url)
-    os.makedirs(workspace, exist_ok=True)
-    fake_name = hashlib.md5((url or '').encode('utf-8')).hexdigest() + '.mp4'
-    local_path = os.path.join(workspace, fake_name)
+    normalized_url = normalize_url(url)
+    platform = detect_platform(normalized_url)
+    output_root = Path(workspace)
+    output_root.mkdir(parents=True, exist_ok=True)
+    env_file = ROOT / '.env'
 
-    yt_dlp = _yt_dlp_bin()
-    if not yt_dlp or not os.path.exists(yt_dlp):
-        return {
-            'ok': False,
-            'source_url': url,
-            'normalized_url': normalized_url,
-            'platform': platform,
-            'local_path': local_path,
-            'duration_sec': 0,
-            'file_size_mb': 0,
-            'error': 'YT_DLP_NOT_FOUND'
-        }
-
-    cmd = [yt_dlp, '--no-playlist', '--format', 'mp4/best', '--output', local_path, url]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
-        if result.returncode != 0:
-            err = ((result.stderr or '') + '\n' + (result.stdout or '')).strip()[:500]
+        config = load_config(env_file)
+        client = MediaProviderClient(config)
+        item = InputItem(
+            source_url=url,
+            normalized_url=normalized_url,
+            platform=platform,
+            row_number=1,
+            source_label='pet_reference_v1',
+        )
+        media = client.resolve(item)
+        result = download_media(config, item, media, output_root, skip_existing=True)
+        if result.status not in ('success', 'skipped') or not result.file_path:
             return {
                 'ok': False,
                 'source_url': url,
                 'normalized_url': normalized_url,
-                'platform': platform,
-                'local_path': local_path,
+                'platform': platform.title() if platform != 'unknown' else 'Unknown',
+                'local_path': '',
                 'duration_sec': 0,
                 'file_size_mb': 0,
-                'error': f'YT_DLP_FAILED: {err}'
+                'error': result.error or 'MEDIA_BULK_DOWNLOAD_FAILED'
             }
-        if not os.path.exists(local_path) or os.path.getsize(local_path) < 1000:
-            return {
-                'ok': False,
-                'source_url': url,
-                'normalized_url': normalized_url,
-                'platform': platform,
-                'local_path': local_path,
-                'duration_sec': 0,
-                'file_size_mb': 0,
-                'error': 'DOWNLOADED_FILE_INVALID'
-            }
+        local_path = str(result.file_path)
         duration_sec, file_size_mb = _probe_video(local_path)
+        display_platform = platform.title() if platform != 'unknown' else 'Unknown'
+        if display_platform == 'Tiktok':
+            display_platform = 'TikTok'
         return {
             'ok': True,
             'source_url': url,
             'normalized_url': normalized_url,
-            'platform': platform,
+            'platform': display_platform,
             'local_path': local_path,
             'duration_sec': duration_sec,
             'file_size_mb': file_size_mb,
@@ -117,9 +89,9 @@ def download_reference_video(url, workspace):
             'ok': False,
             'source_url': url,
             'normalized_url': normalized_url,
-            'platform': platform,
-            'local_path': local_path,
+            'platform': platform.title() if platform != 'unknown' else 'Unknown',
+            'local_path': '',
             'duration_sec': 0,
             'file_size_mb': 0,
-            'error': f'DOWNLOAD_EXCEPTION: {str(e)[:500]}'
+            'error': f'MEDIA_BULK_EXCEPTION: {str(e)[:500]}'
         }
