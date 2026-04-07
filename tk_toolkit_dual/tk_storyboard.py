@@ -361,7 +361,7 @@ def main():
 
         shots = structured_shots[:9]
         # ── Step 3: Build grid prompt — structured or plain ───────────────────────
-        has_content_type = any(s.get('content_type_influenced_by') for s in shots)
+        has_content_type = any(s.get('content_type') for s in shots)
         if has_content_type:
             grid_prompt = build_structured_grid_prompt(shots, style=style)
             print(f'  使用结构化grid_prompt (含content_type约束)')
