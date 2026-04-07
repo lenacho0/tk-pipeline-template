@@ -332,7 +332,7 @@ def build_pet_reference_script_prompt(prompt_template, product_info, model_info,
 6. 中文如果需要，仅允许作为模型内部理解，不允许出现在最终输出给下游的视频脚本文本中。
 7. 输出结果必须是可直接给分镜图生成和视频生成使用的单语终稿，默认语言为泰语口播。
 """
-    return base + tail
+    return base + tail + STRUCTURED_OUTPUT_PROMPT_SUFFIX
 
 
 def get_script_source(fields):
