@@ -1,0 +1,91 @@
+{
+  "feishu": {
+    "app_id": "你的飞书应用 App ID",
+    "app_secret": "你的飞书应用 App Secret",
+    "bitable_app_token": "你的多维表 App Token",
+    "tables": {
+      "config": "模型与API配置表 table_id",
+      "fetch_config": "抓取配置表 table_id",
+      "data": "爆款数据表 table_id",
+      "analysis": "脚本分析表 table_id",
+      "script_gen": "产品脚本生成表 table_id",
+      "shot_script_gen": "逐镜头脚本生成表 table_id",
+      "shot_storyboard": "逐镜头分镜图表 table_id",
+      "product": "产品信息表 table_id",
+      "model_appearance": "模特形象表 table_id",
+      "video": "视频生成表 table_id",
+      "pet_reference_v1": "宠物拟人参考视频表 table_id"
+    }
+  },
+  "fastmoss": {
+    "token": ""
+  },
+  "config_records": {
+    "fetch": "抓取配置在配置表中的 record_id",
+    "analysis": "分析配置在配置表中的 record_id",
+    "script_gen": "脚本生成配置在配置表中的 record_id",
+    "shot_script_gen": "逐镜头脚本生成配置在配置表中的 record_id",
+    "storyboard": "分镜图配置在配置表中的 record_id",
+    "shot_storyboard": "逐镜头分镜图配置在配置表中的 record_id",
+    "video": "视频生成配置在配置表中的 record_id",
+    "pet_reference_analysis": "宠物拟人参考分析配置在配置表中的 record_id"
+  },
+  "products": {
+    "示例产品A": "产品表中的 record_id",
+    "示例产品B": "产品表中的 record_id"
+  },
+  "notification": {
+    "feishu_user_id": "可选，接收巡检消息的飞书 open_id"
+  },
+  "dispatcher": {
+    "poll_interval": 30,
+    "healthcheck_hour": 8,
+    "circuit_breaker": {
+      "window_seconds": 900,
+      "threshold": 3,
+      "cooldown_seconds": 600
+    },
+    "scan": {
+      "table_min_interval_seconds": 20,
+      "record_state_cache_ttl_seconds": 300
+    },
+    "stages": {
+      "tk_fetch.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 900
+      },
+      "tk_analyze.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 1200
+      },
+      "tk_script_gen.py": {
+        "max_concurrency": 4,
+        "max_retries": 2,
+        "timeout": 600
+      },
+      "tk_storyboard.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 1200
+      },
+      "tk_shot_script_gen.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 900
+      },
+      "tk_shot_storyboard.py": {
+        "max_concurrency": 2,
+        "max_retries": 2,
+        "timeout": 1200
+      },
+      "tk_video_from_storyboard.py": {
+        "max_concurrency": 1,
+        "max_retries": 0,
+        "timeout": 3600
+      }
+    }
+  },
+  "workspace": "../workspace/alice"
+}
