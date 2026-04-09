@@ -62,3 +62,16 @@ TK_CONFIG_FILE="$PWD/config/config.alice.json" \
 - 次选：打一个 zip 包
 
 如果以后你更新流程，只要更新仓库脚本和文档，同事拉取新版本后保留自己的 `config/config.<name>.json` 即可。
+
+## 同事升级旧版本时
+
+如果同事之前已经在使用旧版本模板仓库，升级时建议按这个顺序：
+
+1. `git pull`
+2. `./scripts/setup.sh`
+3. 对照 `docs/bitable-schema.md` 检查是否需要补表字段
+4. 运行健康检查
+
+本次版本升级后，`产品脚本生成` 表需要新增：
+
+- `结构化脚本JSON`

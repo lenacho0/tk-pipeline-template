@@ -151,6 +151,89 @@ PANEL DESCRIPTIONS:
 {chr(10).join(panel_lines)}"""
 
 
+# ── content_type-aware grid prompt (uses formal CL constraints from config table) ──
+def build_structured_grid_prompt(shots, style="混合"):
+    """
+    Builds a grid prompt from structured shots (with content_type, speaker_visible, etc.).
+    Injects the full CL constraint suite from the config table:
+      CL1: style separation (product always photorealistic)
+      CL2: product consistency (highest priority)
+      CL3: character consistency
+      CL4: no text/subtitles
+      CL5: shot diversity
+    And respects content_type (dialogue→visible speaker, silent_action→no speaker, voiceover→no speaker).
+    """
+    style_suffix_map = {
+        "混合": (
+            ", Strictly Photorealistic model for all product descriptions, "
+            "AND strictly Disney/Pixar animation style render for all character and environment descriptions, "
+            "3D render, soft volumetric lighting, no text overlay."
+        ),
+        "全写实": (
+            ", all elements strictly photorealistic, lifestyle photography style, "
+            "no animation, no cartoon rendering."
+        ),
+        "全动画": (
+            ", 3D Disney/Pixar style for all characters and environments, "
+            "product remains strictly Photorealistic, Pixar movie still."
+        ),
+    }
+    style_suffix = style_suffix_map.get(style, style_suffix_map["混合"])
+
+    panel_lines = []
+    for i, s in enumerate(shots[:9]):
+        prompt_text = s.get("prompt_text", "")
+        content_type = s.get("content_type_influenced_by", "")
+        speaker_visible = s.get("speaker_visible", False)
+
+        # Inject content_type awareness into prompt suffix
+        type_constraint = ""
+        if content_type == "dialogue" and speaker_visible:
+            type_constraint = (
+                " INSTRUCTION: This panel depicts a character SPEAKING DIALOGUE. "
+                "The character must have a visible speaking expression (mouth slightly open, engaged). "
+                "The speaking character must appear IN THE FRAME, not as a voice-over. "
+            )
+        elif content_type == "voiceover":
+            type_constraint = (
+                " INSTRUCTION: This panel is a VOICE-OVER narration. "
+                "No character speaking to camera — the speaker is heard but not shown speaking. "
+            )
+        elif content_type == "silent_action":
+            type_constraint = (
+                " INSTRUCTION: This panel is SILENT ACTION / atmosphere. "
+                "No dialogue, no speaking — pure visual storytelling. "
+            )
+
+        panel_lines.append(f"Panel {i+1}: {prompt_text}{type_constraint}{style_suffix}")
+
+    grid_intro = """Create a single 3×3 storyboard grid image in 9:16 vertical portrait format.
+
+REFERENCE IMAGES (attached):
+- Image 1 = Product reference photo. The product in EVERY panel MUST be an EXACT visual copy of this reference — same bottle shape, same color, same label text, same logo, same nozzle design. Do NOT invent or alter the product appearance. This is the highest priority.
+- Image 2 = Character reference photo. The character in every panel must match this reference exactly — same appearance, same features.
+
+CRITICAL CONSTRAINTS (MUST FOLLOW):
+- CL2 (Product Consistency — HIGHEST PRIORITY): The product in EVERY single panel must be pixel-perfect identical to Image 1. Same bottle shape, color, label, logo, nozzle. NEVER deviate.
+- CL3 (Character Consistency): The character in every panel must exactly match Image 2. Same face, fur color, build, features.
+- CL4 (No Text): Every panel prompt already ends with "no text, no subtitles, no stickers, no watermark, no timecode". Do NOT add any text.
+- Shot 9 (CTA): MUST be a close-up of the product on a pure white background — no character, no background, no shadows, professional studio product photography.
+- Style suffix is already embedded in each panel prompt — follow it exactly.
+
+LAYOUT REQUIREMENTS:
+- Single image containing exactly 9 panels arranged in a 3×3 grid (3 columns × 3 rows)
+- Overall image aspect ratio: 9:16 (vertical portrait, taller than wide)
+- Each individual panel aspect ratio: 9:16 (vertical portrait)
+- Thin white borders separating all panels
+- NO panel numbers, NO text labels, NO numbering on any panel
+
+PANEL DESCRIPTIONS (follow each panel's style suffix exactly):
+
+"""
+
+    return grid_intro + "\n".join(panel_lines)
+
+
 def render_storyboard_image(client, model_name, parts, grid_prompt, out_path):
     parts_step2 = parts + [types.Part.from_text(text=grid_prompt)]
 
@@ -253,14 +336,45 @@ def main():
             model_file = with_retry(lambda: client.files.upload(file=model_path), max_attempts=3, label='upload model image')
             parts.append(types.Part.from_uri(file_uri=model_file.uri, mime_type='image/png'))
 
-        shots_data = generate_shots_json(client, parts, prompt_template, style, script)
-        shots = shots_data.get('shots', [])
-        grid_prompt = build_grid_prompt(shots)
+        # ── Step 1: Try structured shots JSON from script_gen output ──────────────
+        raw_structured = task.get('结构化脚本JSON', '')
+        structured_shots = None
+        if raw_structured:
+            try:
+                parsed = json.loads(raw_structured)
+                shots = parsed.get('shots', [])
+                # Validate: must have prompt_text and content_type fields
+                if shots and all(s.get('prompt_text') for s in shots[:9]):
+                    structured_shots = shots[:9]
+                    log_event('INFO', 'using structured shots from script_gen', record_id=record_id, shot_count=len(structured_shots))
+                    print(f'  使用结构化脚本shots (共{len(structured_shots)}条)')
+                else:
+                    log_event('WARN', 'structured shots JSON invalid or missing prompt_text', record_id=record_id)
+            except (json.JSONDecodeError, Exception) as e:
+                log_event('WARN', 'structured shots JSON parse failed, falling back to LLM generation', record_id=record_id, error=str(e)[:300])
+
+        # ── Step 2: Fallback — LLM generate shots from plain script ──────────────
+        if not structured_shots:
+            print(f'  无结构化JSON，使用LLM生成shots...')
+            shots_data = generate_shots_json(client, parts, prompt_template, style, script)
+            structured_shots = shots_data.get('shots', [])
+
+        shots = structured_shots[:9]
+        # ── Step 3: Build grid prompt — structured or plain ───────────────────────
+        has_content_type = any(s.get('content_type') for s in shots)
+        if has_content_type:
+            grid_prompt = build_structured_grid_prompt(shots, style=style)
+            print(f'  使用结构化grid_prompt (含content_type约束)')
+        else:
+            grid_prompt = build_grid_prompt(shots)
+            print(f'  使用普通grid_prompt (fallback)')
 
         out_path = os.path.join(task_dir, f'{record_id}_storyboard.png')
         render_storyboard_image(client, model_name, parts, grid_prompt, out_path)
 
-        prompts_json = json.dumps(shots_data, ensure_ascii=False, indent=2)
+        # Always write back shots used (structured or LLM-generated)
+        shots_data_for_writeback = {'shots': shots}
+        prompts_json = json.dumps(shots_data_for_writeback, ensure_ascii=False, indent=2)
         file_token = with_retry(
             lambda: upload_image_to_feishu(token, out_path, f'{record_id}_storyboard.png'),
             max_attempts=3,

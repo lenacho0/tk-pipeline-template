@@ -257,76 +257,59 @@ def build_data_uri(file_path, mime_type='image/png'):
 
 
 def resolve_seeddance_provider_model(model_name):
-    value = extract_text(model_name).strip().lower()
-    aliases = {
-        'seeddance2.0': 'seedance-2.0',
-        'seeddance-2.0': 'seedance-2.0',
-        'seeddance2': 'seedance-2.0',
-        'seeddance': 'seedance-2.0',
-        'seedance2.0': 'seedance-2.0',
-        'seedance2': 'seedance-2.0',
-        'seedance': 'seedance-2.0',
-        'seedance-2.0': 'seedance-2.0',
-        'seed-dance': 'seedance-2.0',
-        'seed-dance-2.0': 'seedance-2.0',
-    }
-    return aliases.get(value, model_name or 'seedance-2.0')
+    """透传模型名，aihubmix 的 doubao-seedance 模型名需精确传递。"""
+    return extract_text(model_name).strip() or 'doubao-seedance-2-0-fast-260128'
 
 
 def submit_seeddance_task(api_base, api_key, prompt, model_name, image_path, seconds=DEFAULT_SECONDS, image_url=''):
     if not image_path or not os.path.exists(image_path):
         raise Exception('SeedDance 2.0 当前仅接 image_to_video，缺少九宫格分镜图文件')
 
-    url = f"{api_base.rstrip('/')}/videos/generate"
-    provider_model = resolve_seeddance_provider_model(model_name)
+    # aihubmix 风格：POST /v1/videos，图片作为 multipart file 上传
+    url = f"{api_base.rstrip('/')}/v1/videos"
+    headers = {'Authorization': f'Bearer {api_key}'}
 
-    def _post(payload):
-        try:
-            resp = requests.post(url, headers=creaa_headers(api_key), json=payload, timeout=SUBMIT_TIMEOUT)
-            resp.raise_for_status()
-        except requests.exceptions.Timeout as e:
-            raise Exception(f'SeedDance 2.0 任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
-        except requests.exceptions.RequestException as e:
-            raise Exception(f'SeedDance 2.0 任务提交请求失败: {e}')
+    try:
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+    except Exception as e:
+        raise Exception(f'SeedDance 2.0 读取分镜图文件失败: {e}')
 
-        try:
-            return resp.json()
-        except Exception as e:
-            body = (resp.text or '')[:500]
-            raise Exception(f'SeedDance 2.0 提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
+    try:
+        resp = requests.post(
+            url,
+            headers=headers,
+            data={
+                'model': model_name,
+                'prompt': prompt,
+                'seconds': seconds,
+                'size': DEFAULT_SIZE,
+            },
+            files={'image': (os.path.basename(image_path), image_bytes, 'image/png')},
+            timeout=SUBMIT_TIMEOUT
+        )
+        resp.raise_for_status()
+    except requests.exceptions.Timeout as e:
+        raise Exception(f'SeedDance 2.0 任务提交超时（{SUBMIT_TIMEOUT}秒）: {e}')
+    except requests.exceptions.RequestException as e:
+        raise Exception(f'SeedDance 2.0 任务提交请求失败: {e}')
 
-    base_payload = {
-        'prompt': prompt,
-        'model': provider_model,
-        'mode': 'image_to_video',
-        'duration': seconds,
-        'aspect_ratio': '9:16',
-    }
+    try:
+        data = resp.json()
+    except Exception as e:
+        body = (resp.text or '')[:500]
+        raise Exception(f'SeedDance 2.0 提交返回非JSON响应: HTTP {resp.status_code}, body={body}, error={e}')
 
-    payload = dict(base_payload)
-    payload['image_data'] = build_data_uri(image_path, mime_type='image/png')
-    data = _post(payload)
-
-    task_id = extract_text(data.get('task_id', '') or data.get('id', '') or data.get('data', {}).get('task_id', ''))
+    task_id = extract_text(data.get('id', '') or data.get('task_id', ''))
     if task_id:
         return task_id, data
 
-    error_text = extract_text(data.get('error', '') or data.get('message', '') or data.get('data', {}).get('error', ''))
-    should_fallback_to_url = 'failed to process image data' in error_text.lower()
-
-    if should_fallback_to_url and image_url:
-        payload = dict(base_payload)
-        payload['image_url'] = image_url
-        data = _post(payload)
-        task_id = extract_text(data.get('task_id', '') or data.get('id', '') or data.get('data', {}).get('task_id', ''))
-        if task_id:
-            return task_id, data
-
-    raise Exception(f'SeedDance 2.0 任务提交失败: {str(data)[:1000]}')
+    err = extract_text(data.get('error', '') or data.get('message', ''))
+    raise Exception(f'SeedDance 2.0 任务提交失败: {err or str(data)[:1000]}')
 
 
 def poll_seeddance_task(api_base, api_key, task_id, progress_cb=None):
-    url = f"{api_base.rstrip('/')}/tasks/{task_id}"
+    url = f"{api_base.rstrip('/')}/v1/videos/{task_id}"
     start = time.time()
     last_status = None
     last_progress_push_at = 0
@@ -373,44 +356,23 @@ def normalize_url_candidate(value):
 
 
 def extract_seeddance_video_url(result):
-    candidates = [
-        result.get('video_url'),
-        result.get('url'),
-        result.get('result_url'),
-        result.get('download_url'),
-        result.get('data', {}).get('video_url') if isinstance(result.get('data'), dict) else None,
-        result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None,
-        result.get('data', {}).get('result_url') if isinstance(result.get('data'), dict) else None,
-        result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None,
-        result.get('output', {}).get('video_url') if isinstance(result.get('output'), dict) else None,
-        result.get('output', {}).get('url') if isinstance(result.get('output'), dict) else None,
-        result.get('output', {}).get('result_url') if isinstance(result.get('output'), dict) else None,
-        result.get('output', {}).get('download_url') if isinstance(result.get('output'), dict) else None,
-    ]
-    result_urls = result.get('result_urls')
-    if isinstance(result_urls, list):
-        candidates.extend(result_urls)
-    elif isinstance(result_urls, str):
-        candidates.append(result_urls)
-    nested_data = result.get('data')
-    if isinstance(nested_data, dict):
-        nested_result_urls = nested_data.get('result_urls')
-        if isinstance(nested_result_urls, list):
-            candidates.extend(nested_result_urls)
-        elif isinstance(nested_result_urls, str):
-            candidates.append(nested_result_urls)
-    for item in candidates:
-        value = normalize_url_candidate(item)
-        if value.startswith('http://') or value.startswith('https://'):
-            return value
+    # aihubmix: completed 时 url=null，下载路径固定为 /v1/videos/{id}/content
+    video_id = extract_text(result.get('id', '') or result.get('task_id', ''))
+    if video_id:
+        return f"https://aihubmix.com/v1/videos/{video_id}/content"
+    # 兜底：从 result 里找已有 URL
+    for key in ('url', 'video_url', 'result_url', 'download_url'):
+        val = result.get(key)
+        if val and isinstance(val, str) and val.startswith('http'):
+            return val
     return ''
 
 
-def download_seeddance_video(result, save_path):
-    video_url = extract_seeddance_video_url(result)
-    if not video_url:
-        raise Exception(f'SeedDance 2.0 上游已完成，但未解析到可下载视频地址: {str(result)[:1000]}')
-    resp = requests.get(video_url, stream=True, allow_redirects=True, timeout=300)
+def download_seeddance_video(api_base, api_key, task_id, save_path):
+    # aihubmix 下载：GET /v1/videos/{id}/content
+    video_url = f"{api_base.rstrip('/')}/v1/videos/{task_id}/content"
+    headers = {'Authorization': f'Bearer {api_key}'}
+    resp = requests.get(video_url, headers=headers, stream=True, allow_redirects=True, timeout=300)
     if resp.status_code != 200:
         raise Exception(f'SeedDance 2.0 视频下载失败: HTTP {resp.status_code}')
     with open(save_path, 'wb') as f:
@@ -544,7 +506,7 @@ def main():
         if video_model == 'sora':
             download_sora_video(api_base, config['api_key'], video_id, out_path)
         else:
-            download_seeddance_video(result, out_path)
+            download_seeddance_video(api_base, config['api_key'], video_id, out_path)
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, {
             '视频错误信息': f'视频下载完成，准备上传飞书。task_id={video_id}'[:1000],
         })

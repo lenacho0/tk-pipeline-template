@@ -56,3 +56,23 @@ TK_CONFIG_FILE="$PWD/config/config.alice.json" \
 ```bash
 TK_INSTANCE=alice ./scripts/uninstall_launchd.sh
 ```
+
+## 已在运行中的同事如何升级
+
+```bash
+cd tk-pipeline-template
+git pull
+./scripts/setup.sh
+```
+
+然后检查飞书副本是否已经补齐新字段：
+
+- `产品脚本生成` 表新增 `结构化脚本JSON`
+
+最后再执行一次健康检查：
+
+```bash
+TK_INSTANCE=alice \
+TK_CONFIG_FILE="$PWD/config/config.alice.json" \
+./scripts/tk_healthcheck.py
+```

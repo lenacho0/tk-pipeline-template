@@ -292,8 +292,9 @@ def build_script_generation_prompt(prompt_template, product_info, model_info, vi
 6. 最终输出脚本中，口播部分只允许保留泰文口播；不要输出 `口播（中文）`、`口播(中文)`、中文台词翻译、双语对照口播，也不要把中文台词混入任何最终脚本正文。
 7. 中文如果需要，仅允许作为模型内部理解，不允许出现在最终输出给下游的视频脚本文本中。
 8. 输出结果必须是“可直接给分镜图生成和视频生成使用”的单语终稿，默认语言为泰语口播。
+{STRUCTURED_OUTPUT_PROMPT_SUFFIX}
 """
-    return base + tail
+    return base + tail + STRUCTURED_OUTPUT_PROMPT_SUFFIX
 
 
 def get_pet_reference_payload(token, reference_record_id):
@@ -326,12 +327,12 @@ def build_pet_reference_script_prompt(prompt_template, product_info, model_info,
 1. 你参考的是这条视频的叙事视角、转化策略、Hook机制、卖点推进顺序和可复用模板，不是照抄原视频台词。
 2. 必须围绕当前产品重新写原创脚本。
 3. 如果参考视频策略与当前产品不完全匹配，可以保留其有效机制并重构中段表达。
-4. 必须保持宠物拟人视角成立；宠物拟人不等于必须萌系，可根据参考JSON中的策略走恐吓/焦虑/问题暴露/对比/温情等路线。
+4. 必须保持宠物拟人视角成立；宠物必须在画面内开口说话（dialogue，speaker_visible=true），不得退化为纯旁白。宠物拟人不等于必须萌系，可根据参考JSON中的策略走恐吓/焦虑/问题暴露/对比/温情等路线，但无论哪种情绪路线，宠物都必须在画面中露脸开口，不能是画外音旁白。
 5. 最终输出脚本中，口播部分只允许保留泰文口播；不要输出 `口播（中文）`、`口播(中文)`、中文台词翻译、双语对照口播，也不要把中文台词混入任何最终脚本正文。
 6. 中文如果需要，仅允许作为模型内部理解，不允许出现在最终输出给下游的视频脚本文本中。
 7. 输出结果必须是可直接给分镜图生成和视频生成使用的单语终稿，默认语言为泰语口播。
 """
-    return base + tail
+    return base + tail + STRUCTURED_OUTPUT_PROMPT_SUFFIX
 
 
 def get_script_source(fields):
@@ -375,13 +376,20 @@ def get_prompt_record_fields(token, stage_name, fallback_record_fields=None):
 def get_handwritten_organize_prompt(token, fallback_record_fields):
     fields, source = get_prompt_record_fields(token, HANDWRITTEN_ORGANIZE_STAGE_NAME, fallback_record_fields)
     value = extract_text(fields.get('提示词', '')).strip() or extract_text(fields.get('手写脚本整理提示词', '')).strip()
-    return (value or DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT), source
+    prompt = value or DEFAULT_HANDWRITTEN_ORGANIZE_PROMPT
+    # Remove the "不要输出JSON" line since we now require structured JSON output
+    lines = [l for l in prompt.splitlines() if '不要输出JSON' not in l and '不要输出 json' not in l.lower()]
+    prompt = '\n'.join(lines).strip()
+    return prompt + '\n' + STRUCTURED_OUTPUT_PROMPT_SUFFIX, source
 
 
 def get_handwritten_rewrite_prompt(token, fallback_record_fields):
     fields, source = get_prompt_record_fields(token, HANDWRITTEN_REWRITE_STAGE_NAME, fallback_record_fields)
     value = extract_text(fields.get('提示词', '')).strip() or extract_text(fields.get('手写脚本改写提示词', '')).strip()
-    return (value or DEFAULT_HANDWRITTEN_REWRITE_PROMPT), source
+    prompt = value or DEFAULT_HANDWRITTEN_REWRITE_PROMPT
+    lines = [l for l in prompt.splitlines() if '不要输出JSON' not in l and '不要输出 json' not in l.lower()]
+    prompt = '\n'.join(lines).strip()
+    return prompt + '\n' + STRUCTURED_OUTPUT_PROMPT_SUFFIX, source
 
 
 def contains_duration_conflict(raw_script, video_duration):
@@ -415,7 +423,84 @@ def run_text_prompt(client, model_name, prompt, label):
     result = getattr(response, 'text', '') or ''
     if not result.strip():
         raise Exception('Gemini 返回空脚本')
-    return strip_chinese_voiceover_lines(result)
+    return result
+
+
+# ── Structured script output ────────────────────────────────────────────────
+
+STRUCTURED_OUTPUT_PROMPT_SUFFIX = """
+
+---
+## 附加要求：同时输出结构化 JSON
+
+除了上面的脚本正文，还必须在同一个回复的末尾追加输出以下 JSON 结构（放在 ```json 代码块中）。
+
+**JSON 格式要求（每条分镜必须包含以下所有字段）：**
+```json
+{
+  "shots": [
+    {
+      "shot_number": "分镜 1",
+      "content_type": "dialogue",
+      "speaker": "MoMo",
+      "speaker_visible": true,
+      "thai_text": "口播泰文原文",
+      "visual_description": "画面描述",
+      "prompt_text": "Close-up, Disney/Pixar animated MoMo with slightly open mouth, speaking..."
+    },
+    ...共 9 条...
+  ]
+}
+```
+
+**字段说明：**
+- `shot_number`: 分镜序号（分镜 1 ~ 分镜 9）
+- `content_type`: `dialogue`（有台词对白）/ `voiceover`（旁白配音无画面）/ `silent_action`（纯动作无台词）
+- `speaker`: 谁在说。dialogue 时填角色名（MoMo/模特名），voiceover 填"旁白"，silent_action 填空字符串 `""`
+- `speaker_visible`: 是否要在画面内看到说话主体。dialogue 且 speaker 出现在画面时为 `true`，voiceover/silent_action 恒为 `false`
+- `thai_text`: 泰文口播原文（silent_action 时为 `""`）
+- `visual_description`: 画面内容文字描述（不含镜头技术参数）
+- `prompt_text`: 该分镜的画面生成提示词，供后续分镜图生成使用。请包含：镜头角度、角色/产品外观、场景、氛围光影。
+
+**content_type 判断规则：**
+- 有具体台词 + 说话主体在画面内 → `dialogue`（speaker_visible=true）
+- 有具体台词但说话主体不在画面内 → `voiceover`（speaker_visible=false）
+- 无台词，纯动作/产品/氛围展示 → `silent_action`（speaker_visible=false）
+
+**注意：** JSON 代码块必须放在整个回复的最后，不能出现在其他位置。
+"""
+
+
+def extract_json_block(text):
+    """Extract JSON from ```json ... ``` block."""
+    text = text or ''
+    m = re.search(r'```json\s*([\s\S]*?)\s*```', text)
+    if m:
+        return m.group(1).strip()
+    m2 = re.search(r'\{[\s\S]*\}', text)
+    if m2:
+        return m2.group()
+    return text.strip()
+
+
+def parse_structured_shots(text):
+    """
+    Extract structured shots JSON from a Gemini response.
+    Returns (structured_shots_dict, plain_text_without_json).
+    """
+    raw_json = extract_json_block(text)
+    try:
+        parsed = json.loads(raw_json)
+        shots = parsed.get('shots', [])
+        if shots:
+            # Build plain text: everything before the first ```json block
+            json_start = text.find('```json')
+            plain_text = text[:json_start].strip() if json_start != -1 else text.strip()
+            return parsed, plain_text
+    except (json.JSONDecodeError, Exception):
+        pass
+    # Fallback: no valid JSON found, return original text as plain
+    return None, text
 
 
 def main():
@@ -472,7 +557,8 @@ def main():
                 organize_template,
                 product_info, model_info, video_duration, raw_script
             )
-            result = run_text_prompt(client, model_name, organize_prompt, 'gemini handwritten script organize')
+            raw_response = run_text_prompt(client, model_name, organize_prompt, 'gemini handwritten script organize')
+            structured_shots, raw_response = parse_structured_shots(raw_response)
 
             rewrite_used = False
             rewrite_source = None
@@ -480,9 +566,10 @@ def main():
                 rewrite_template, rewrite_source = get_handwritten_rewrite_prompt(token, script_gen_config_fields)
                 rewrite_prompt = fill_prompt_template(
                     rewrite_template,
-                    product_info, model_info, video_duration, result
+                    product_info, model_info, video_duration, raw_response
                 )
-                result = run_text_prompt(client, model_name, rewrite_prompt, 'gemini handwritten script rewrite')
+                raw_response = run_text_prompt(client, model_name, rewrite_prompt, 'gemini handwritten script rewrite')
+                structured_shots, raw_response = parse_structured_shots(raw_response)
                 rewrite_used = True
 
             references = []
@@ -507,9 +594,10 @@ def main():
                     max_attempts=3,
                     label='gemini pet reference script generate_content'
                 )
-                result = getattr(response, 'text', '') or ''
-                if not result.strip():
+                raw_response = getattr(response, 'text', '') or ''
+                if not raw_response.strip():
                     raise Exception('Gemini 返回空脚本')
+                structured_shots, raw_response = parse_structured_shots(raw_response)
                 references = []
             else:
                 references = get_reference_scripts(token, product_info)
@@ -526,17 +614,23 @@ def main():
                     max_attempts=3,
                     label='gemini script generate_content'
                 )
-                result = getattr(response, 'text', '') or ''
-                if not result.strip():
+                raw_response = getattr(response, 'text', '') or ''
+                if not raw_response.strip():
                     raise Exception('Gemini 返回空脚本')
+                structured_shots, raw_response = parse_structured_shots(raw_response)
+
+        # Strip Chinese voiceover annotations from plain text (JSON block already extracted)
+        plain_script = strip_chinese_voiceover_lines(raw_response)
 
         current_fields = safe_get_record(token, TABLE_SCRIPT_GEN, record_id)
         storyboard_status = extract_text(current_fields.get('分镜图状态', '')).strip()
         update_fields = {
-            '生成的脚本': result[:10000],
+            '生成的脚本': plain_script[:10000],
             '生成状态': '成功',
             'record_id': record_id,
         }
+        if structured_shots:
+            update_fields['结构化脚本JSON'] = json.dumps(structured_shots, ensure_ascii=False, indent=2)
         if storyboard_status not in ('生成中', '待执行'):
             update_fields['分镜图状态'] = '待执行'
         safe_update_record(token, TABLE_SCRIPT_GEN, record_id, update_fields)
@@ -544,11 +638,12 @@ def main():
         log_event(
             'INFO', 'script generation task success',
             record_id=record_id,
-            result_len=len(result),
+            result_len=len(plain_script),
+            has_structured_shots=bool(structured_shots),
             reference_count=len(references),
             selected_refs=[r['record_id'] for r in references[:5]]
         )
-        print(f'✅ 脚本生成完成 ({len(result)}字)')
+        print(f'✅ 脚本生成完成 ({len(plain_script)}字)' + (' [含结构化JSON]' if structured_shots else ''))
 
     except Exception as e:
         payload = build_error_payload(e, stage='generate_product_script')
