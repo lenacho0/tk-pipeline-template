@@ -16,7 +16,8 @@
     "provider": "gemini-compatible",
     "model": "gemini-2.5-pro",
     "api_key": "YOUR_API_KEY",
-    "api_base": "YOUR_API_BASE"
+    "api_base": "YOUR_API_BASE",
+    "notes": "正式配置优先级：表0配置表(模型名/API Key/API 代理地址/API 配置) > 本地 config.json > fallback 联调兜底"
   },
   "dispatcher": {
     "poll_seconds": 20

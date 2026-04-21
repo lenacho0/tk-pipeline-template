@@ -28,9 +28,10 @@ tiktok_bitable_workflow/
 
 ## 运行前提
 
-1. 复制 `config.example.json` → `config.json`，填入飞书 app_id / app_secret / bitable_app_token / table IDs / LLM 配置
+1. 复制 `config.example.json` → `config.json`，填入飞书 app_id / app_secret / bitable_app_token / table IDs / LLM 兜底配置
 2. 确保飞书多维表已按 `docs/tiktok-bitable-table6-field-spec.md` 补好字段
-3. 确认飞书配置表中有"脚本生成"环节的提示词记录
+3. 确认飞书配置表中存在“脚本生成”环节记录，并优先在表0配置：`模型名 / API Key / API 代理地址 / API 配置`
+4. 当前正式配置优先级：**表0配置表 > 本地 config.json > fallback 联调兜底**
 
 ## 运行方式
 
@@ -81,3 +82,10 @@ python3 tiktok_bitable_workflow/dispatcher.py
 - 不共用 dispatcher
 - 不共用状态字段命名
 - 不修改旧 tk_toolkit_dual 任何代码
+
+## 当前真实状态（2026-04-21）
+
+- 已打通：后半段主干链路（母任务拆分 → 脚本生成 → 分镜 → 生图提示词 → 图生视频提示词）
+- 未打通：前半段单视频分析 / 共性分析
+- `script_generate` 当前支持 fallback：当正式 LLM 路径不可用时，会生成联调脚本以验证后续流转，但这**不代表正式模型产出**。
+- 详细状态见：`docs/tiktok-bitable-current-status-2026-04-21.md`
