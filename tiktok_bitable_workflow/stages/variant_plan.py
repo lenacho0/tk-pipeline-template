@@ -347,8 +347,8 @@ def main():
     update_record(token, SCRIPT_TASKS_TABLE, record_id, {"多版本规划状态": "规划中"})
 
     # ── Step 3：读取产品/共性分析辅助信息 ───────────────────────────────────
-    common_summary = read_common_analysis_summary(token, extract_text(parent.get("共性分析记录ID")))
-    product_info = read_product_info(token, parent.get("产品关联") or parent.get("产品ID"))
+    common_summary = read_common_analysis_summary(token, extract_text(parent.get("共性分析记录ID")) or (extract_linked_ids(parent.get("关联共性分析"))[0] if extract_linked_ids(parent.get("关联共性分析")) else ""))
+    product_info = read_product_info(token, parent.get("关联产品") or parent.get("产品关联") or parent.get("产品ID"))
 
     # ── Step 4：补默认值 & 生成批次ID ────────────────────────────────────────
     defaults = fill_defaults(parent)

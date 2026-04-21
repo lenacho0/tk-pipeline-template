@@ -198,10 +198,10 @@ def read_product_info(token, product_link):
     try:
         fields = get_record(token, PRODUCTS_TABLE, linked_ids[0])
         return {
-            "product_name_th": extract_text(fields.get("产品名称-th", "")),
-            "spec": extract_text(fields.get("产品规格", "")),
-            "selling_points": extract_text(fields.get("核心卖点", "")),
-            "usage_scenario": extract_text(fields.get("使用场景", "")),
+            "product_name_th": extract_text(fields.get("产品名称-th", "")) or extract_text(fields.get("产品名称", "")),
+            "spec": extract_text(fields.get("产品规格", "")) or extract_text(fields.get("产品描述", "")),
+            "selling_points": extract_text(fields.get("核心卖点", "")) or extract_text(fields.get("产品卖点", "")),
+            "usage_scenario": extract_text(fields.get("使用场景", "")) or extract_text(fields.get("产品描述", "")),
             "target_user": extract_text(fields.get("目标用户", "")),
         }
     except Exception:
@@ -218,8 +218,8 @@ def read_model_info(token, model_link):
         fields = get_record(token, MODELS_TABLE, linked_ids[0])
         parts = [
             f"模特名称: {extract_text(fields.get('模特名称', ''))}",
-            f"外观描述: {extract_text(fields.get('外观描述', ''))}",
-            f"出镜风格: {extract_text(fields.get('出镜风格', ''))}",
+            f"外观描述: {extract_text(fields.get('外观描述', '')) or extract_text(fields.get('模特描述', ''))}",
+            f"出镜风格: {extract_text(fields.get('出镜风格', '')) or extract_text(fields.get('模特描述', ''))}",
         ]
         return "；".join(p for p in parts if not p.endswith(": "))
     except Exception:
@@ -231,7 +231,7 @@ def read_common_analysis(token, record_id):
         return {}
     try:
         fields = get_record(token, COMMON_ANALYSIS_TABLE, record_id)
-        raw = extract_text(fields.get("共性摘要")) or extract_text(fields.get("summary"))
+        raw = extract_text(fields.get("共性摘要")) or extract_text(fields.get("summary")) or extract_text(fields.get("聚合分析结果Markdown")) or extract_text(fields.get("聚合分析结果JSON"))
         return {"summary": raw[:800] if raw else ""}
     except Exception:
         return {}
@@ -244,9 +244,9 @@ def read_script_gen_prompt(token):
         records = list_records(token, CONFIG_TABLE)
         for rec in records:
             flds = rec.get("fields", {})
-            stage = extract_text(flds.get("环节", "")).strip()
+            stage = extract_text(flds.get("环节名", "")).strip() or extract_text(flds.get("环节", "")).strip()
             if "脚本生成" in stage or "script" in stage.lower():
-                return extract_text(flds.get("提示词", "") or flds.get("prompt", ""))
+                return extract_text(flds.get("系统提示词", "") or flds.get("提示词", "") or flds.get("prompt", ""))
     except Exception:
         pass
     return ""
