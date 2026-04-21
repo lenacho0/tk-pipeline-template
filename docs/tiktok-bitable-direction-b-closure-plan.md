@@ -7,6 +7,14 @@
 
 ## 当前真实问题
 
+### 0. 表0 当前“脚本生成”记录尚未提供可用 API Key
+基于 2026-04-21 的实际读取结果：
+- 表0 `脚本生成` 记录存在 `模型名=gemini-3.1-pro-preview`
+- `API配置={"provider":"gemini"}`
+- 但未读取到可用的 `API Key` / `API 代理地址`
+
+因此当前正式 LLM 路径还无法进入 `formal_llm`，只能落到 fallback 联调路径。
+
 ### 1. `script_generate` 已可运行，但配置优先级不清晰
 当前代码实际同时混用了：
 - `config.json` 的 `llm.*`

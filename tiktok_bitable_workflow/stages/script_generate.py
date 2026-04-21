@@ -30,6 +30,18 @@ def load_config():
 
 
 CFG = load_config()
+
+PROMPT_SUFFIX_STRUCTURED_JSON = """
+请严格输出两部分：
+1. JSON_OUTPUT：合法 JSON，对象顶层至少包含 `shots` 数组。
+2. TEXT_OUTPUT：给人阅读的完整脚本文本。
+
+要求：
+- `shots` 中每个镜头尽量包含：shot_number / content_type / speaker / thai_text / dialogue_zh / visual_description / prompt_text
+- 如果目标市场是泰国，口播优先输出泰文，并附中文翻译。
+- 不要输出额外解释。
+"""
+
 FEISHU = CFG["feishu"]
 LLM = CFG.get("llm", {})
 TABLES = FEISHU["tables"]
@@ -533,6 +545,8 @@ def main():
         runtime_cfg = read_llm_runtime_config(token)
         runtime_mode = classify_runtime_mode(runtime_cfg)
         log("INFO", "runtime config resolved", record_id=record_id, runtime_mode=runtime_mode, source=runtime_cfg.get("source"), model=runtime_cfg.get("model"), has_api_key=bool(runtime_cfg.get("api_key")))
+        if runtime_mode != "formal_llm":
+            log("WARN", "formal llm unavailable, fallback will be used", record_id=record_id, source=runtime_cfg.get("source"))
         client, model = get_llm_client(runtime_cfg)
         raw_response = call_llm(client, model, prompt, label="script_generate")
         log("INFO", "llm call success", record_id=record_id, response_len=len(raw_response))

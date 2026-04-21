@@ -198,19 +198,21 @@
 当前后半段之所以能往后跑，是因为手工补了一条示例 `共性摘要`，让后半段联调先启动。
 
 ### 8.2 脚本生成还不是正式模型产出
-当前 `script_generate.py` 的真实状态：
+当前 `script_generate.py` 的真实状态已更新为：
 - 代码已具备真实 LLM 路径
-- 但当前运行环境里没有拿到正式 Gemini API key
-- 所以这轮联调用的是 fallback 路径兜底
+- 2026-04-21 已从表0 `脚本生成` 记录成功读取到可用的 `API Key` 与 `API 代理地址`
+- 已真实进入 `formal_llm` 路径并完成一次成功调用（record: `recvhplDKL51Fz`，source: `bitable:recvhkwG00ECUj`，model: `gemini-3.1-pro-preview`）
+- fallback 仍保留，但已退回为联调兜底，而非唯一可运行路径
 
 已验证：
 - 上下文拼装逻辑
 - prompt 拼装逻辑
 - 表字段写回逻辑
 - 后续分镜/prompt 流转逻辑
+- 正式 LLM 初始化与一次真实调用成功
 
-未验证：
-- 正式外部 LLM 产出质量与稳定性
+仍待继续观察：
+- 正式模型多样本稳定性
 - 正式模型输出解析质量
 
 ### 8.3 真正的执行层还没接
