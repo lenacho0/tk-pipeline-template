@@ -280,101 +280,65 @@ def read_script_gen_prompt(token):
 
 
 def parse_api_config_text(raw_text):
-    """从表0的 API配置 文本里做一个很宽松的 key/value 兜底解析。"""
+    """从表0的 API配置 文本里做一个宽松解析。"""
     raw = extract_text(raw_text).strip()
     if not raw:
         return {}
+    try:
+        if raw.startswith("{"):
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+
     result = {}
     for line in raw.splitlines():
-        if ':' in line:
-            k, v = line.split(':', 1)
-        elif '：' in line:
-            k, v = line.split('：', 1)
-        else:
+        line = line.strip().strip(",")
+        if not line or ":" not in line:
             continue
-        result[k.strip()] = v.strip()
+        k, v = line.split(":", 1)
+        result[k.strip()] = v.strip().strip('"').strip("'")
     return result
 
 
 def read_llm_runtime_config(token):
     """配置优先级：表0配置表 > config.json > fallback。"""
-    """优先读配置表里的脚本生成配置，缺失再回退本地 config.json。"""
     runtime = {
+        "provider": LLM.get("provider", "gemini-compatible"),
+        "model": LLM.get("model", "gemini-2.5-flash"),
         "api_key": LLM.get("api_key", ""),
         "api_base": LLM.get("api_base", "https://aihubmix.com/gemini"),
-        "model": LLM.get("model", "gemini-2.5-flash"),
+        "source": "config.json",
     }
     if not CONFIG_TABLE:
         return runtime
+
     try:
         records = list_records(token, CONFIG_TABLE)
         for rec in records:
             flds = rec.get("fields", {})
             stage = extract_text(flds.get("环节名", "")).strip() or extract_text(flds.get("环节", "")).strip()
-            if "脚本生成" in stage or "script" in stage.lower():
-                runtime["model"] = extract_text(flds.get("模型名", "")) or runtime["model"]
-                runtime["api_base"] = extract_text(flds.get("API 代理地址", "")) or runtime["api_base"]
-                api_key = extract_text(flds.get("API Key", ""))
-                if not api_key:
-                    parsed = parse_api_config_text(flds.get("API配置", ""))
-                    api_key = parsed.get("API Key", "") or parsed.get("api_key", "")
-                    runtime["api_base"] = parsed.get("API 代理地址", runtime["api_base"]) or parsed.get("api_base", runtime["api_base"])
-                runtime["api_key"] = api_key or runtime["api_key"]
-                break
-    except Exception:
-        pass
+            if not stage or ("脚本生成" not in stage and "script" not in stage.lower()):
+                continue
+
+            api_cfg = parse_api_config_text(flds.get("API配置", ""))
+            runtime = {
+                "provider": extract_text(flds.get("provider", "")).strip() or api_cfg.get("provider") or runtime.get("provider"),
+                "model": extract_text(flds.get("模型名", "")).strip() or extract_text(flds.get("模型名称", "")).strip() or api_cfg.get("model") or runtime.get("model"),
+                "api_key": extract_text(flds.get("API Key", "")).strip() or api_cfg.get("api_key") or runtime.get("api_key"),
+                "api_base": extract_text(flds.get("API 代理地址", "")).strip() or api_cfg.get("api_base") or runtime.get("api_base"),
+                "source": f"bitable:{rec.get('record_id')}",
+            }
+            return runtime
+    except Exception as e:
+        log("WARN", "failed to read runtime config from bitable, fallback to config.json", error=str(e)[:300])
+
     return runtime
 
 
-# ── Prompt 构建 ──────────────────────────────────────────────────────────────
-
-PROMPT_SUFFIX_STRUCTURED_JSON = """
-
----
-## 附加要求：同时输出结构化 JSON
-
-除了上面的脚本正文，还必须在同一个回复的末尾追加输出以下 JSON 结构（放在 ```json 代码块中）。
-
-**JSON 格式要求（每条分镜必须包含以下所有字段）：**
-```json
-{
-  "script_meta": {
-    "batch_id": "TBW-SCRIPT-...",
-    "variant_id": "V1",
-    "variant_name": "V1-hook_angle-痛点直击开场",
-    "primary_test": "hook_angle",
-    "direction": "痛点直击"
-  },
-  "static_cards": {
-    "character_card": "人物卡片描述",
-    "scene_card": "场景卡片描述",
-    "quality_card": "画质要求描述 (no subtitles)"
-  },
-  "shots": [
-    {
-      "shot_number": "分镜 1",
-      "content_type": "dialogue",
-      "speaker": "MoMo",
-      "speaker_visible": true,
-      "thai_text": "泰文口播原文",
-      "visual_description": "画面内容文字描述",
-      "prompt_text": "分镜图画面生成提示词，含镜头角度、角色/产品外观、场景、氛围"
-    }
-  ],
-  "final_cta": "结尾CTA",
-  "notes": "备注"
-}
-```
-
-**字段说明：**
-- `content_type`: `dialogue`（有台词对白）/ `voiceover`（旁白配音无画面）/ `silent_action`（纯动作无台词）
-- `speaker`: dialogue 时填角色名，voiceover 填"旁白"，silent_action 填空字符串 `""`
-- `speaker_visible`: dialogue 且说话主体出现在画面内时为 `true`，否则 `false`
-- `thai_text`: 泰文口播原文，silent_action 时为 `""`
-- `prompt_text`: 供后续分镜图生成使用的画面描述，包含镜头角度、角色/产品外观、场景、氛围光影，不含镜头技术参数
-
-**注意：** JSON 代码块必须放在整个回复的最后，不能出现在其他位置。
-"""
+def classify_runtime_mode(runtime_cfg):
+    has_key = bool((runtime_cfg or {}).get("api_key"))
+    return "formal_llm" if has_key else "fallback_only"
 
 
 def build_script_prompt(fields, product_info, model_info, common_data, prompt_template):
@@ -567,6 +531,8 @@ def main():
     # ── Step 5：调用 LLM ────────────────────────────────────────────────────
     try:
         runtime_cfg = read_llm_runtime_config(token)
+        runtime_mode = classify_runtime_mode(runtime_cfg)
+        log("INFO", "runtime config resolved", record_id=record_id, runtime_mode=runtime_mode, source=runtime_cfg.get("source"), model=runtime_cfg.get("model"), has_api_key=bool(runtime_cfg.get("api_key")))
         client, model = get_llm_client(runtime_cfg)
         raw_response = call_llm(client, model, prompt, label="script_generate")
         log("INFO", "llm call success", record_id=record_id, response_len=len(raw_response))
