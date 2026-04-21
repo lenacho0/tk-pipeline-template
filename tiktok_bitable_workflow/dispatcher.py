@@ -30,6 +30,8 @@ FEISHU = CFG["feishu"]
 TABLES = FEISHU["tables"]
 APP_TOKEN = FEISHU["bitable_app_token"]
 SCRIPT_TASKS_TABLE = TABLES.get("script_tasks") or TABLES.get("script_gen", "")
+MATERIALS_TABLE = TABLES.get("materials", "tblQgQA587nzXgfX")
+COMMON_ANALYSIS_TABLE = TABLES.get("common_analysis", "tblLg3rwyn2KyrtT")
 POLL_SECONDS = CFG.get("dispatcher", {}).get("poll_seconds", 20)
 
 
@@ -95,10 +97,12 @@ def log(msg, **kwargs):
 # ── 阶段分发映射 ─────────────────────────────────────────────────────────────
 
 STAGE_SCRIPTS = {
+    "single_video_analyze": "stages.single_video_analyze",
     "variant_plan": "stages.variant_plan",
     "script_generate": "stages.script_generate",
     "storyboard_generate": "stages.storyboard_generate",
     "image_prompt_generate": "stages.image_prompt_generate",
+    "video_prompt_generate": "stages.video_prompt_generate",
 }
 
 STAGE_STATUS_MAP = {
@@ -130,6 +134,16 @@ def run_dispatch_loop():
     while True:
         try:
             token = get_token()
+            material_records = list_records(token, MATERIALS_TABLE)
+            for rec in material_records:
+                fields = rec.get("fields", {})
+                record_id = rec.get("record_id", "")
+                analyze_status = extract_text(fields.get("单视频分析状态", ""))
+                if analyze_status == "待分析":
+                    log("INFO", "dispatching single_video_analyze", record_id=record_id)
+                    dispatch_stage("single_video_analyze", record_id)
+                    continue
+
             records = list_records(token, SCRIPT_TASKS_TABLE)
 
             for rec in records:
@@ -170,6 +184,14 @@ def run_dispatch_loop():
                     if role == "版本任务" and (not selected or selected == "入选"):
                         log("INFO", "dispatching image_prompt_generate", record_id=record_id)
                         dispatch_stage("image_prompt_generate", record_id)
+                        continue
+
+                if downstream_status == "待图生视频":
+                    role = extract_text(fields.get("记录角色", ""))
+                    selected = extract_text(fields.get("是否入选", ""))
+                    if role == "版本任务" and (not selected or selected == "入选"):
+                        log("INFO", "dispatching video_prompt_generate", record_id=record_id)
+                        dispatch_stage("video_prompt_generate", record_id)
                         continue
 
         except Exception as e:
