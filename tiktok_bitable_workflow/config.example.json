@@ -1,0 +1,25 @@
+{
+  "feishu": {
+    "app_id": "YOUR_FEISHU_APP_ID",
+    "app_secret": "YOUR_FEISHU_APP_SECRET",
+    "bitable_app_token": "YOUR_BITABLE_APP_TOKEN",
+    "tables": {
+      "script_tasks": "tbl_xxx_script_tasks",
+      "projects": "tbl_xxx_projects",
+      "products": "tbl_xxx_products",
+      "models": "tbl_xxx_models",
+      "common_analysis": "tbl_xxx_common_analysis",
+      "config": "tbl_xxx_config"
+    }
+  },
+  "llm": {
+    "provider": "gemini-compatible",
+    "model": "gemini-2.5-pro",
+    "api_key": "YOUR_API_KEY",
+    "api_base": "YOUR_API_BASE"
+  },
+  "dispatcher": {
+    "poll_seconds": 20
+  },
+  "workspace": "./workspace"
+}
