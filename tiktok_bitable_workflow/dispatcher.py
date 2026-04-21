@@ -98,6 +98,7 @@ def log(msg, **kwargs):
 
 STAGE_SCRIPTS = {
     "single_video_analyze": "stages.single_video_analyze",
+    "common_analysis": "stages.common_analysis",
     "variant_plan": "stages.variant_plan",
     "script_generate": "stages.script_generate",
     "storyboard_generate": "stages.storyboard_generate",
@@ -142,6 +143,16 @@ def run_dispatch_loop():
                 if analyze_status == "待分析":
                     log("INFO", "dispatching single_video_analyze", record_id=record_id)
                     dispatch_stage("single_video_analyze", record_id)
+                    continue
+
+            common_records = list_records(token, COMMON_ANALYSIS_TABLE)
+            for rec in common_records:
+                fields = rec.get("fields", {})
+                record_id = rec.get("record_id", "")
+                analyze_status = extract_text(fields.get("分析状态", ""))
+                if analyze_status == "待执行":
+                    log("INFO", "dispatching common_analysis", record_id=record_id)
+                    dispatch_stage("common_analysis", record_id)
                     continue
 
             records = list_records(token, SCRIPT_TASKS_TABLE)
