@@ -160,6 +160,13 @@ def with_retry(fn, max_attempts=3, label="op"):
 
 # ── LLM 调用 ──────────────────────────────────────────────────────────────────
 
+FALLBACK_NOTE_PREFIX = "script_generate fallback"
+
+
+def build_fallback_note(reason):
+    return f"{FALLBACK_NOTE_PREFIX}: {reason}"[:500]
+
+
 def get_llm_client(runtime_cfg=None):
     runtime_cfg = runtime_cfg or {}
     api_key = runtime_cfg.get("api_key") or LLM.get("api_key", "")
@@ -173,6 +180,25 @@ def get_llm_client(runtime_cfg=None):
         log("ERROR", "failed to create LLM client", error=str(e))
         raise RuntimeError(f"LLM client init failed: {e}")
 
+
+def build_fallback_script_payload(fields, product_info, model_info):
+    market = extract_text(fields.get("目标市场")) or "目标市场"
+    product_name = product_info.get("product_name_th") or "产品"
+    selling = product_info.get("selling_points") or "核心卖点"
+    main_test = extract_text(fields.get("主测试点")) or "standard"
+    plain_script = "\n".join([
+        f"镜头1：在{market}家庭日常场景中，{model_info or '真实自然出镜人物'}开场点出{main_test}角度，并展示{product_name}。",
+        f"镜头2：继续近景展示{product_name}的真实使用或喂食反应，突出{selling}。",
+        "镜头3：补充生活化信任建立镜头，强调适合日常短视频转化。",
+        f"镜头4：自然收束并给出轻量CTA，引导进一步了解{product_name}。",
+    ])
+    structured_shots = [
+        {"shot_number": "镜头1", "content_type": "dialogue", "speaker": "模特", "thai_text": f"นี่คือ {product_name} ที่ฉันเพิ่งลองให้สัตว์เลี้ยงกิน", "dialogue_zh": f"这是我最近给宠物试的{product_name}", "visual_description": "开场展示产品并建立场景", "prompt_text": main_test},
+        {"shot_number": "镜头2", "content_type": "dialogue", "speaker": "模特", "thai_text": "กินง่ายมาก ปฏิกิริยาดีจริง ๆ", "dialogue_zh": "适口性真的很好，反应很积极", "visual_description": "近景展示真实使用反应", "prompt_text": selling},
+        {"shot_number": "镜头3", "content_type": "voiceover", "speaker": "画外音", "thai_text": "เหมาะกับการใช้ในชีวิตประจำวันของคนเลี้ยงสัตว์", "dialogue_zh": "很适合养宠人的日常使用场景", "visual_description": "生活化信任建立镜头", "prompt_text": market},
+        {"shot_number": "镜头4", "content_type": "dialogue", "speaker": "模特", "thai_text": "ถ้าอยากลอง เดี๋ยวฉันแปะไว้ให้", "dialogue_zh": "想试的话我放在这里", "visual_description": "轻 CTA 收束镜头", "prompt_text": product_name},
+    ]
+    return {"shots": structured_shots}, plain_script
 
 def call_llm(client, model, prompt, label="llm"):
     def _do():
@@ -271,6 +297,7 @@ def parse_api_config_text(raw_text):
 
 
 def read_llm_runtime_config(token):
+    """配置优先级：表0配置表 > config.json > fallback。"""
     """优先读配置表里的脚本生成配置，缺失再回退本地 config.json。"""
     runtime = {
         "api_key": LLM.get("api_key", ""),
@@ -511,7 +538,7 @@ def main():
     # ── Step 2：标记生成中 ──────────────────────────────────────────────────
     update_record(token, SCRIPT_TASKS_TABLE, record_id, {
         "脚本生成状态": "生成中",
-        "错误信息": "",
+        "备注": "script_generate started",
     })
 
     # ── Step 3：读取上下文数据 ─────────────────────────────────────────────
@@ -543,24 +570,23 @@ def main():
         client, model = get_llm_client(runtime_cfg)
         raw_response = call_llm(client, model, prompt, label="script_generate")
         log("INFO", "llm call success", record_id=record_id, response_len=len(raw_response))
+        structured_shots, plain_script = parse_llm_response(raw_response)
     except Exception as e:
         err = f"LLM 调用失败: {str(e)[:300]}"
         log("ERROR", "llm call failed", record_id=record_id, error=err)
+        structured_shots, plain_script = build_fallback_script_payload(fields, product_info, model_info)
         update_record(token, SCRIPT_TASKS_TABLE, record_id, {
-            "脚本生成状态": "生成失败",
-            "错误信息": err,
+            "备注": build_fallback_note(err),
         })
-        sys.exit(1)
 
     # ── Step 6：解析输出 ────────────────────────────────────────────────────
-    structured_shots, plain_script = parse_llm_response(raw_response)
 
     if not plain_script and not structured_shots:
         err = "LLM 未返回有效内容"
         log("ERROR", "empty response", record_id=record_id)
         update_record(token, SCRIPT_TASKS_TABLE, record_id, {
             "脚本生成状态": "生成失败",
-            "错误信息": err,
+            "备注": err,
         })
         sys.exit(1)
 
@@ -596,7 +622,7 @@ def main():
         log("ERROR", "writeback failed", record_id=record_id, error=str(e)[:300])
         update_record(token, SCRIPT_TASKS_TABLE, record_id, {
             "脚本生成状态": "生成成功-写回失败",
-            "错误信息": f"写回失败: {str(e)[:300]}",
+            "备注": f"写回失败: {str(e)[:300]}",
         })
 
 
