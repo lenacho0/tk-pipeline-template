@@ -160,10 +160,11 @@ def with_retry(fn, max_attempts=3, label="op"):
 
 # ── LLM 调用 ──────────────────────────────────────────────────────────────────
 
-def get_llm_client():
-    api_key = LLM.get("api_key", "")
-    api_base = LLM.get("api_base", "https://aihubmix.com/gemini")
-    model = LLM.get("model", "gemini-2.5-flash")
+def get_llm_client(runtime_cfg=None):
+    runtime_cfg = runtime_cfg or {}
+    api_key = runtime_cfg.get("api_key") or LLM.get("api_key", "")
+    api_base = runtime_cfg.get("api_base") or LLM.get("api_base", "https://aihubmix.com/gemini")
+    model = runtime_cfg.get("model") or LLM.get("model", "gemini-2.5-flash")
     try:
         from google import genai
         client = genai.Client(api_key=api_key, http_options={"base_url": api_base})
@@ -250,6 +251,52 @@ def read_script_gen_prompt(token):
     except Exception:
         pass
     return ""
+
+
+def parse_api_config_text(raw_text):
+    """从表0的 API配置 文本里做一个很宽松的 key/value 兜底解析。"""
+    raw = extract_text(raw_text).strip()
+    if not raw:
+        return {}
+    result = {}
+    for line in raw.splitlines():
+        if ':' in line:
+            k, v = line.split(':', 1)
+        elif '：' in line:
+            k, v = line.split('：', 1)
+        else:
+            continue
+        result[k.strip()] = v.strip()
+    return result
+
+
+def read_llm_runtime_config(token):
+    """优先读配置表里的脚本生成配置，缺失再回退本地 config.json。"""
+    runtime = {
+        "api_key": LLM.get("api_key", ""),
+        "api_base": LLM.get("api_base", "https://aihubmix.com/gemini"),
+        "model": LLM.get("model", "gemini-2.5-flash"),
+    }
+    if not CONFIG_TABLE:
+        return runtime
+    try:
+        records = list_records(token, CONFIG_TABLE)
+        for rec in records:
+            flds = rec.get("fields", {})
+            stage = extract_text(flds.get("环节名", "")).strip() or extract_text(flds.get("环节", "")).strip()
+            if "脚本生成" in stage or "script" in stage.lower():
+                runtime["model"] = extract_text(flds.get("模型名", "")) or runtime["model"]
+                runtime["api_base"] = extract_text(flds.get("API 代理地址", "")) or runtime["api_base"]
+                api_key = extract_text(flds.get("API Key", ""))
+                if not api_key:
+                    parsed = parse_api_config_text(flds.get("API配置", ""))
+                    api_key = parsed.get("API Key", "") or parsed.get("api_key", "")
+                    runtime["api_base"] = parsed.get("API 代理地址", runtime["api_base"]) or parsed.get("api_base", runtime["api_base"])
+                runtime["api_key"] = api_key or runtime["api_key"]
+                break
+    except Exception:
+        pass
+    return runtime
 
 
 # ── Prompt 构建 ──────────────────────────────────────────────────────────────
@@ -468,9 +515,22 @@ def main():
     })
 
     # ── Step 3：读取上下文数据 ─────────────────────────────────────────────
-    product_info = read_product_info(token, fields.get("产品关联") or fields.get("产品ID"))
-    model_info = read_model_info(token, fields.get("模特关联") or fields.get("模特ID"))
-    common_data = read_common_analysis(token, extract_text(fields.get("共性分析记录ID")))
+    product_info = read_product_info(token, fields.get("关联产品") or fields.get("产品关联") or fields.get("产品ID"))
+    model_info = read_model_info(token, fields.get("关联模特") or fields.get("模特关联") or fields.get("模特ID"))
+    common_record_id = extract_text(fields.get("共性分析记录ID"))
+    if not common_record_id:
+        # 优先从所属项目/关联项目继续穿透读取表3里的关联共性分析
+        project_link = fields.get("所属项目") or fields.get("项目关联")
+        project_ids = extract_linked_ids(project_link)
+        if project_ids and TABLES.get('projects'):
+            try:
+                project_fields = get_record(token, TABLES.get('projects'), project_ids[0])
+                linked_common = extract_linked_ids(project_fields.get("关联共性分析"))
+                if linked_common:
+                    common_record_id = linked_common[0]
+            except Exception:
+                pass
+    common_data = read_common_analysis(token, common_record_id)
     prompt_template = read_script_gen_prompt(token)
 
     # ── Step 4：构建 prompt ─────────────────────────────────────────────────
@@ -479,7 +539,8 @@ def main():
 
     # ── Step 5：调用 LLM ────────────────────────────────────────────────────
     try:
-        client, model = get_llm_client()
+        runtime_cfg = read_llm_runtime_config(token)
+        client, model = get_llm_client(runtime_cfg)
         raw_response = call_llm(client, model, prompt, label="script_generate")
         log("INFO", "llm call success", record_id=record_id, response_len=len(raw_response))
     except Exception as e:

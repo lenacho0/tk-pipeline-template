@@ -97,6 +97,7 @@ def log(msg, **kwargs):
 STAGE_SCRIPTS = {
     "variant_plan": "stages.variant_plan",
     "script_generate": "stages.script_generate",
+    "storyboard_generate": "stages.storyboard_generate",
 }
 
 STAGE_STATUS_MAP = {
@@ -150,6 +151,16 @@ def run_dispatch_loop():
                     if role == "版本任务":
                         log("INFO", "dispatching script_generate", record_id=record_id)
                         dispatch_stage("script_generate", record_id)
+                        continue
+
+                # 检查 storyboard_generate
+                downstream_status = extract_text(fields.get("下游推进状态", ""))
+                if downstream_status == "待分镜":
+                    role = extract_text(fields.get("记录角色", ""))
+                    selected = extract_text(fields.get("是否入选", ""))
+                    if role == "版本任务" and (not selected or selected == "入选"):
+                        log("INFO", "dispatching storyboard_generate", record_id=record_id)
+                        dispatch_stage("storyboard_generate", record_id)
                         continue
 
         except Exception as e:
