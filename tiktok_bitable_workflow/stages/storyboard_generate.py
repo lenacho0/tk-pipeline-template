@@ -7,9 +7,10 @@
 import json, os, sys, time, requests
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.environ.get("TIKTOK_BITABLE_CONFIG", os.path.join(SCRIPT_DIR, "config.json"))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+CONFIG_PATH = os.environ.get("TIKTOK_BITABLE_CONFIG", os.path.join(PROJECT_DIR, "config.json"))
 if not os.path.isabs(CONFIG_PATH):
-    CONFIG_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, CONFIG_PATH))
+    CONFIG_PATH = os.path.abspath(os.path.join(PROJECT_DIR, CONFIG_PATH))
 
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
