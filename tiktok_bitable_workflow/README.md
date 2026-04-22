@@ -20,8 +20,13 @@ tiktok_bitable_workflow/
   dispatcher.py                # 独立轮询调度器（已可运行）
   stages/
     __init__.py
-    variant_plan.py            # 阶段1：多版本批次规划（已可运行）
-    script_generate.py         # 阶段2：单版本脚本生成（已可运行）
+    single_video_analyze.py    # 阶段0：单视频分析
+    common_analysis.py         # 阶段1：共性分析
+    variant_plan.py            # 阶段2：多版本批次规划
+    script_generate.py         # 阶段3：单版本脚本生成
+    storyboard_generate.py     # 阶段4：结构分镜生成
+    image_prompt_generate.py   # 阶段5：生图提示词生成
+    video_prompt_generate.py   # 阶段6：图生视频提示词生成
   schemas/
     script_multivariant_protocol.example.json
 ```
@@ -36,11 +41,23 @@ tiktok_bitable_workflow/
 ## 运行方式
 
 ```bash
+# 单独测试 common_analysis
+python3 tiktok_bitable_workflow/stages/common_analysis.py <common_analysis_record_id>
+
 # 单独测试 variant_plan
 python3 tiktok_bitable_workflow/stages/variant_plan.py <parent_record_id>
 
 # 单独测试 script_generate
 python3 tiktok_bitable_workflow/stages/script_generate.py <version_task_record_id>
+
+# 单独测试 storyboard_generate
+python3 tiktok_bitable_workflow/stages/storyboard_generate.py <version_task_record_id>
+
+# 单独测试 image_prompt_generate
+python3 tiktok_bitable_workflow/stages/image_prompt_generate.py <version_task_record_id>
+
+# 单独测试 video_prompt_generate
+python3 tiktok_bitable_workflow/stages/video_prompt_generate.py <version_task_record_id>
 
 # 启动 dispatcher（持续轮询）
 python3 tiktok_bitable_workflow/dispatcher.py
@@ -48,8 +65,13 @@ python3 tiktok_bitable_workflow/dispatcher.py
 
 ## dispatcher 状态触发规则
 
-- `多版本规划状态 = 待规划` + `记录角色 = 批次母任务` → 触发 variant_plan
-- `脚本生成状态 = 待生成` + `记录角色 = 版本任务` → 触发 script_generate
+- `表1-视频素材表.单视频分析状态 = 待分析` → 触发 `single_video_analyze`
+- `表2-爆款共性分析表.分析状态 = 待执行` → 触发 `common_analysis`
+- `多版本规划状态 = 待规划` + `记录角色 = 批次母任务` → 触发 `variant_plan`
+- `脚本生成状态 = 待生成` + `记录角色 = 版本任务` → 触发 `script_generate`
+- `下游推进状态 = 待分镜` + `记录角色 = 版本任务` → 触发 `storyboard_generate`
+- `下游推进状态 = 待生图` + `记录角色 = 版本任务` → 触发 `image_prompt_generate`
+- `下游推进状态 = 待图生视频` + `记录角色 = 版本任务` → 触发 `video_prompt_generate`
 
 ## 表结构假设
 
@@ -83,9 +105,10 @@ python3 tiktok_bitable_workflow/dispatcher.py
 - 不共用状态字段命名
 - 不修改旧 tk_toolkit_dual 任何代码
 
-## 当前真实状态（2026-04-21）
+## 当前真实状态（2026-04-22）
 
-- 已打通：后半段主干链路（母任务拆分 → 脚本生成 → 分镜 → 生图提示词 → 图生视频提示词）
-- 未打通：前半段单视频分析 / 共性分析
-- `script_generate` 当前支持 fallback：当正式 LLM 路径不可用时，会生成联调脚本以验证后续流转，但这**不代表正式模型产出**。
-- 详细状态见：`docs/tiktok-bitable-current-status-2026-04-21.md`
+- 已真实打通：`common_analysis -> variant_plan -> script_generate -> storyboard_generate -> image_prompt_generate -> video_prompt_generate`
+- 已验证真实记录：`recvhjTgp816uE`（common_analysis）、`recvhtCoXuYXH2`（干净父任务）、`recvhtCG3ATqGa`（真实子任务）
+- 当前工作流已真实跑通到“提示词层终点”，即能稳定产出结构化脚本、分镜、生图提示词、图生视频提示词
+- 当前仓库内尚未接上该 workflow 专用的“真实出图执行器 / 真实视频执行器 / 最终拼接执行器”，因此它还不是成片生产链
+- 设计坑：`variant_plan` 在 `auto` 模式下会产生跨维度重复版本编号（如 `V1/V2/V1`），建议后续收口
