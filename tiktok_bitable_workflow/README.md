@@ -27,6 +27,7 @@ tiktok_bitable_workflow/
     storyboard_generate.py     # 阶段4：结构分镜生成
     image_prompt_generate.py   # 阶段5：生图提示词生成
     video_prompt_generate.py   # 阶段6：图生视频提示词生成
+    image_render_execute.py    # 阶段7：真实生图执行（首版）
   schemas/
     script_multivariant_protocol.example.json
 ```
@@ -70,7 +71,8 @@ python3 tiktok_bitable_workflow/dispatcher.py
 - `多版本规划状态 = 待规划` + `记录角色 = 批次母任务` → 触发 `variant_plan`
 - `脚本生成状态 = 待生成` + `记录角色 = 版本任务` → 触发 `script_generate`
 - `下游推进状态 = 待分镜` + `记录角色 = 版本任务` → 触发 `storyboard_generate`
-- `下游推进状态 = 待生图` + `记录角色 = 版本任务` → 触发 `image_prompt_generate`
+- `下游推进状态 = 待生图` + `记录角色 = 版本任务` + 无 `生图提示词JSON` → 触发 `image_prompt_generate`
+- `下游推进状态 = 待生图` + `记录角色 = 版本任务` + 已有 `生图提示词JSON` → 触发 `image_render_execute`
 - `下游推进状态 = 待图生视频` + `记录角色 = 版本任务` → 触发 `video_prompt_generate`
 
 ## 表结构假设
@@ -110,5 +112,5 @@ python3 tiktok_bitable_workflow/dispatcher.py
 - 已真实打通：`common_analysis -> variant_plan -> script_generate -> storyboard_generate -> image_prompt_generate -> video_prompt_generate`
 - 已验证真实记录：`recvhjTgp816uE`（common_analysis）、`recvhtCoXuYXH2`（干净父任务）、`recvhtCG3ATqGa`（真实子任务）
 - 当前工作流已真实跑通到“提示词层终点”，即能稳定产出结构化脚本、分镜、生图提示词、图生视频提示词
-- 当前仓库内尚未接上该 workflow 专用的“真实出图执行器 / 真实视频执行器 / 最终拼接执行器”，因此它还不是成片生产链
+- 2026-04-22 新增首版 `image_render_execute.py`，开始把该 workflow 往真实执行链推进；当前已接入“真实生图执行（首版）”，但尚未完成该 workflow 专用的“真实视频执行器 / 最终拼接执行器”
 - 设计坑：`variant_plan` 在 `auto` 模式下会产生跨维度重复版本编号（如 `V1/V2/V1`），建议后续收口
