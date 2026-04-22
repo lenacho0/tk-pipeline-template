@@ -206,11 +206,14 @@ def submit_img2video(api_key: str, api_base: str, model: str, image_path: str, p
         }
         resp = requests.post(url, headers=headers, data=data, files=files, timeout=120)
     body = resp.json()
+    data_block = body.get('data') if isinstance(body, dict) else None
+    if data_block is None:
+        data_block = {}
     task_id = (
         body.get('id')
         or body.get('task_id')
-        or body.get('data', {}).get('id')
-        or body.get('data', {}).get('task_id')
+        or data_block.get('id')
+        or data_block.get('task_id')
     )
     if not task_id:
         raise RuntimeError(f"submit img2video failed: {body}")
@@ -224,9 +227,12 @@ def poll_video(api_key: str, api_base: str, task_id: str) -> Dict[str, Any]:
     while True:
         resp = requests.get(url, headers=headers, timeout=30)
         body = resp.json()
+        data_block = body.get('data') if isinstance(body, dict) else None
+        if data_block is None:
+            data_block = {}
         status = (
             body.get('status')
-            or body.get('data', {}).get('status')
+            or data_block.get('status')
             or body.get('state')
             or ''
         ).lower()
@@ -244,9 +250,9 @@ def extract_video_url(body: Dict[str, Any], api_key: str, api_base: str, task_id
         body.get('result_url'),
         body.get('download_url'),
         body.get('url'),
-        body.get('data', {}).get('result_url'),
-        body.get('data', {}).get('download_url'),
-        body.get('data', {}).get('url'),
+        (body.get('data') or {}).get('result_url') if isinstance(body, dict) else None,
+        (body.get('data') or {}).get('download_url') if isinstance(body, dict) else None,
+        (body.get('data') or {}).get('url') if isinstance(body, dict) else None,
         body.get('output', {}).get('url') if isinstance(body.get('output'), dict) else None,
     ]
     for item in candidates:
@@ -322,8 +328,8 @@ def main(argv=None):
             })
             log("INFO", "video rendered", record_id=record_id, shot=shot_number, file=out_path)
         except Exception as e:
-            items.append({"shot_number": shot_number, "status": "failed", "error": str(e)[:500]})
-            log("ERROR", "video render failed", record_id=record_id, shot=shot_number, error=str(e)[:300])
+            items.append({"shot_number": shot_number, "status": "failed", "error": str(e)[:1000]})
+            log("ERROR", "video render failed", record_id=record_id, shot=shot_number, error=str(e)[:800])
 
     has_failure = any(item.get("status") != "success" for item in items)
     update_record(token, SCRIPT_TASKS_TABLE, record_id, {
