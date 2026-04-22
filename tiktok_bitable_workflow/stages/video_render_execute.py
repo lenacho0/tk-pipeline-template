@@ -154,20 +154,33 @@ def read_runtime_config(token: str) -> Dict[str, str]:
     }
     if not CONFIG_TABLE:
         return runtime
-    for rec in list_records(token, CONFIG_TABLE):
+
+    records = list_records(token, CONFIG_TABLE)
+    exact_matches = []
+    fuzzy_matches = []
+    for rec in records:
         flds = rec.get("fields", {})
         stage = extract_text(flds.get("环节名", "")).strip() or extract_text(flds.get("环节", "")).strip()
         if not stage:
             continue
-        if "图生视频" in stage or "视频生成" in stage or "video_render_execute" in stage.lower():
-            api_cfg = parse_api_config_text(flds.get("API配置", ""))
-            return {
-                "model": extract_text(flds.get("模型名", "")).strip() or extract_text(flds.get("模型名称", "")).strip() or api_cfg.get("model") or runtime["model"],
-                "api_key": extract_text(flds.get("API Key", "")).strip() or api_cfg.get("api_key") or runtime["api_key"],
-                "api_base": extract_text(flds.get("API 代理地址", "")).strip() or api_cfg.get("api_base") or runtime["api_base"],
-                "source": f"bitable:{rec.get('record_id')}",
-            }
-    return runtime
+        normalized = stage.lower().strip()
+        if stage in ("图生视频", "视频生成") or normalized == "video_render_execute":
+            exact_matches.append(rec)
+        elif "图生视频" in stage or "视频生成" in stage or "video_render_execute" in normalized:
+            fuzzy_matches.append(rec)
+
+    picked = exact_matches[0] if exact_matches else (fuzzy_matches[0] if fuzzy_matches else None)
+    if not picked:
+        return runtime
+
+    flds = picked.get("fields", {})
+    api_cfg = parse_api_config_text(flds.get("API配置", ""))
+    return {
+        "model": extract_text(flds.get("模型名", "")).strip() or extract_text(flds.get("模型名称", "")).strip() or api_cfg.get("model") or runtime["model"],
+        "api_key": extract_text(flds.get("API Key", "")).strip() or api_cfg.get("api_key") or runtime["api_key"],
+        "api_base": extract_text(flds.get("API 代理地址", "")).strip() or api_cfg.get("api_base") or runtime["api_base"],
+        "source": f"bitable:{picked.get('record_id')}",
+    }
 
 
 def ensure_video_dir(record_id: str) -> str:
