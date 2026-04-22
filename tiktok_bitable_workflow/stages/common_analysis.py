@@ -252,10 +252,29 @@ def build_prompt(task_fields, materials, runtime_cfg):
 
 
 def extract_outputs(text):
-    text = text.strip()
-    m = re.search(r"JSON_OUTPUT\s*(\{.*?\})\s*MARKDOWN_OUTPUT\s*(.*?)\s*SUMMARY_OUTPUT\s*(.*)$", text, re.S)
-    if m:
-        return m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+    text = (text or "").strip()
+
+    patterns = [
+        re.search(r"JSON_OUTPUT\s*(\{.*?\})\s*MARKDOWN_OUTPUT\s*(.*?)\s*SUMMARY_OUTPUT\s*(.*)$", text, re.S),
+        re.search(r"JSON_OUTPUT\s*(\{.*?\})\s*TEXT_OUTPUT\s*(.*)$", text, re.S),
+        re.search(r"^(\{.*?\})\s*TEXT_OUTPUT\s*(.*)$", text, re.S),
+        re.search(r"JSON_OUTPUT\s*(\{.*\})\s*$", text, re.S),
+        re.search(r"^(\{.*\})\s*$", text, re.S),
+    ]
+    for m in patterns:
+        if not m:
+            continue
+        json_text = m.group(1).strip()
+        body_text = m.group(2).strip() if len(m.groups()) >= 2 else ""
+        summary = m.group(3).strip() if len(m.groups()) >= 3 else ""
+        if not summary:
+            try:
+                payload = json.loads(json_text)
+                summary = extract_text(payload.get("summary")) or extract_text(payload.get("one_sentence_summary"))
+            except Exception:
+                pass
+        return json_text, body_text, summary
+
     return "", text, ""
 
 
@@ -300,6 +319,7 @@ def main(argv=None):
             text = getattr(resp, "text", "") or ""
             if not text.strip():
                 raise RuntimeError("LLM returned empty response")
+            log("INFO", "llm raw response preview", record_id=record_id, preview=text[:1200])
             json_text, md_text, summary = extract_outputs(text)
             if not json_text:
                 raise RuntimeError("missing JSON_OUTPUT in model response")
