@@ -305,7 +305,8 @@ def main(argv=None):
     if has_failure:
         raise RuntimeError("部分镜头生图失败")
     if writeback_error:
-        raise RuntimeError(f"生图已完成，但附件回写失败: {writeback_error}")
+        log("WARN", "image render completed but attachment writeback failed", record_id=record_id, error=writeback_error[:300])
+        return
     log("INFO", "image_render_execute success", record_id=record_id, count=len(attachments))
 
 
