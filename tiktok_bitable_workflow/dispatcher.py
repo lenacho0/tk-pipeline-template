@@ -105,6 +105,7 @@ STAGE_SCRIPTS = {
     "image_prompt_generate": "stages.image_prompt_generate",
     "video_prompt_generate": "stages.video_prompt_generate",
     "image_render_execute": "stages.image_render_execute",
+    "video_render_execute": "stages.video_render_execute",
 }
 
 STAGE_STATUS_MAP = {
@@ -206,8 +207,12 @@ def run_dispatch_loop():
                     role = extract_text(fields.get("记录角色", ""))
                     selected = extract_text(fields.get("是否入选", ""))
                     if role == "版本任务" and (not selected or selected == "入选"):
-                        log("INFO", "dispatching video_prompt_generate", record_id=record_id)
-                        dispatch_stage("video_prompt_generate", record_id)
+                        if extract_text(fields.get("图生视频提示词JSON", "")).strip():
+                            log("INFO", "dispatching video_render_execute", record_id=record_id)
+                            dispatch_stage("video_render_execute", record_id)
+                        else:
+                            log("INFO", "dispatching video_prompt_generate", record_id=record_id)
+                            dispatch_stage("video_prompt_generate", record_id)
                         continue
 
         except Exception as e:
