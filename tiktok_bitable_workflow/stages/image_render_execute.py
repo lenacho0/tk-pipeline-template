@@ -155,7 +155,12 @@ def read_runtime_config(token: str) -> Dict[str, str]:
         stage = extract_text(flds.get("环节名", "")).strip() or extract_text(flds.get("环节", "")).strip()
         if not stage:
             continue
-        if "生图执行" in stage or "分镜图执行" in stage or "image_render_execute" in stage.lower():
+        if (
+            "生图执行" in stage
+            or "分镜图执行" in stage
+            or "图片生成" in stage
+            or "image_render_execute" in stage.lower()
+        ):
             api_cfg = parse_api_config_text(flds.get("API配置", ""))
             return {
                 "model": extract_text(flds.get("模型名", "")).strip() or extract_text(flds.get("模型名称", "")).strip() or api_cfg.get("model") or runtime["model"],
@@ -250,6 +255,7 @@ def main(argv=None):
 
     attachments = []
     state_items = []
+    generated_files = []
     for idx, shot in enumerate(shots, start=1):
         shot_name = extract_text(shot.get("shot_number")) or f"shot_{idx}"
         prompt = extract_text(shot.get("prompt"))
@@ -262,28 +268,44 @@ def main(argv=None):
             render_image_with_gemini(runtime["api_key"], runtime["api_base"], runtime["model"], final_prompt, out_path)
             file_token = upload_image_to_feishu(token, out_path, os.path.basename(out_path))
             attachments.append({"file_token": file_token})
-            state_items.append({"shot_number": shot_name, "status": "success", "file_name": os.path.basename(out_path)})
+            generated_files.append(out_path)
+            state_items.append({"shot_number": shot_name, "status": "success", "file_name": os.path.basename(out_path), "local_path": out_path})
             log("INFO", "image rendered", record_id=record_id, shot=shot_name, file=out_path)
         except Exception as e:
             state_items.append({"shot_number": shot_name, "status": "failed", "error": str(e)[:300]})
             log("ERROR", "image render failed", record_id=record_id, shot=shot_name, error=str(e)[:300])
 
     has_failure = any(item.get("status") != "success" for item in state_items)
-    update_record(token, SCRIPT_TASKS_TABLE, record_id, {
-        "分镜图附件": attachments,
-        "分镜图状态JSON": json.dumps({
-            "stage": "image_render_execute",
-            "model": runtime.get("model"),
-            "source": runtime.get("source"),
-            "items": state_items,
-            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }, ensure_ascii=False, indent=2),
-        "下游推进状态": "待图生视频" if not has_failure else "已终止",
-        "备注": "image_render_execute success" if not has_failure else "image_render_execute partial/failed",
-    })
+    status_payload = {
+        "stage": "image_render_execute",
+        "model": runtime.get("model"),
+        "source": runtime.get("source"),
+        "items": state_items,
+        "generated_files": generated_files,
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    writeback_error = None
+    try:
+        update_record(token, SCRIPT_TASKS_TABLE, record_id, {
+            "分镜图附件": attachments,
+            "分镜图状态JSON": json.dumps(status_payload, ensure_ascii=False, indent=2),
+            "下游推进状态": "待图生视频" if not has_failure else "已终止",
+            "备注": "image_render_execute success" if not has_failure else "image_render_execute partial/failed",
+        })
+    except Exception as e:
+        writeback_error = str(e)
+        status_payload["attachment_writeback_error"] = writeback_error
+        update_record(token, SCRIPT_TASKS_TABLE, record_id, {
+            "分镜图状态JSON": json.dumps(status_payload, ensure_ascii=False, indent=2),
+            "下游推进状态": "待图生视频" if not has_failure else "已终止",
+            "备注": f"image_render_execute attachment writeback failed: {str(e)[:200]}",
+        })
 
     if has_failure:
         raise RuntimeError("部分镜头生图失败")
+    if writeback_error:
+        raise RuntimeError(f"生图已完成，但附件回写失败: {writeback_error}")
     log("INFO", "image_render_execute success", record_id=record_id, count=len(attachments))
 
 
