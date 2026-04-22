@@ -14,12 +14,13 @@ import requests
 # ── 内部工具函数 ─────────────────────────────────────────────────────────────
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 CONFIG_PATH = os.environ.get(
     "TIKTOK_BITABLE_CONFIG",
-    os.path.join(SCRIPT_DIR, "config.json")
+    os.path.join(PROJECT_DIR, "config.json")
 )
 if not os.path.isabs(CONFIG_PATH):
-    CONFIG_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, CONFIG_PATH))
+    CONFIG_PATH = os.path.abspath(os.path.join(PROJECT_DIR, CONFIG_PATH))
 
 
 def load_config():

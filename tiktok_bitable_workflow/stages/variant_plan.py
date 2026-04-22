@@ -13,12 +13,13 @@ import requests
 # ── 内部工具函数（不依赖旧 tkpipeline common） ──────────────────────────────
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 CONFIG_PATH = os.environ.get(
     "TIKTOK_BITABLE_CONFIG",
-    os.path.join(SCRIPT_DIR, "config.json")
+    os.path.join(PROJECT_DIR, "config.json")
 )
 if not os.path.isabs(CONFIG_PATH):
-    CONFIG_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, CONFIG_PATH))
+    CONFIG_PATH = os.path.abspath(os.path.join(PROJECT_DIR, CONFIG_PATH))
 
 
 def load_config():
@@ -297,15 +298,17 @@ def build_child_record(parent_record_id, parent_fields, defaults, batch_id, vari
     child.update({
         "记录角色": "版本任务",
         "父任务ID": parent_record_id,
+        "父版本脚本": [],
         "批次ID": batch_id,
-        "脚本生成模式": defaults["script_generation_mode"],
         "目标版本数": defaults["target_variant_count"],
-        "测试维度": defaults["testing_dimensions"],
+        "测试维度": ",".join(defaults["testing_dimensions"]),
         "派生策略": defaults["derivation_strategy"],
-        "版本差异强度": defaults["版本差异强度"],
+        "版本差异强度": defaults["difference_level"],
         "脚本总时长目标": defaults["target_duration"],
         "版本编号": variant["variant_id"],
+        "脚本版本号": variant["variant_id"],
         "版本名称": variant["variant_name"],
+        "脚本名称": variant["variant_name"],
         "主测试点": variant["primary_test"],
         "次测试点": variant.get("secondary_test", ""),
         "版本差异说明": variant["difference_goal"],
@@ -315,9 +318,6 @@ def build_child_record(parent_record_id, parent_fields, defaults, batch_id, vari
         "脚本生成状态": "待生成",
         "下游推进状态": "未推进",
         "是否入选": "待定",
-        "多版本规划状态": "已跳过",
-        "生成模式": "多版本受控派生",
-        "变异策略": defaults["derivation_strategy"],
     })
     return child
 
@@ -375,7 +375,7 @@ def main():
         log("ERROR", "failed to create child records", record_id=record_id, error=str(e)[:300])
         update_record(token, SCRIPT_TASKS_TABLE, record_id, {
             "多版本规划状态": "规划失败",
-            "错误信息": f"创建子记录失败: {str(e)[:300]}",
+            "备注": f"创建子记录失败: {str(e)[:300]}",
         })
         sys.exit(1)
 
@@ -384,7 +384,7 @@ def main():
         "记录角色": "批次母任务",
         "批次ID": batch_id,
         "多版本规划状态": "已拆分",
-        "错误信息": "",
+        "备注": "variant_plan success",
     })
 
     log("INFO", "variant_plan success", record_id=record_id, batch_id=batch_id, children=len(created))
