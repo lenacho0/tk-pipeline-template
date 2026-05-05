@@ -48,7 +48,7 @@ Inside each run folder:
 ```bash
 cd /Users/ryanlynn/.openclaw/workspace-tk
 python3 -m tools.media_bulk_downloader.cli \
-  --failed-only /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<run_id>/results.csv \
+  --failed-only /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<run_id>/_meta/results.csv \
   --env-file /Users/ryanlynn/.openclaw/workspace-tk/.env \
   --output /Users/ryanlynn/.openclaw/workspace-tk/downloads/media_bulk/<run_id>_rerun
 ```

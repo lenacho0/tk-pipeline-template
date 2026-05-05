@@ -1,0 +1,474 @@
+{
+  "ugc_01_analysis": {
+    "table_id": "tblDy0xA6nDVgyUW",
+    "field_count": 18,
+    "fields": [
+      {
+        "name": "下载错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "目标脚本数量",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "视频类型",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "分析结果JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "视频文件",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "用户新产品",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "目标市场",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "视频链接",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "分析状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "本地视频路径",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "脚本批次ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "备注",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "任务名称",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "视频来源类型",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "下载状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "分析结果Markdown",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "分析摘要",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "脚本派生状态",
+        "type": "select",
+        "link_table": null
+      }
+    ]
+  },
+  "ugc_02_script_batch": {
+    "table_id": "tblOQAq5r12NOPv4",
+    "field_count": 12,
+    "fields": [
+      {
+        "name": "版本任务数量",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "多版本规划状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "目标市场",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "可替换项",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "批次ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "用户新产品",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "来源分析记录",
+        "type": "link",
+        "link_table": "tblDy0xA6nDVgyUW"
+      },
+      {
+        "name": "备注",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "目标脚本数量",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "分析handoff JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "必须保留",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "UGC风格要求",
+        "type": "text",
+        "link_table": null
+      }
+    ]
+  },
+  "ugc_03_script_version": {
+    "table_id": "tblvJ3tVA4GUknPY",
+    "field_count": 16,
+    "fields": [
+      {
+        "name": "版本名称",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "下游推进状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "脚本生成状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "版本ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "锁定项说明",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "变量位说明",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "所属批次",
+        "type": "link",
+        "link_table": "tblOQAq5r12NOPv4"
+      },
+      {
+        "name": "生成的脚本",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "目标市场",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "用户新产品",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "来源分析记录",
+        "type": "link",
+        "link_table": "tblDy0xA6nDVgyUW"
+      },
+      {
+        "name": "结构化脚本JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "是否入选",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "主测试点",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "版本差异说明",
+        "type": "text",
+        "link_table": null
+      }
+    ]
+  },
+  "ugc_04_six_grid_storyboard": {
+    "table_id": "tblDqM0YCFIlvcWx",
+    "field_count": 8,
+    "fields": [
+      {
+        "name": "布局",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "关联脚本版本",
+        "type": "link",
+        "link_table": "tblvJ3tVA4GUknPY"
+      },
+      {
+        "name": "结构化脚本JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "6宫格图片",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "分镜任务ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "6宫格提示词JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "6宫格生成状态",
+        "type": "select",
+        "link_table": null
+      }
+    ]
+  },
+  "ugc_05_shot_images": {
+    "table_id": "tbl6uwwsXeIt8FB2",
+    "field_count": 10,
+    "fields": [
+      {
+        "name": "分镜序号",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "原始裁切图片",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "高清分镜图",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "关联脚本版本",
+        "type": "link",
+        "link_table": "tblvJ3tVA4GUknPY"
+      },
+      {
+        "name": "对应脚本片段JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "裁切状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "高清化状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "分镜图片ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "关联6宫格任务",
+        "type": "link",
+        "link_table": "tblDqM0YCFIlvcWx"
+      }
+    ]
+  },
+  "ugc_06_shot_videos": {
+    "table_id": "tblWmmrAYS0jwKig",
+    "field_count": 13,
+    "fields": [
+      {
+        "name": "视频生成状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "关联分镜图片",
+        "type": "link",
+        "link_table": "tbl6uwwsXeIt8FB2"
+      },
+      {
+        "name": "高清分镜图",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "对应脚本片段JSON",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "提示词生成状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "分镜视频",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "视频生成模型",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "本地视频路径",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "分镜序号",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "图生视频提示词",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "关联脚本版本",
+        "type": "link",
+        "link_table": "tblvJ3tVA4GUknPY"
+      },
+      {
+        "name": "分镜视频ID",
+        "type": "text",
+        "link_table": null
+      }
+    ]
+  },
+  "ugc_07_final_concat": {
+    "table_id": "tblZJApmI81NhQtu",
+    "field_count": 9,
+    "fields": [
+      {
+        "name": "合成状态",
+        "type": "select",
+        "link_table": null
+      },
+      {
+        "name": "成片视频",
+        "type": "attachment",
+        "link_table": null
+      },
+      {
+        "name": "错误信息",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "关联脚本版本",
+        "type": "link",
+        "link_table": "tblvJ3tVA4GUknPY"
+      },
+      {
+        "name": "成片任务ID",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "分镜视频数量",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "已完成分镜视频数量",
+        "type": "number",
+        "link_table": null
+      },
+      {
+        "name": "本地成片路径",
+        "type": "text",
+        "link_table": null
+      },
+      {
+        "name": "FFmpeg concat list",
+        "type": "text",
+        "link_table": null
+      }
+    ]
+  }
+}

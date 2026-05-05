@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ryan.ugc-review-trigger</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/run_ugc_review_trigger.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual</string>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.ugc-review-trigger.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.ugc-review-trigger.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/ryanlynn/.nvm/versions/node/v24.14.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

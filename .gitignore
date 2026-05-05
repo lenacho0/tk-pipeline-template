@@ -50,3 +50,40 @@ archive_from_autoclaw_*/
 
 # generated artifacts
 video_dedup.json
+
+# OpenClaw local persona / memory files (not project source)
+.openclaw/
+AGENTS.md
+SOUL.md
+USER.md
+IDENTITY.md
+HEARTBEAT.md
+TOOLS.md
+MEMORY.md
+memory/
+
+# ad-hoc temporary files
+.tmp_*
+*.bak
+*.bak.*
+
+# TK generated media/workspaces (large runtime outputs)
+workspace/
+ugc_videos/
+video_from_storyboard_work/
+structured_script_shadow_output/
+pet_reference_downloads/
+tk_toolkit_dual/workspace_*/
+tk_toolkit_dual/workspace/
+tk_toolkit_dual/ugc_*_work/
+
+# TK local runtime cache/state variants
+**/.circuit_breakers*.json
+**/.dead_letter_tasks*.json
+**/.dispatcher_heartbeat*.json
+**/.dispatcher_metrics*.json
+**/.healthcheck_today*
+**/.record_state_cache*.json
+**/.retry_state*.json
+**/.table_cache_*.json
+**/.table_scan_state*.json

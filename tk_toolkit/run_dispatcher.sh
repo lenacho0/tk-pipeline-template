@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$SCRIPT_DIR/dispatcher.pid"
 LOG_FILE="$SCRIPT_DIR/dispatcher.log"
 HEARTBEAT_FILE="$SCRIPT_DIR/.dispatcher_heartbeat.json"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+PYTHON_BIN="${PYTHON_BIN:-/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python}"
 
 cd "$SCRIPT_DIR"
 

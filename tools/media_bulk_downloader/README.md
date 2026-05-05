@@ -1,5 +1,12 @@
 # Media Bulk Downloader
 
+> ⚠️ This tk-local copy has been superseded by the shared version at:
+> `/Users/ryanlynn/.openclaw/skills/media_bulk_downloader`
+>
+> New multi-agent usage should prefer the shared copy.
+> See: `MIGRATED-TO-SHARED.md`
+
+
 A local bulk downloader powered by the Henghengmao / Meowload API.
 
 ## What it does
