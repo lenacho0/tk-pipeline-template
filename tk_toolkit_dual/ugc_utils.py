@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 
 def extract_text(value: Any) -> str:
@@ -37,6 +37,19 @@ def extract_linked_record_ids(value: Any) -> List[str]:
                 record_ids = item.get("record_ids") or []
                 ids.extend(str(record_id) for record_id in record_ids if record_id)
     return ids
+
+
+def first_present(fields: Dict[str, Any], names: Iterable[str], default: Any = None) -> Any:
+    """Return the first field value present in a Feishu record.
+
+    Used during schema rename windows: code writes the new field names while
+    still reading historical/legacy field names until all Base fields are
+    renamed and old records are stable.
+    """
+    for name in names:
+        if name in fields:
+            return fields.get(name)
+    return default
 
 
 @dataclass

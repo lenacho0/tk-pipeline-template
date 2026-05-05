@@ -8,13 +8,15 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from ugc_config import load_ugc_table_ids
-from ugc_utils import extract_linked_record_ids, extract_text
+from ugc_utils import extract_linked_record_ids, extract_text, first_present
 from ugc_reroll_utils import build_candidate_fields
 from tk_ugc_six_grid import get_feishu_token, get_ugc_record, create_ugc_record, update_ugc_record, json_dumps
 from tk_ugc_shot_images import get_attachment_token
 
 VIDEO_PROMPT_SYSTEM_PROMPT_PATH = Path(__file__).resolve().parents[1] / "docs" / "prompts" / "ugc-image-to-video-system-prompt-2026-05-02.md"
 BASE_WORK_DIR = Path(__file__).resolve().parent / "workspace_ryan" / "ugc_video_prompt_work"
+LINKED_GRID_FIELD = "关联9宫格任务"
+LEGACY_LINKED_GRID_FIELD = "关联6宫格任务"
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordCreator = Callable[[str, str, Dict[str, Any]], str]
@@ -217,7 +219,7 @@ def build_prompt_en(visual_motion: str, camera_motion: str, audio_plan: Dict[str
 def build_shot_video_prompt(ugc05_record_id: str, fields05: Dict[str, Any], assumptions: List[str]) -> Dict[str, Any]:
     shot = parse_json_field(fields05.get("对应脚本片段JSON"), f"UGC-05 {ugc05_record_id}.对应脚本片段JSON")
     ugc03_ids = extract_linked_record_ids(fields05.get("关联脚本版本"))
-    ugc04_ids = extract_linked_record_ids(fields05.get("关联6宫格任务"))
+    ugc04_ids = extract_linked_record_ids(first_present(fields05, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD]))
     shot_index = int(float(extract_text(fields05.get("分镜序号") or shot.get("shot_index") or 0)))
     if shot_index < 1 or shot_index > 9:
         raise ValueError(f"UGC-05 {ugc05_record_id}.分镜序号 必须在 1-9 之间")
@@ -302,7 +304,7 @@ def build_video_prompt_batch(
         if status and status != "成功":
             warnings.append(f"UGC-05 {rid}.高清化状态={status}，建议确认后再进 UGC-06。")
         ugc03_ids.extend(extract_linked_record_ids(fields.get("关联脚本版本")))
-        ugc04_ids.extend(extract_linked_record_ids(fields.get("关联6宫格任务")))
+        ugc04_ids.extend(extract_linked_record_ids(first_present(fields, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD])))
         prompts.append(build_shot_video_prompt(rid, fields, assumptions))
     prompts.sort(key=lambda item: item["shot_index"])
     return {

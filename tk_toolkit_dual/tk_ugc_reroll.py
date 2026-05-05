@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from ugc_config import UGC_BASE_TOKEN, load_ugc_table_ids
 from ugc_reroll_utils import make_group_id, next_candidate_index
 from ugc_utils import extract_linked_record_ids, extract_text
-from tk_ugc_six_grid import get_feishu_token, get_ugc_record, run_image_generation, run_prepare, update_ugc_record
+from tk_ugc_six_grid import GRID_STATUS_FIELD, LEGACY_GRID_STATUS_FIELD, get_feishu_token, get_ugc_record, run_image_generation, run_prepare, update_ugc_record
 from tk_ugc_shot_images import create_or_preview_shot_records
 from tk_ugc_video_prompts import create_or_preview_ugc06_records
 from tk_ugc_shot_videos import run_ugc06_video_generation
@@ -162,8 +162,14 @@ def filter_candidate_group(records: Iterable[Dict[str, Any]], group_id: str) -> 
 
 
 def candidate_success_status(fields: Dict[str, Any], status_field: str = "") -> str:
-    field = status_field or ("视频生成状态" if "视频生成状态" in fields else "6宫格生成状态")
-    return extract_text(fields.get(field)).strip()
+    if status_field:
+        value = extract_text(fields.get(status_field)).strip()
+        if value or status_field != GRID_STATUS_FIELD:
+            return value
+        return extract_text(fields.get(LEGACY_GRID_STATUS_FIELD)).strip()
+    if "视频生成状态" in fields:
+        return extract_text(fields.get("视频生成状态")).strip()
+    return extract_text(fields.get(GRID_STATUS_FIELD) or fields.get(LEGACY_GRID_STATUS_FIELD)).strip()
 
 
 def apply_selection(
@@ -256,7 +262,7 @@ def main() -> int:
             token=token,
             update_record_fn=update_ugc_record if args.write else (lambda token, table, rid, fields: None),
             allow_non_success=args.allow_non_success,
-            status_field="6宫格生成状态" if args.command == "select-grid" else "视频生成状态",
+            status_field=GRID_STATUS_FIELD if args.command == "select-grid" else "视频生成状态",
         )
         result = {"dry_run": not args.write, **preview}
     else:

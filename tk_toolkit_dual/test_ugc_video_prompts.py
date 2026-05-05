@@ -29,7 +29,7 @@ def sample_ugc05_fields(shot_index=1, content_type="dialogue", dialogue="สว�
         "高清分镜图路径": f"/tmp/shot_{shot_index:02d}_916.png",
         "高清分镜图file_token": f"ft_{shot_index}",
         "关联脚本版本": [{"record_ids": ["rec03"]}],
-        "关联6宫格任务": [{"record_ids": ["rec04"]}],
+        "关联9宫格任务": [{"record_ids": ["rec04"]}],
     }
     if hd:
         fields["高清分镜图"] = [{"file_token": f"ft_attach_{shot_index}", "name": f"shot_{shot_index:02d}_916.png"}]

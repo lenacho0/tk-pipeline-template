@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROMPT_STAGE_FILES: Dict[str, Path] = {
     "爆款视频分析-UGC": PROJECT_ROOT / "docs/prompts/ugc-single-video-analysis-system-prompt-v1.md",
     "UGC-脚本生成": PROJECT_ROOT / "docs/prompts/ugc-script-generation-system-prompt-v1.md",
-    "UGC-6宫格分镜图生成": PROJECT_ROOT / "docs/prompts/ugc-6-grid-storyboard-system-prompt-2026-04-30.md",
+    "UGC-9宫格分镜图生成": PROJECT_ROOT / "docs/prompts/ugc-6-grid-storyboard-system-prompt-2026-04-30.md",
     "UGC-9宫格分镜图拆分": PROJECT_ROOT / "docs/prompts/content-nine-grid-split-system-prompt-2026-05-03.md",
     "UGC-视频提示词生成": PROJECT_ROOT / "docs/prompts/ugc-image-to-video-system-prompt-2026-05-02.md",
     "非UGC-爆款视频分析": PROJECT_ROOT / "docs/prompts/non-ugc-animation-video-analysis-system-prompt-v1.md",

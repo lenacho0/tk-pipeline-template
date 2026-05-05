@@ -12,18 +12,30 @@ import requests
 from PIL import Image, ImageFilter
 
 from ugc_config import UGC_BASE_TOKEN, load_ugc_table_ids
-from ugc_utils import extract_linked_record_ids, extract_text
+from ugc_utils import extract_linked_record_ids, extract_text, first_present
 from tk_ugc_six_grid import (
+    GRID_IMAGE_FIELD,
+    GRID_IMAGE_TOKEN_FIELD,
+    GRID_IMAGE_URL_FIELD,
+    GRID_STATUS_FIELD,
+    LEGACY_GRID_IMAGE_FIELD,
+    LEGACY_GRID_IMAGE_TOKEN_FIELD,
+    LEGACY_GRID_IMAGE_URL_FIELD,
+    LEGACY_GRID_STATUS_FIELD,
+    call_otu_image_generation,
+    create_ugc_record,
+    find_config_record_id,
     get_feishu_token,
     get_ugc_record,
-    create_ugc_record,
+    json_dumps,
+    parse_grid_prompt_json,
+    parse_json_object,
     update_ugc_record,
     upload_image_to_feishu,
-    json_dumps,
-    parse_json_object,
-    find_config_record_id,
-    call_otu_image_generation,
 )
+
+LINKED_GRID_FIELD = "关联9宫格任务"
+LEGACY_LINKED_GRID_FIELD = "关联6宫格任务"
 
 BASE_WORK_DIR = Path(__file__).resolve().parent / "workspace_ryan" / "ugc_shot_image_work"
 ENHANCE_STAGE_NAME = "UGC-分镜图片高清化"
@@ -54,22 +66,22 @@ def download_feishu_media(token: str, file_token: str, save_path: Path) -> None:
             if chunk:
                 f.write(chunk)
     if save_path.stat().st_size < 1024:
-        raise RuntimeError(f"下载6宫格图片过小，疑似失败: {save_path.stat().st_size} bytes")
+        raise RuntimeError(f"下载9宫格图片过小，疑似失败: {save_path.stat().st_size} bytes")
 
 
 def resolve_six_grid_image_path(token: str, ugc04_record_id: str, fields: Dict[str, Any], *, downloader: Callable[[str, str, Path], None] = download_feishu_media) -> Path:
     work_dir = BASE_WORK_DIR / ugc04_record_id
-    local_hint = extract_text(fields.get("6宫格图片URL")).strip()
+    local_hint = extract_text(first_present(fields, [GRID_IMAGE_URL_FIELD, LEGACY_GRID_IMAGE_URL_FIELD])).strip()
     if local_hint and local_hint.startswith("/"):
         p = Path(local_hint)
         if p.exists() and p.stat().st_size >= 1024:
             return p
-    attachment_token = get_attachment_token(fields.get("6宫格图片")) or extract_text(fields.get("6宫格图片file_token")).strip()
+    attachment_token = get_attachment_token(first_present(fields, [GRID_IMAGE_FIELD, LEGACY_GRID_IMAGE_FIELD])) or extract_text(first_present(fields, [GRID_IMAGE_TOKEN_FIELD, LEGACY_GRID_IMAGE_TOKEN_FIELD])).strip()
     if attachment_token:
         p = work_dir / f"{ugc04_record_id}_six_grid.png"
         downloader(token, attachment_token, p)
         return p
-    raise ValueError("UGC-04 缺少可用的6宫格图片附件/file_token/本地路径")
+    raise ValueError("UGC-04 缺少可用的9宫格图片附件/file_token/本地路径")
 
 
 
@@ -334,7 +346,7 @@ def build_ugc05_fields(
     shot_index = int(crop_info["shot_index"])
     fields: Dict[str, Any] = {
         "分镜图片ID": f"UGC-SHOT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{ugc04_record_id[-6:]}-{shot_index:02d}",
-        "关联6宫格任务": [ugc04_record_id],
+        LINKED_GRID_FIELD: [ugc04_record_id],
         "关联脚本版本": [ugc03_record_id] if ugc03_record_id else [],
         "分镜序号": shot_index,
         "对应脚本片段JSON": json_dumps(shot),
@@ -356,7 +368,7 @@ def build_ugc05_fields(
 
 
 def linked_to_ugc04(fields: Dict[str, Any], ugc04_record_id: str) -> bool:
-    return ugc04_record_id in extract_linked_record_ids(fields.get("关联6宫格任务"))
+    return ugc04_record_id in extract_linked_record_ids(first_present(fields, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD]))
 
 
 def shot_index_value(fields: Dict[str, Any]) -> int:
@@ -405,7 +417,7 @@ def load_ugc05_context(
     ugc04_table = table_ids["ugc_04_six_grid_storyboard"]
     ugc05_table = table_ids["ugc_05_shot_images"]
     fields05 = get_record_fn(token, ugc05_table, ugc05_record_id)
-    ugc04_ids = extract_linked_record_ids(fields05.get("关联6宫格任务"))
+    ugc04_ids = extract_linked_record_ids(first_present(fields05, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD]))
     if len(ugc04_ids) != 1:
         raise ValueError(f"UGC-05 {ugc05_record_id} 必须且只能关联 1 条 UGC-04，actual={ugc04_ids}")
     ugc04_record_id = ugc04_ids[0]
@@ -581,14 +593,14 @@ def create_or_preview_shot_records(
     ugc04_table = table_ids["ugc_04_six_grid_storyboard"]
     ugc05_table = table_ids["ugc_05_shot_images"]
     fields04 = get_record_fn(token, ugc04_table, ugc04_record_id)
-    if extract_text(fields04.get("6宫格生成状态")).strip() != "成功":
-        raise ValueError("UGC-04.6宫格生成状态 必须为 成功 才能进入 UGC-05")
+    if extract_text(first_present(fields04, [GRID_STATUS_FIELD, LEGACY_GRID_STATUS_FIELD])).strip() != "成功":
+        raise ValueError("UGC-04.9宫格生成状态 必须为 成功 才能进入 UGC-05")
     layout = extract_text(fields04.get("布局")).strip() or "3行x3列"
     script_json = parse_json_object(fields04.get("结构化脚本JSON"), "UGC-04.结构化脚本JSON")
     shots = extract_shots(script_json)
     prompt_json: Dict[str, Any] = {}
     try:
-        prompt_json = parse_json_object(fields04.get("6宫格提示词JSON"), "UGC-04.6宫格提示词JSON")
+        prompt_json = parse_grid_prompt_json(fields04)
     except Exception:
         prompt_json = {}
     active_indices = active_panel_indices_from_prompt(prompt_json, len(shots))

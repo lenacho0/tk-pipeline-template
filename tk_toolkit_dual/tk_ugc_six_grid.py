@@ -14,9 +14,20 @@ from PIL import Image
 
 from ugc_config import UGC_BASE_TOKEN, load_ugc_table_ids
 from ugc_reroll_utils import build_candidate_fields
-from ugc_utils import extract_text
+from ugc_utils import extract_text, first_present
 
-UGC_GRID_STAGE_NAME = "UGC-6宫格分镜图生成"
+UGC_GRID_STAGE_NAME = "UGC-9宫格分镜图生成"
+LEGACY_UGC_GRID_STAGE_NAME = "UGC-6宫格分镜图生成"
+GRID_PROMPT_FIELD = "9宫格提示词JSON"
+GRID_STATUS_FIELD = "9宫格生成状态"
+GRID_IMAGE_FIELD = "9宫格图片"
+GRID_IMAGE_URL_FIELD = "9宫格图片URL"
+GRID_IMAGE_TOKEN_FIELD = "9宫格图片file_token"
+LEGACY_GRID_PROMPT_FIELD = "6宫格提示词JSON"
+LEGACY_GRID_STATUS_FIELD = "6宫格生成状态"
+LEGACY_GRID_IMAGE_FIELD = "6宫格图片"
+LEGACY_GRID_IMAGE_URL_FIELD = "6宫格图片URL"
+LEGACY_GRID_IMAGE_TOKEN_FIELD = "6宫格图片file_token"
 BASE_WORK_DIR = Path(__file__).resolve().parent / "workspace_ryan" / "ugc_grid_work"
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
@@ -142,7 +153,10 @@ def parse_script_json(ugc03_fields: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def parse_grid_prompt_json(ugc04_fields: Dict[str, Any]) -> Dict[str, Any]:
-    data = parse_json_object(ugc04_fields.get("6宫格提示词JSON"), "UGC-04.6宫格提示词JSON")
+    data = parse_json_object(
+        first_present(ugc04_fields, [GRID_PROMPT_FIELD, LEGACY_GRID_PROMPT_FIELD]),
+        f"UGC-04.{GRID_PROMPT_FIELD}",
+    )
     panels = data.get("panels")
     if not isinstance(panels, list) or len(panels) != 9:
         raise ValueError("9宫格提示词JSON.panels 必须正好 9 个")
@@ -279,8 +293,8 @@ def build_ugc04_fields(ugc03_record_id: str, script_json: Dict[str, Any], layout
         "分镜任务ID": task_id,
         "关联脚本版本": [ugc03_record_id],
         "结构化脚本JSON": json_dumps(script_json),
-        "6宫格提示词JSON": json_dumps(prompt_json),
-        "6宫格生成状态": "待生成",
+        GRID_PROMPT_FIELD: json_dumps(prompt_json),
+        GRID_STATUS_FIELD: "待生成",
         "布局": "3行x3列",
         "错误信息": "",
     }
@@ -300,9 +314,12 @@ def find_config_record_id(token: str, stage_name: str) -> str:
         if not data.get("data", {}).get("has_more"):
             break
         page_token = data.get("data", {}).get("page_token")
+    accepted = {stage_name}
+    if stage_name == UGC_GRID_STAGE_NAME:
+        accepted.add(LEGACY_UGC_GRID_STAGE_NAME)
     for item in all_items:
         fields = item.get("fields", {})
-        if extract_text(fields.get("环节")).strip() == stage_name:
+        if extract_text(fields.get("环节")).strip() in accepted:
             return item.get("record_id", "")
     return ""
 
@@ -387,7 +404,7 @@ def call_otu_image_generation(config: Dict[str, str], prompt: str, *, metadata: 
     api_base = config.get("api_base", "").strip().rstrip("/")
     model = config.get("model", "").strip()
     if not api_key or not api_base or not model:
-        raise ValueError("UGC 6宫格图片模型配置缺少 model/api_base/api_key")
+        raise ValueError("UGC 9宫格图片模型配置缺少 model/api_base/api_key")
 
     submit_metadata = {
         "aspectRatio": "9:16",
@@ -409,14 +426,14 @@ def call_otu_image_generation(config: Dict[str, str], prompt: str, *, metadata: 
     except Exception:
         submit_data = {"raw": submit_text}
     if submit.status_code >= 400:
-        raise RuntimeError(f"OTU 6宫格图片任务提交失败 status={submit.status_code} body={submit_text[:500]}")
+        raise RuntimeError(f"OTU 9宫格图片任务提交失败 status={submit.status_code} body={submit_text[:500]}")
     task_id = submit_data.get("id") or submit_data.get("task_id") or (submit_data.get("data") or {}).get("id")
     if not task_id:
         # Some image-compatible routes may return the final URL synchronously.
         url = extract_otu_result_url(submit_data)
         if url:
             return {"task_id": "", "status": "completed", "result_url": url, "submit_response": submit_data, "poll_response": submit_data}
-        raise RuntimeError(f"OTU 6宫格图片任务未返回 task id: {submit_text[:500]}")
+        raise RuntimeError(f"OTU 9宫格图片任务未返回 task id: {submit_text[:500]}")
 
     deadline = time.time() + timeout_sec
     last_data: Dict[str, Any] = {}
@@ -428,17 +445,17 @@ def call_otu_image_generation(config: Dict[str, str], prompt: str, *, metadata: 
         except Exception:
             last_data = {"raw": poll_text}
         if poll.status_code >= 400:
-            raise RuntimeError(f"OTU 6宫格图片任务查询失败 status={poll.status_code} body={poll_text[:500]}")
+            raise RuntimeError(f"OTU 9宫格图片任务查询失败 status={poll.status_code} body={poll_text[:500]}")
         status = str(last_data.get("status") or (last_data.get("data") or {}).get("status") or "").lower()
         result_url = extract_otu_result_url(last_data)
         if status in {"completed", "succeeded", "success"} or result_url:
             if not result_url:
-                raise RuntimeError(f"OTU 6宫格图片任务完成但未返回图片地址: {json_dumps(last_data)[:500]}")
+                raise RuntimeError(f"OTU 9宫格图片任务完成但未返回图片地址: {json_dumps(last_data)[:500]}")
             return {"task_id": task_id, "status": status or "completed", "result_url": result_url, "submit_response": submit_data, "poll_response": last_data}
         if status in {"failed", "error", "cancelled", "canceled"}:
-            raise RuntimeError(f"OTU 6宫格图片任务失败: {json_dumps(last_data)[:800]}")
+            raise RuntimeError(f"OTU 9宫格图片任务失败: {json_dumps(last_data)[:800]}")
         time.sleep(poll_interval)
-    raise TimeoutError(f"OTU 6宫格图片任务超时（{timeout_sec}秒），任务ID: {task_id}，最后状态: {json_dumps(last_data)[:500]}")
+    raise TimeoutError(f"OTU 9宫格图片任务超时（{timeout_sec}秒），任务ID: {task_id}，最后状态: {json_dumps(last_data)[:500]}")
 
 
 
@@ -544,7 +561,7 @@ def run_prepare(
         "dry_run": not write,
         "tables": {"ugc03": ugc03_table, "ugc04": ugc04_table},
         "ugc04_fields": ugc04_fields,
-        "panel_count": len(json.loads(ugc04_fields["6宫格提示词JSON"])["panels"]),
+        "panel_count": len(json.loads(ugc04_fields[GRID_PROMPT_FIELD])["panels"]),
     }
     if write:
         ugc04_record_id = create_record_fn(token, ugc04_table, ugc04_fields)
@@ -592,7 +609,7 @@ def run_image_generation(
         return result
 
     if write:
-        update_record_fn(token, ugc04_table, ugc04_record_id, {"6宫格生成状态": "生成中", "错误信息": ""})
+        update_record_fn(token, ugc04_table, ugc04_record_id, {GRID_STATUS_FIELD: "生成中", "错误信息": ""})
     try:
         try:
             image_result = image_caller(config, prompt, metadata=image_metadata)
@@ -624,10 +641,10 @@ def run_image_generation(
             result["file_token"] = file_token
             try:
                 update_record_fn(token, ugc04_table, ugc04_record_id, {
-                    "6宫格生成状态": "成功",
-                    "6宫格图片": [{"file_token": file_token, "name": image_path.name}],
-                    "6宫格图片URL": str(image_result.get("result_url") or image_path),
-                    "6宫格图片file_token": file_token,
+                    GRID_STATUS_FIELD: "成功",
+                    GRID_IMAGE_FIELD: [{"file_token": file_token, "name": image_path.name}],
+                    GRID_IMAGE_URL_FIELD: str(image_result.get("result_url") or image_path),
+                    GRID_IMAGE_TOKEN_FIELD: file_token,
                     "错误信息": "",
                 })
                 result["attachment_written"] = True
@@ -636,10 +653,10 @@ def run_image_generation(
                 # (UploadAttachNotAllowed). Preserve the generated asset through
                 # machine-readable fallback fields instead of losing the run.
                 update_record_fn(token, ugc04_table, ugc04_record_id, {
-                    "6宫格生成状态": "成功",
-                    "6宫格图片URL": str(image_result.get("result_url") or image_path),
-                    "6宫格图片file_token": file_token,
-                    "错误信息": f"附件字段6宫格图片未写入：{str(attach_exc)[:300]}；真实图片已生成，URL/file_token已写入文本字段。",
+                    GRID_STATUS_FIELD: "成功",
+                    GRID_IMAGE_URL_FIELD: str(image_result.get("result_url") or image_path),
+                    GRID_IMAGE_TOKEN_FIELD: file_token,
+                    "错误信息": f"附件字段{GRID_IMAGE_FIELD}未写入：{str(attach_exc)[:300]}；真实图片已生成，URL/file_token已写入文本字段。",
                 })
                 result["attachment_written"] = False
                 result["attachment_write_error"] = str(attach_exc)[:500]
@@ -649,7 +666,7 @@ def run_image_generation(
         return result
     except Exception as exc:
         if write:
-            update_record_fn(token, ugc04_table, ugc04_record_id, {"6宫格生成状态": "失败", "错误信息": str(exc)[:500]})
+            update_record_fn(token, ugc04_table, ugc04_record_id, {GRID_STATUS_FIELD: "失败", "错误信息": str(exc)[:500]})
         raise
 
 
@@ -666,7 +683,7 @@ def main() -> int:
     prepare.add_argument("--reroll-source-record-id", default="", help="本次重生成来源 UGC-04 record_id")
     prepare.add_argument("--output-file", help="保存运行结果 JSON")
 
-    image = sub.add_parser("image", help="对 UGC-04 任务生成/预览 6宫格图片")
+    image = sub.add_parser("image", help="对 UGC-04 任务生成/预览 9宫格图片")
     image.add_argument("record_id", help="UGC-04 record_id")
     image.add_argument("--call-image", action="store_true", help="真实调用 OTU 生成 9宫格容器图片")
     image.add_argument("--write", action="store_true", help="写回 UGC-04 状态和图片附件；需配合 --call-image")

@@ -87,7 +87,7 @@ class UGCShotImagesTest(unittest.TestCase):
 
     def test_build_ugc05_fields_includes_links_and_fallback_fields(self):
         fields = shots.build_ugc05_fields("rec04", "rec03", {"shot_index": 1}, {"shot_index": 1, "path": "/tmp/a.png"}, file_token="ft")
-        self.assertEqual(fields["关联6宫格任务"], ["rec04"])
+        self.assertEqual(fields["关联9宫格任务"], ["rec04"])
         self.assertEqual(fields["关联脚本版本"], ["rec03"])
         self.assertEqual(fields["分镜序号"], 1)
         self.assertEqual(fields["裁切状态"], "成功")
@@ -128,13 +128,13 @@ class UGCShotImagesTest(unittest.TestCase):
                 def fake_get(token, table, rid):
                     if table == "tbl05":
                         return {
-                            "关联6宫格任务": [{"record_ids": ["rec04"]}],
+                            "关联9宫格任务": [{"record_ids": ["rec04"]}],
                             "分镜序号": 1,
                             "原始裁切图片路径": str(crop),
                         }
                     return {
                         "结构化脚本JSON": json.dumps(sample_script_json(), ensure_ascii=False),
-                        "6宫格图片URL": str(grid),
+                        "9宫格图片URL": str(grid),
                     }
 
                 def fake_repaint(token, crop_path, grid_path, shot, crop_info, output_path, *, active_count, uploader):
@@ -175,11 +175,11 @@ class UGCShotImagesTest(unittest.TestCase):
             try:
                 def fake_get(token, table, rid):
                     return {
-                        "6宫格生成状态": "成功",
+                        "9宫格生成状态": "成功",
                         "布局": "3行x3列",
                         "结构化脚本JSON": json.dumps(sample_script_json(), ensure_ascii=False),
-                        "6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
-                        "6宫格图片URL": str(src),
+                        "9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
+                        "9宫格图片URL": str(src),
                         "关联脚本版本": [{"record_ids": ["rec03"]}],
                     }
 
@@ -197,9 +197,9 @@ class UGCShotImagesTest(unittest.TestCase):
 
     def test_find_existing_ugc05_by_shot_matches_parent_and_shot_index(self):
         records = [
-            {"record_id": "rec05_1", "fields": {"关联6宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": 1}},
-            {"record_id": "other", "fields": {"关联6宫格任务": [{"record_ids": ["other04"]}], "分镜序号": 1}},
-            {"record_id": "rec05_2", "fields": {"关联6宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": "2"}},
+            {"record_id": "rec05_1", "fields": {"关联9宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": 1}},
+            {"record_id": "other", "fields": {"关联9宫格任务": [{"record_ids": ["other04"]}], "分镜序号": 1}},
+            {"record_id": "rec05_2", "fields": {"关联9宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": "2"}},
         ]
         self.assertEqual(shots.find_existing_ugc05_by_shot(records, ugc04_record_id="rec04"), {1: "rec05_1", 2: "rec05_2"})
 
@@ -215,11 +215,11 @@ class UGCShotImagesTest(unittest.TestCase):
             try:
                 def fake_get(token, table, rid):
                     return {
-                        "6宫格生成状态": "成功",
+                        "9宫格生成状态": "成功",
                         "布局": "3行x3列",
                         "结构化脚本JSON": json.dumps(sample_script_json(), ensure_ascii=False),
-                        "6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
-                        "6宫格图片URL": str(src),
+                        "9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
+                        "9宫格图片URL": str(src),
                         "关联脚本版本": [{"record_ids": ["rec03"]}],
                     }
 
@@ -253,11 +253,11 @@ class UGCShotImagesTest(unittest.TestCase):
             try:
                 def fake_get(token, table, rid):
                     return {
-                        "6宫格生成状态": "成功",
+                        "9宫格生成状态": "成功",
                         "布局": "3行x3列",
                         "结构化脚本JSON": json.dumps(sample_script_json(), ensure_ascii=False),
-                        "6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
-                        "6宫格图片URL": str(src),
+                        "9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False),
+                        "9宫格图片URL": str(src),
                         "关联脚本版本": [{"record_ids": ["rec03"]}],
                     }
 
@@ -272,7 +272,7 @@ class UGCShotImagesTest(unittest.TestCase):
                     updated.append((record_id, fields))
 
                 existing = [
-                    {"record_id": f"rec05_{i}", "fields": {"关联6宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": i}}
+                    {"record_id": f"rec05_{i}", "fields": {"关联9宫格任务": [{"record_ids": ["rec04"]}], "分镜序号": i}}
                     for i in range(1, 7)
                 ]
                 result = shots.create_or_preview_shot_records(

@@ -115,7 +115,7 @@ class UGCSixGridTest(unittest.TestCase):
         result = grid.run_prepare("rec03", token="t", get_record_fn=fake_get)
         self.assertFalse(result["written"])
         self.assertEqual(result["panel_count"], 9)
-        self.assertEqual(result["ugc04_fields"]["6宫格生成状态"], "待生成")
+        self.assertEqual(result["ugc04_fields"]["9宫格生成状态"], "待生成")
 
     @patch("tk_ugc_six_grid.load_ugc_table_ids")
     def test_run_prepare_write_creates_record_and_updates_ugc03(self, tables_mock):
@@ -176,7 +176,7 @@ class UGCSixGridTest(unittest.TestCase):
         cfg_mock.return_value = {"record_id": "cfg", "stage": grid.UGC_GRID_STAGE_NAME, "model": "gpt-image-2", "api_base": "https://otuapi.com", "method": "专用 API", "api_key": "k"}
 
         def fake_get(token, table, rid):
-            return {"6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
+            return {"9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
 
         def fail_call(config, prompt):
             raise AssertionError("should not call image in dry-run")
@@ -203,7 +203,7 @@ class UGCSixGridTest(unittest.TestCase):
             grid.BASE_WORK_DIR = Path(td) / "work"
             try:
                 def fake_get(token, table, rid):
-                    return {"6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
+                    return {"9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
 
                 def fake_update(token, table, rid, fields):
                     updated.append(fields)
@@ -224,9 +224,9 @@ class UGCSixGridTest(unittest.TestCase):
                 self.assertTrue(result["written"])
                 self.assertTrue(result["attachment_written"])
                 self.assertEqual(result["file_token"], "file_token_1")
-                self.assertEqual(updated[0]["6宫格生成状态"], "生成中")
-                self.assertEqual(updated[-1]["6宫格生成状态"], "成功")
-                self.assertEqual(updated[-1]["6宫格图片"][0]["file_token"], "file_token_1")
+                self.assertEqual(updated[0]["9宫格生成状态"], "生成中")
+                self.assertEqual(updated[-1]["9宫格生成状态"], "成功")
+                self.assertEqual(updated[-1]["9宫格图片"][0]["file_token"], "file_token_1")
             finally:
                 grid.BASE_WORK_DIR = old_base
 
@@ -244,11 +244,11 @@ class UGCSixGridTest(unittest.TestCase):
             grid.BASE_WORK_DIR = Path(td) / "work"
             try:
                 def fake_get(token, table, rid):
-                    return {"6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
+                    return {"9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
 
                 def fake_update(token, table, rid, fields):
                     updated.append(fields)
-                    if "6宫格图片" in fields:
+                    if "9宫格图片" in fields:
                         raise RuntimeError("UploadAttachNotAllowed")
 
                 def fake_call(config, prompt):
@@ -266,9 +266,9 @@ class UGCSixGridTest(unittest.TestCase):
                 self.assertTrue(result["written"])
                 self.assertFalse(result["attachment_written"])
                 self.assertIn("UploadAttachNotAllowed", result["attachment_write_error"])
-                self.assertEqual(updated[-1]["6宫格生成状态"], "成功")
-                self.assertEqual(updated[-1]["6宫格图片file_token"], "file_token_1")
-                self.assertIn("6宫格图片URL", updated[-1])
+                self.assertEqual(updated[-1]["9宫格生成状态"], "成功")
+                self.assertEqual(updated[-1]["9宫格图片file_token"], "file_token_1")
+                self.assertIn("9宫格图片URL", updated[-1])
             finally:
                 grid.BASE_WORK_DIR = old_base
 
@@ -286,7 +286,7 @@ class UGCSixGridTest(unittest.TestCase):
             grid.BASE_WORK_DIR = Path(td) / "work"
             try:
                 def fake_get(token, table, rid):
-                    return {"6宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
+                    return {"9宫格提示词JSON": json.dumps(sample_prompt_json(), ensure_ascii=False)}
 
                 def fake_update(token, table, rid, fields):
                     updated.append(fields)
@@ -301,8 +301,8 @@ class UGCSixGridTest(unittest.TestCase):
                 with patch("tk_ugc_six_grid.download_file", fake_download):
                     with self.assertRaises(ValueError):
                         grid.run_image_generation("rec04", token="t", call_image=True, write=True, get_record_fn=fake_get, update_record_fn=fake_update, image_caller=fake_call)
-                self.assertEqual(updated[0]["6宫格生成状态"], "生成中")
-                self.assertEqual(updated[-1]["6宫格生成状态"], "失败")
+                self.assertEqual(updated[0]["9宫格生成状态"], "生成中")
+                self.assertEqual(updated[-1]["9宫格生成状态"], "失败")
                 self.assertIn("比例校验失败", updated[-1]["错误信息"])
             finally:
                 grid.BASE_WORK_DIR = old_base
