@@ -15,8 +15,11 @@ from ugc_config import UGC_BASE_TOKEN, load_ugc_table_ids
 from ugc_utils import extract_linked_record_ids, extract_text
 
 
-SCRIPT_PROMPT_PATH = Path(__file__).resolve().parents[1] / "docs" / "ugc-script-generation-system-prompt-v1.md"
+PROMPT_DIR = Path(__file__).resolve().parents[1] / "docs" / "archive" / "ugc-content-chain-2026-05" / "prompts"
+SCRIPT_PROMPT_PATH = PROMPT_DIR / "ugc-script-generation-system-prompt-v1.md"
+NON_UGC_SCRIPT_PROMPT_PATH = PROMPT_DIR / "non-ugc-animation-script-generation-system-prompt-v3-content.md"
 UGC_SCRIPT_STAGE_NAME = "UGC-脚本生成"
+NON_UGC_SCRIPT_STAGE_NAME = "非UGC-脚本生成"
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordUpdater = Callable[[str, str, str, Dict[str, Any]], Any]
@@ -49,6 +52,21 @@ def update_ugc_record(token: str, table_id: str, record_id: str, fields: Dict[st
         timeout=30,
         max_attempts=3,
     )
+
+
+def normalize_video_type(fields: Dict[str, Any]) -> str:
+    raw = extract_text(fields.get("视频类型")).strip().lower()
+    if raw in {"非ugc", "non-ugc", "non_ugc", "nonugc", "非 ugc"}:
+        return "非UGC"
+    return "UGC"
+
+
+def script_stage_for_fields(fields: Dict[str, Any]) -> str:
+    return NON_UGC_SCRIPT_STAGE_NAME if normalize_video_type(fields) == "非UGC" else UGC_SCRIPT_STAGE_NAME
+
+
+def script_prompt_path_for_stage(stage_name: str) -> Path:
+    return NON_UGC_SCRIPT_PROMPT_PATH if stage_name == NON_UGC_SCRIPT_STAGE_NAME else SCRIPT_PROMPT_PATH
 
 
 def load_system_prompt(path: Path = SCRIPT_PROMPT_PATH) -> str:
@@ -138,10 +156,11 @@ def find_config_record_id(token: str, stage_name: str) -> str:
     return ""
 
 
-def get_script_model_config(token: str) -> Dict[str, str]:
-    rid = os.environ.get("UGC_SCRIPT_CONFIG_RECORD_ID") or find_config_record_id(token, UGC_SCRIPT_STAGE_NAME)
+def get_script_model_config(token: str, stage_name: str = UGC_SCRIPT_STAGE_NAME) -> Dict[str, str]:
+    env_key = "NON_UGC_SCRIPT_CONFIG_RECORD_ID" if stage_name == NON_UGC_SCRIPT_STAGE_NAME else "UGC_SCRIPT_CONFIG_RECORD_ID"
+    rid = os.environ.get(env_key) or find_config_record_id(token, stage_name)
     if not rid:
-        raise ValueError(f"未找到模型配置记录: {UGC_SCRIPT_STAGE_NAME}")
+        raise ValueError(f"未找到模型配置记录: {stage_name}")
     fields = get_ugc_record(token, __import__("common").TABLE_CONFIG, rid)
     return {
         "record_id": rid,
@@ -149,7 +168,7 @@ def get_script_model_config(token: str) -> Dict[str, str]:
         "model": extract_text(fields.get("模型名称")).strip(),
         "api_key": extract_text(fields.get("API Key")).strip(),
         "api_base": extract_text(fields.get("API 代理地址")).strip().rstrip("/"),
-        "prompt": extract_text(fields.get("提示词")).strip(),
+        "prompt": extract_text(fields.get("提示词")).strip() or load_system_prompt(script_prompt_path_for_stage(stage_name)),
         "method": extract_text(fields.get("调用方式")).strip(),
     }
 
@@ -400,7 +419,8 @@ def run_generate(
     ugc01 = get_record_fn(token, ugc01_table, ugc01_id)
     product = get_record_fn(token, product_table, product_id)
     context = build_generation_context(ugc03_record_id, ugc03, ugc02, ugc01, product_id, product)
-    model_config = get_script_model_config(token)
+    stage_name = script_stage_for_fields(ugc01)
+    model_config = get_script_model_config(token, stage_name)
     system_prompt = model_config.get("prompt") or load_system_prompt()
     prompt = build_prompt(system_prompt, context)
 

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import tk_ugc_video_prompts as video_prompts
 
 
-def sample_ugc05_fields(shot_index=1, content_type="dialogue", dialogue="สวัสดี", hd=True):
+def sample_ugc05_fields(shot_index=1, content_type="dialogue", dialogue="สวัสดี", hd=True, video_type="UGC"):
     shot = {
         "shot_index": shot_index,
         "shot_title": "Hook",
@@ -21,6 +21,8 @@ def sample_ugc05_fields(shot_index=1, content_type="dialogue", dialogue="สว�
         "speaker_visible": True,
         "dialogue": dialogue,
         "dialogue_zh": "你好",
+        "video_type": video_type,
+        "content_mode": "non_ugc_animation" if video_type == "非UGC" else "ugc",
     }
     fields = {
         "分镜序号": str(shot_index),
@@ -41,6 +43,8 @@ class UGCVideoPromptsTest(unittest.TestCase):
         assumptions = []
         item = video_prompts.build_shot_video_prompt("rec05", sample_ugc05_fields(), assumptions)
         self.assertEqual(item["content_type"], "dialogue")
+        self.assertEqual(item["video_type"], "UGC")
+        self.assertEqual(item["prompt_stage"], video_prompts.UGC_VIDEO_PROMPT_STAGE_NAME)
         self.assertTrue(item["audio_plan"]["has_voiceover"])
         self.assertEqual(item["audio_plan"]["language"], "Thai")
         self.assertIn("严格以输入图片作为唯一视觉锚点", item["prompt_cn"][:80])
@@ -48,6 +52,14 @@ class UGCVideoPromptsTest(unittest.TestCase):
         self.assertIn("不生成字幕", item["prompt_cn"])
         self.assertIn("No face drift", item["prompt_en"])
         self.assertEqual(assumptions, [])
+
+    def test_non_ugc_video_prompt_routes_to_non_ugc_stage_and_prompt_path(self):
+        fields = sample_ugc05_fields(video_type="非UGC")
+        item = video_prompts.build_shot_video_prompt("rec05", fields, [])
+        self.assertEqual(item["video_type"], "非UGC")
+        self.assertEqual(item["content_mode"], "non_ugc_animation")
+        self.assertEqual(item["prompt_stage"], video_prompts.NON_UGC_VIDEO_PROMPT_STAGE_NAME)
+        self.assertTrue(item["system_prompt_path"].endswith("non-ugc-animation-image-to-video-system-prompt-v1-content.md"))
 
     def test_silent_action_has_empty_audio_timeline(self):
         fields = sample_ugc05_fields(content_type="silent_action", dialogue="")
@@ -71,6 +83,7 @@ class UGCVideoPromptsTest(unittest.TestCase):
             )
         self.assertEqual(result["validation"]["status"], "ok")
         self.assertEqual(result["video_prompt_batch"]["shot_count"], 2)
+        self.assertEqual(result["video_prompt_batch"]["video_type"], "UGC")
         self.assertEqual([p["shot_index"] for p in result["shot_video_prompts"]], [1, 2])
 
     def test_missing_hd_image_blocks_single_shot(self):

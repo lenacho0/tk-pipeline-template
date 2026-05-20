@@ -75,6 +75,13 @@ class UGCAnalyzeValidationTest(unittest.TestCase):
         self.assertIn("MARKDOWN_OUTPUT", prompt)
         self.assertIn("script_generation_handoff", prompt)
 
+    def test_non_ugc_analysis_stage_and_prompt_path(self):
+        fields = {"视频类型": "非UGC"}
+        self.assertEqual(ugc_analyze.normalize_video_type(fields), "非UGC")
+        self.assertEqual(ugc_analyze.analysis_stage_for_fields(fields), ugc_analyze.NON_UGC_ANALYSIS_STAGE_NAME)
+        self.assertEqual(ugc_analyze.analysis_prompt_path_for_fields(fields).name, "non-ugc-animation-video-analysis-system-prompt-v1.md")
+        self.assertEqual(ugc_analyze.analysis_stage_for_fields({}), ugc_analyze.UGC_ANALYSIS_STAGE_NAME)
+
     def test_build_analysis_model_prompt_includes_system_prompt_and_payload(self):
         prompt = build_analysis_model_prompt("SYSTEM", {"target_market": "美国", "product_fields": {"产品名称": "Pet Brush"}})
         self.assertIn("SYSTEM", prompt)

@@ -4,6 +4,7 @@ import argparse
 import json
 import mimetypes
 import os
+import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -12,13 +13,35 @@ from ugc_config import UGC_BASE_TOKEN, load_ugc_table_ids
 from ugc_utils import extract_linked_record_ids, extract_text, parse_dual_output
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-ANALYSIS_PROMPT_PATH = ROOT_DIR / "docs" / "prompts" / "ugc-single-video-analysis-system-prompt-v1.md"
-LEGACY_ANALYSIS_PROMPT_PATH = ROOT_DIR / "docs" / "ugc-single-video-analysis-system-prompt-v1.md"
+ARCHIVED_PROMPT_DIR = ROOT_DIR / "docs" / "archive" / "ugc-content-chain-2026-05" / "prompts"
+ANALYSIS_PROMPT_PATH = ARCHIVED_PROMPT_DIR / "ugc-single-video-analysis-system-prompt-v1.md"
+NON_UGC_ANALYSIS_PROMPT_PATH = ARCHIVED_PROMPT_DIR / "non-ugc-animation-video-analysis-system-prompt-v1.md"
+LEGACY_ANALYSIS_PROMPT_PATHS = [
+    ROOT_DIR / "docs" / "prompts" / "ugc-single-video-analysis-system-prompt-v1.md",
+    ROOT_DIR / "docs" / "ugc-single-video-analysis-system-prompt-v1.md",
+]
+UGC_ANALYSIS_STAGE_NAME = "爆款视频分析-UGC"
+NON_UGC_ANALYSIS_STAGE_NAME = "非UGC-爆款视频分析"
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordUpdater = Callable[[str, str, str, Dict[str, Any]], Any]
 ProductTableIdGetter = Callable[[], str]
-ModelConfigLoader = Callable[[str], Dict[str, str]]
+ModelConfigLoader = Callable[..., Dict[str, str]]
+
+
+def normalize_video_type(fields: Dict[str, Any]) -> str:
+    raw = extract_text(fields.get("视频类型")).strip().lower()
+    if raw in {"非ugc", "non-ugc", "non_ugc", "nonugc", "非 ugc"}:
+        return "非UGC"
+    return "UGC"
+
+
+def analysis_stage_for_fields(fields: Dict[str, Any]) -> str:
+    return NON_UGC_ANALYSIS_STAGE_NAME if normalize_video_type(fields) == "非UGC" else UGC_ANALYSIS_STAGE_NAME
+
+
+def analysis_prompt_path_for_fields(fields: Dict[str, Any]) -> Path:
+    return NON_UGC_ANALYSIS_PROMPT_PATH if normalize_video_type(fields) == "非UGC" else ANALYSIS_PROMPT_PATH
 
 
 @dataclass
@@ -63,9 +86,15 @@ def validate_ugc01_inputs(fields: Dict[str, Any]) -> UGC01ValidationResult:
 def load_analysis_system_prompt(path: Path = ANALYSIS_PROMPT_PATH) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8")
-    if path == ANALYSIS_PROMPT_PATH and LEGACY_ANALYSIS_PROMPT_PATH.exists():
-        return LEGACY_ANALYSIS_PROMPT_PATH.read_text(encoding="utf-8")
+    if path == ANALYSIS_PROMPT_PATH:
+        for legacy_path in LEGACY_ANALYSIS_PROMPT_PATHS:
+            if legacy_path.exists():
+                return legacy_path.read_text(encoding="utf-8")
     return path.read_text(encoding="utf-8")
+
+
+def load_analysis_system_prompt_for_fields(fields: Dict[str, Any]) -> str:
+    return load_analysis_system_prompt(analysis_prompt_path_for_fields(fields))
 
 
 def build_blocked_analysis_json(result: UGC01ValidationResult) -> Dict[str, Any]:
@@ -188,37 +217,47 @@ def get_product_table_id() -> str:
     return TABLE_PRODUCT
 
 
-def find_ugc_analysis_config_record_id(token: str) -> str:
+def find_analysis_config_record_id(token: str, stage_name: str) -> str:
     from common import TABLE_CONFIG, safe_list_records
 
     records = safe_list_records(token, TABLE_CONFIG)
     for record in records:
         fields = record.get("fields", {})
         stage_values = fields.get("环节") or []
-        if isinstance(stage_values, list) and "爆款视频分析-UGC" in stage_values:
+        if isinstance(stage_values, list) and stage_name in stage_values:
             return record.get("record_id", "")
-        if extract_text(stage_values).strip() == "爆款视频分析-UGC":
+        if extract_text(stage_values).strip() == stage_name:
             return record.get("record_id", "")
     return ""
 
 
-def get_ugc_analysis_model_config(token: str) -> Dict[str, str]:
+def find_ugc_analysis_config_record_id(token: str) -> str:
+    return find_analysis_config_record_id(token, UGC_ANALYSIS_STAGE_NAME)
+
+
+def get_ugc_analysis_model_config(token: str, fields: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     from common import CONFIG_RECORDS, get_model_config
 
+    fields = fields or {}
+    stage_name = analysis_stage_for_fields(fields)
+    env_key = "NON_UGC_ANALYSIS_CONFIG_RECORD_ID" if stage_name == NON_UGC_ANALYSIS_STAGE_NAME else "UGC_ANALYSIS_CONFIG_RECORD_ID"
     record_id = (
-        os.environ.get("UGC_ANALYSIS_CONFIG_RECORD_ID")
-        or CONFIG_RECORDS.get("ugc_single_video_analysis")
-        or find_ugc_analysis_config_record_id(token)
-        or CONFIG_RECORDS.get("analysis")
+        os.environ.get(env_key)
+        or (CONFIG_RECORDS.get("ugc_single_video_analysis") if stage_name == UGC_ANALYSIS_STAGE_NAME else "")
+        or find_analysis_config_record_id(token, stage_name)
+        or (CONFIG_RECORDS.get("analysis") if stage_name == UGC_ANALYSIS_STAGE_NAME else "")
     )
     if not record_id:
-        raise ValueError("缺少 UGC 分析模型配置 record_id；请配置爆款视频分析-UGC配置记录或 UGC_ANALYSIS_CONFIG_RECORD_ID。")
+        raise ValueError(f"缺少分析模型配置 record_id；请配置{stage_name}配置记录或 {env_key}。")
     config = get_model_config(token, record_id)
+    prompt = (config.get("prompt") or "").strip() or load_analysis_system_prompt(analysis_prompt_path_for_fields(fields))
     return {
+        "record_id": record_id,
+        "stage": stage_name,
         "model": (config.get("model") or "gemini-2.5-flash").strip(),
         "api_key": (config.get("api_key") or "").strip(),
         "api_base": (config.get("api_base") or "https://aihubmix.com/gemini").strip(),
-        "prompt": (config.get("prompt") or "").strip(),
+        "prompt": prompt,
     }
 
 
@@ -305,6 +344,24 @@ def build_inline_video_part(video_path: str) -> Any:
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type)
 
 
+def call_with_timeout(fn: Callable[[], Any], *, timeout_sec: int, label: str) -> Any:
+    if timeout_sec <= 0:
+        return fn()
+    if not hasattr(signal, "SIGALRM"):
+        return fn()
+
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"{label} 超时（{timeout_sec}秒）")
+
+    old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.alarm(timeout_sec)
+    try:
+        return fn()
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+
 def call_ugc_analysis_model(
     token: str,
     fields: Dict[str, Any],
@@ -326,11 +383,17 @@ def call_ugc_analysis_model(
     video_path, _source = prepare_ugc_video_file(token, fields, record_id)
     client = get_gemini_client(api_key, api_base)
 
+    request_timeout_sec = int(os.environ.get("UGC_ANALYSIS_MODEL_TIMEOUT_SEC") or model_config.get("timeout_sec") or 240)
+
     if should_use_inline_video_input(model_config):
         video_part = build_inline_video_part(video_path)
         response = with_retry(
-            lambda: client.models.generate_content(model=model_name, contents=[video_part, prompt_text]),
-            max_attempts=3,
+            lambda: call_with_timeout(
+                lambda: client.models.generate_content(model=model_name, contents=[video_part, prompt_text]),
+                timeout_sec=request_timeout_sec,
+                label="gemini UGC single video analyze generate_content inline video",
+            ),
+            max_attempts=1,
             label="gemini UGC single video analyze generate_content inline video",
         )
         result = getattr(response, "text", "") or ""
@@ -343,8 +406,12 @@ def call_ugc_analysis_model(
     uploaded = upload_and_wait_active(client, video_path, max_wait=180)
     try:
         response = with_retry(
-            lambda: client.models.generate_content(model=model_name, contents=[uploaded, prompt_text]),
-            max_attempts=3,
+            lambda: call_with_timeout(
+                lambda: client.models.generate_content(model=model_name, contents=[uploaded, prompt_text]),
+                timeout_sec=request_timeout_sec,
+                label="gemini UGC single video analyze generate_content uploaded file",
+            ),
+            max_attempts=1,
             label="gemini UGC single video analyze generate_content uploaded file",
         )
         result = getattr(response, "text", "") or ""
@@ -389,13 +456,32 @@ def run_ugc01_analysis(
             record_id=record_id,
         )
         if raw_model_output is None and call_model:
-            raw_model_output = call_ugc_analysis_model(
-                token=token,
-                fields=fields,
-                record_id=record_id,
-                prompt_payload=prompt_payload,
-                model_config=model_config_loader(token),
-            )
+            try:
+                model_config = model_config_loader(token, fields)
+            except TypeError:
+                model_config = model_config_loader(token)
+            try:
+                raw_model_output = call_ugc_analysis_model(
+                    token=token,
+                    fields=fields,
+                    record_id=record_id,
+                    prompt_payload=prompt_payload,
+                    model_config=model_config,
+                )
+            except Exception as exc:
+                error_payload = {
+                    "分析状态": "分析失败",
+                    "分析摘要": f"模型分析失败：{str(exc)[:500]}",
+                    "分析结果JSON": json.dumps({
+                        "analysis_scope": "single_video",
+                        "video_type": normalize_video_type(fields),
+                        "content_mode": "non_ugc_animation" if normalize_video_type(fields) == "非UGC" else "ugc",
+                        "error": str(exc)[:1000],
+                    }, ensure_ascii=False, indent=2),
+                }
+                if not dry_run:
+                    update_record_fn(token, table_id, record_id, error_payload)
+                raise
 
         if raw_model_output is None:
             if not dry_run:

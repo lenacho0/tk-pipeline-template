@@ -6,8 +6,11 @@ from typing import Dict
 
 UGC_BASE_TOKEN = "LBWUbgRfEavAgjsXNIhcpo0Dnvb"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TABLE_IDS_PATH = PROJECT_ROOT / "docs" / "ugc" / "base" / "ugc-base-table-ids-LBWU-2026-04-29.json"
-LEGACY_TABLE_IDS_PATH = PROJECT_ROOT / "docs" / "ugc-base-table-ids-LBWU-2026-04-29.json"
+TABLE_IDS_PATH = PROJECT_ROOT / "docs" / "archive" / "ugc-content-chain-2026-05" / "ugc" / "base" / "ugc-base-table-ids-LBWU-2026-04-29.json"
+LEGACY_TABLE_IDS_PATHS = [
+    PROJECT_ROOT / "docs" / "ugc" / "base" / "ugc-base-table-ids-LBWU-2026-04-29.json",
+    PROJECT_ROOT / "docs" / "ugc-base-table-ids-LBWU-2026-04-29.json",
+]
 
 REQUIRED_UGC_TABLE_KEYS = [
     "ugc_01_analysis",
@@ -22,8 +25,11 @@ REQUIRED_UGC_TABLE_KEYS = [
 
 def load_ugc_table_ids(path: Path = TABLE_IDS_PATH) -> Dict[str, str]:
     resolved_path = path
-    if not resolved_path.exists() and path == TABLE_IDS_PATH and LEGACY_TABLE_IDS_PATH.exists():
-        resolved_path = LEGACY_TABLE_IDS_PATH
+    if not resolved_path.exists() and path == TABLE_IDS_PATH:
+        for legacy_path in LEGACY_TABLE_IDS_PATHS:
+            if legacy_path.exists():
+                resolved_path = legacy_path
+                break
     data = json.loads(resolved_path.read_text(encoding="utf-8"))
     missing = [key for key in REQUIRED_UGC_TABLE_KEYS if not data.get(key)]
     if missing:

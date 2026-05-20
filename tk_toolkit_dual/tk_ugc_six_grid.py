@@ -17,6 +17,7 @@ from ugc_reroll_utils import build_candidate_fields
 from ugc_utils import extract_text, first_present
 
 UGC_GRID_STAGE_NAME = "UGC-9宫格分镜图生成"
+NON_UGC_GRID_STAGE_NAME = "非UGC-9宫格分镜图生成"
 LEGACY_UGC_GRID_STAGE_NAME = "UGC-6宫格分镜图生成"
 GRID_PROMPT_FIELD = "9宫格提示词JSON"
 GRID_STATUS_FIELD = "9宫格生成状态"
@@ -243,6 +244,22 @@ def build_panel_prompt(shot: Dict[str, Any], grid: Dict[str, Any], script_json: 
     }
 
 
+def content_mode_from_script_json(script_json: Dict[str, Any]) -> str:
+    raw = str(script_json.get("video_type") or script_json.get("content_mode") or "").strip().lower()
+    if raw in {"非ugc", "non-ugc", "non_ugc", "nonugc", "non_ugc_animation", "非 ugc"}:
+        return "非UGC"
+    vt = script_json.get("version_task") if isinstance(script_json.get("version_task"), dict) else {}
+    raw_vt = str(vt.get("video_type") or vt.get("content_mode") or "").strip().lower()
+    if raw_vt in {"非ugc", "non-ugc", "non_ugc", "nonugc", "non_ugc_animation", "非 ugc"}:
+        return "非UGC"
+    return "UGC"
+
+
+def grid_stage_for_prompt_json(prompt_json: Dict[str, Any]) -> str:
+    raw = str(prompt_json.get("content_mode") or prompt_json.get("video_type") or "").strip().lower()
+    return NON_UGC_GRID_STAGE_NAME if raw in {"非ugc", "non-ugc", "non_ugc", "nonugc", "non_ugc_animation", "非 ugc"} else UGC_GRID_STAGE_NAME
+
+
 def build_six_grid_prompt_json(ugc03_record_id: str, script_json: Dict[str, Any], layout: str = "3行x3列") -> Dict[str, Any]:
     # Backward-compatible function name: business semantics are now a fixed 9-grid container.
     layout = "3行x3列"
@@ -256,7 +273,9 @@ def build_six_grid_prompt_json(ugc03_record_id: str, script_json: Dict[str, Any]
         else:
             panels.append(build_panel_prompt({}, {}, script_json, grid_index=idx, active_count=active_count, active=False))
     return {
-        "task_type": "UGC_9_GRID_STORYBOARD_DYNAMIC_SHOTS",
+        "task_type": "NON_UGC_9_GRID_STORYBOARD_DYNAMIC_SHOTS" if content_mode_from_script_json(script_json) == "非UGC" else "UGC_9_GRID_STORYBOARD_DYNAMIC_SHOTS",
+        "content_mode": "non_ugc_animation" if content_mode_from_script_json(script_json) == "非UGC" else "ugc",
+        "video_type": content_mode_from_script_json(script_json),
         "source_ugc03_record_id": ugc03_record_id,
         "layout": layout,
         "effective_shot_count": active_count,
@@ -324,12 +343,13 @@ def find_config_record_id(token: str, stage_name: str) -> str:
     return ""
 
 
-def get_grid_model_config(token: str) -> Dict[str, str]:
+def get_grid_model_config(token: str, stage_name: str = UGC_GRID_STAGE_NAME) -> Dict[str, str]:
     from common import TABLE_CONFIG
 
-    rid = os.environ.get("UGC_GRID_CONFIG_RECORD_ID") or find_config_record_id(token, UGC_GRID_STAGE_NAME)
+    env_key = "NON_UGC_GRID_CONFIG_RECORD_ID" if stage_name == NON_UGC_GRID_STAGE_NAME else "UGC_GRID_CONFIG_RECORD_ID"
+    rid = os.environ.get(env_key) or find_config_record_id(token, stage_name)
     if not rid:
-        raise ValueError(f"未找到模型配置记录: {UGC_GRID_STAGE_NAME}")
+        raise ValueError(f"未找到模型配置记录: {stage_name}")
     fields = get_ugc_record(token, TABLE_CONFIG, rid)
     return {
         "record_id": rid,
@@ -593,7 +613,7 @@ def run_image_generation(
     prompt = build_combined_image_prompt(prompt_json)
     canvas_ratio = prompt_json.get("combined_canvas_aspect_ratio") or layout_canvas_ratio(layout)
     image_metadata = {"aspectRatio": canvas_ratio, "panelAspectRatio": "9:16", "urls": []}
-    config = get_grid_model_config(token)
+    config = get_grid_model_config(token, grid_stage_for_prompt_json(prompt_json))
     result: Dict[str, Any] = {
         "ugc04_record_id": ugc04_record_id,
         "dry_run": not call_image,

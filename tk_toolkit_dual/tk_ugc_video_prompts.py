@@ -13,7 +13,11 @@ from ugc_reroll_utils import build_candidate_fields
 from tk_ugc_six_grid import get_feishu_token, get_ugc_record, create_ugc_record, update_ugc_record, json_dumps
 from tk_ugc_shot_images import get_attachment_token
 
-VIDEO_PROMPT_SYSTEM_PROMPT_PATH = Path(__file__).resolve().parents[1] / "docs" / "prompts" / "ugc-image-to-video-system-prompt-2026-05-02.md"
+PROMPT_DIR = Path(__file__).resolve().parents[1] / "docs" / "archive" / "ugc-content-chain-2026-05" / "prompts"
+VIDEO_PROMPT_SYSTEM_PROMPT_PATH = PROMPT_DIR / "ugc-image-to-video-system-prompt-2026-05-02.md"
+NON_UGC_VIDEO_PROMPT_SYSTEM_PROMPT_PATH = PROMPT_DIR / "non-ugc-animation-image-to-video-system-prompt-v1-content.md"
+UGC_VIDEO_PROMPT_STAGE_NAME = "UGC-视频提示词生成"
+NON_UGC_VIDEO_PROMPT_STAGE_NAME = "非UGC-视频提示词生成"
 BASE_WORK_DIR = Path(__file__).resolve().parent / "workspace_ryan" / "ugc_video_prompt_work"
 LINKED_GRID_FIELD = "关联9宫格任务"
 LEGACY_LINKED_GRID_FIELD = "关联6宫格任务"
@@ -50,6 +54,21 @@ def parse_json_field(raw: Any, label: str) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{label} 不是 JSON 对象")
     return data
+
+
+def normalize_content_mode_from_shot(shot: Dict[str, Any]) -> str:
+    raw = str(shot.get("video_type") or shot.get("content_mode") or "").strip().lower()
+    if raw in {"非ugc", "non-ugc", "non_ugc", "nonugc", "non_ugc_animation", "非 ugc"}:
+        return "非UGC"
+    return "UGC"
+
+
+def video_prompt_stage_for_mode(mode: str) -> str:
+    return NON_UGC_VIDEO_PROMPT_STAGE_NAME if mode == "非UGC" else UGC_VIDEO_PROMPT_STAGE_NAME
+
+
+def video_prompt_path_for_mode(mode: str) -> Path:
+    return NON_UGC_VIDEO_PROMPT_SYSTEM_PROMPT_PATH if mode == "非UGC" else VIDEO_PROMPT_SYSTEM_PROMPT_PATH
 
 
 def load_system_prompt(path: Path = VIDEO_PROMPT_SYSTEM_PROMPT_PATH) -> str:
@@ -218,6 +237,7 @@ def build_prompt_en(visual_motion: str, camera_motion: str, audio_plan: Dict[str
 
 def build_shot_video_prompt(ugc05_record_id: str, fields05: Dict[str, Any], assumptions: List[str]) -> Dict[str, Any]:
     shot = parse_json_field(fields05.get("对应脚本片段JSON"), f"UGC-05 {ugc05_record_id}.对应脚本片段JSON")
+    content_mode = normalize_content_mode_from_shot(shot)
     ugc03_ids = extract_linked_record_ids(fields05.get("关联脚本版本"))
     ugc04_ids = extract_linked_record_ids(first_present(fields05, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD]))
     shot_index = int(float(extract_text(fields05.get("分镜序号") or shot.get("shot_index") or 0)))
@@ -244,6 +264,10 @@ def build_shot_video_prompt(ugc05_record_id: str, fields05: Dict[str, Any], assu
         "panel_index": shot_index,
         "script_stage": script_stage(shot),
         "content_type": content_type,
+        "content_mode": "non_ugc_animation" if content_mode == "非UGC" else "ugc",
+        "video_type": content_mode,
+        "prompt_stage": video_prompt_stage_for_mode(content_mode),
+        "system_prompt_path": str(video_prompt_path_for_mode(content_mode)),
         "dynamic_goal": dynamic_goal_for_shot(shot, content_type),
         "duration_seconds": f"{duration}",
         "source_image_policy": {
@@ -307,16 +331,21 @@ def build_video_prompt_batch(
         ugc04_ids.extend(extract_linked_record_ids(first_present(fields, [LINKED_GRID_FIELD, LEGACY_LINKED_GRID_FIELD])))
         prompts.append(build_shot_video_prompt(rid, fields, assumptions))
     prompts.sort(key=lambda item: item["shot_index"])
+    modes = sorted(set(str(item.get("video_type") or "UGC") for item in prompts))
+    batch_mode = "非UGC" if modes == ["非UGC"] else "UGC" if modes == ["UGC"] else "mixed"
     return {
         "validation": {"status": "ok", "missing_required_inputs": [], "warnings": warnings},
         "video_prompt_batch": {
-            "task": "UGC-06 image-to-video prompt generation",
+            "task": "内容-06 image-to-video prompt generation",
+            "content_mode": "non_ugc_animation" if batch_mode == "非UGC" else "ugc" if batch_mode == "UGC" else "mixed",
+            "video_type": batch_mode,
+            "prompt_stage": video_prompt_stage_for_mode(batch_mode) if batch_mode in {"UGC", "非UGC"} else "mixed",
             "shot_count": len(prompts),
-            "source_stage": "UGC-05 enhanced shot images",
+            "source_stage": "内容-05 enhanced shot images",
             "visual_anchor_policy": "Each UGC-05 enhanced shot image is the only visual anchor for its video prompt.",
             "source_ugc03_record_ids": sorted(set(ugc03_ids)),
             "source_ugc04_record_ids": sorted(set(ugc04_ids)),
-            "system_prompt_path": str(VIDEO_PROMPT_SYSTEM_PROMPT_PATH),
+            "system_prompt_path": str(video_prompt_path_for_mode(batch_mode)) if batch_mode in {"UGC", "非UGC"} else "mixed",
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "global_negative_prompt": GLOBAL_NEGATIVE_PROMPT,
             "assumptions": assumptions,

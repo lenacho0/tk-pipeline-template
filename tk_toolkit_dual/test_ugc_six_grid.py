@@ -71,6 +71,17 @@ class UGCSixGridTest(unittest.TestCase):
         self.assertNotIn("aspect_ratio", prompt)
         self.assertEqual(prompt["effective_shot_count"], 6)
         self.assertFalse(prompt["panels"][6]["active"])
+        self.assertEqual(prompt["video_type"], "UGC")
+
+    def test_non_ugc_prompt_json_routes_to_non_ugc_grid_stage(self):
+        script = sample_script_json()
+        script["video_type"] = "非UGC"
+        script["content_mode"] = "non_ugc_animation"
+        prompt = grid.build_six_grid_prompt_json("rec03", script)
+        self.assertEqual(prompt["video_type"], "非UGC")
+        self.assertEqual(prompt["content_mode"], "non_ugc_animation")
+        self.assertEqual(grid.grid_stage_for_prompt_json(prompt), grid.NON_UGC_GRID_STAGE_NAME)
+        self.assertEqual(grid.grid_stage_for_prompt_json(sample_prompt_json()), grid.UGC_GRID_STAGE_NAME)
 
     def test_build_combined_image_prompt_contains_all_panels(self):
         prompt = grid.build_combined_image_prompt(sample_prompt_json())

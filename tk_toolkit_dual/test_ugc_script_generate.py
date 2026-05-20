@@ -92,6 +92,7 @@ class UGCGenerateTest(unittest.TestCase):
         self.ugc02 = {"目标市场": "泰国", "用户新产品": "猫狗通用益生菌软咀嚼片"}
         self.ugc01 = {
             "目标市场": "泰国",
+            "视频类型": "UGC",
             "分析结果JSON": json.dumps({
                 "script_generation_handoff": SAMPLE_HANDOFF,
                 "replicable_factors": {"copy_level": "B"},
@@ -142,6 +143,11 @@ class UGCGenerateTest(unittest.TestCase):
     def test_parse_model_output_rejects_missing_markers(self):
         with self.assertRaises(ValueError):
             gen.parse_model_output('{"shots": []}')
+
+    def test_non_ugc_script_stage_and_prompt_path(self):
+        self.assertEqual(gen.script_stage_for_fields({"视频类型": "非UGC"}), gen.NON_UGC_SCRIPT_STAGE_NAME)
+        self.assertEqual(gen.script_prompt_path_for_stage(gen.NON_UGC_SCRIPT_STAGE_NAME).name, "non-ugc-animation-script-generation-system-prompt-v3-content.md")
+        self.assertEqual(gen.script_stage_for_fields({}), gen.UGC_SCRIPT_STAGE_NAME)
 
     @patch("tk_ugc_script_generate.load_ugc_table_ids")
     @patch("tk_ugc_script_generate.get_script_model_config")
