@@ -40,6 +40,8 @@ TABLE_ANALYSIS     = _TABLES['analysis']          # 脚本分析
 TABLE_SCRIPT_GEN   = _TABLES['script_gen']        # 产品脚本生成
 TABLE_SHOT_SCRIPT_GEN = _TABLES.get('shot_script_gen', '')   # 逐镜头脚本生成
 TABLE_SHOT_STORYBOARD = _TABLES.get('shot_storyboard', '')   # 逐镜头分镜图
+TABLE_VOICE_LIBRARY = _TABLES.get('voice_library', '')        # 音色库
+TABLE_TEXT_AUDIO = _TABLES.get('text_audio', '')              # 文案转音频
 TABLE_PRODUCT      = _TABLES['product']           # 产品信息
 TABLE_MODEL        = _TABLES['model_appearance']  # 模特形象
 TABLE_PET_REFERENCE_V1 = _TABLES.get('pet_reference_v1', '')  # 宠物拟人参考池V1
@@ -106,7 +108,7 @@ def list_records(token, table_id, page_size=100):
         data = resp.json()
         if data.get('code') != 0:
             break
-        all_items.extend(data['data'].get('items', []))
+        all_items.extend(data['data'].get('items') or [])
         if not data['data'].get('has_more'):
             break
         page_token = data['data'].get('page_token')
@@ -340,7 +342,7 @@ def safe_list_records(token, table_id, page_size=100, max_attempts=3):
         if page_token:
             url += f'&page_token={page_token}'
         data = safe_request('get', url, headers=feishu_headers(token), timeout=15, max_attempts=max_attempts)
-        all_items.extend(data['data'].get('items', []))
+        all_items.extend(data['data'].get('items') or [])
         if not data['data'].get('has_more'):
             break
         page_token = data['data'].get('page_token')

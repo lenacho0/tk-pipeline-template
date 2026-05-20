@@ -36,7 +36,7 @@
   },
   "dispatcher": {
     "poll_interval": 30,
-    "healthcheck_hour": 8,
+    "healthcheck_hour": -1,
     "circuit_breaker": {
       "window_seconds": 900,
       "threshold": 3,
@@ -76,6 +76,11 @@
         "max_concurrency": 3,
         "max_retries": 2,
         "timeout": 1200
+      },
+      "tk_shot_video.py": {
+        "max_concurrency": 1,
+        "max_retries": 1,
+        "timeout": 2400
       }
     }
   },
