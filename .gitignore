@@ -66,6 +66,8 @@ memory/
 .tmp_*
 *.bak
 *.bak.*
+*.bak-*
+*.bak-disable-healthcheck-*
 
 # TK generated media/workspaces (large runtime outputs)
 workspace/
@@ -76,6 +78,9 @@ pet_reference_downloads/
 tk_toolkit_dual/workspace_*/
 tk_toolkit_dual/workspace/
 tk_toolkit_dual/ugc_*_work/
+
+# archived runtime payloads should stay local unless explicitly curated
+archive/runtime-artifacts/
 
 # TK local runtime cache/state variants
 **/.circuit_breakers*.json
