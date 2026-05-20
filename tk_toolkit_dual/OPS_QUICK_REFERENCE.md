@@ -1,253 +1,195 @@
-# TK Pipeline 运维速查
+# TK Pipeline Dual 运维速查
 
-## 1. 现在的运行方式
+## 1. 当前运行方式
 
-TK dispatcher 现在已经接入 macOS `launchd` 自动守护。
+当前旧 TK pipeline 主线由 `tk_toolkit_dual/` 承载，同一套代码跑两个 macOS `launchd` 实例：
 
-### 服务名
-- `com.ryan.tk-dispatcher`
+- `com.ryan.tk-dispatcher.ryan`
+- `com.ryan.tk-dispatcher.colleague`
 
-### 特性
-- 自动启动
-- 自动拉起
-- 不需要每天手动启动
+`tk_toolkit/` 暂时保留，因为 dual launchd 仍复用其中的 `.venv312` Python 运行时。
 
 ---
 
 ## 2. 常用命令
 
-### 安装 / 启用自动守护
+### 安装 / 启用双实例自动守护
+
 ```bash
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/install_launchd.sh
+bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/install_launchd_instances.sh
 ```
 
-### 卸载 / 关闭自动守护
+### 卸载 / 关闭双实例自动守护
+
 ```bash
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/uninstall_launchd.sh
+bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/uninstall_launchd_instances.sh
 ```
 
-### 手动查看 launchd 状态
+### 查看 launchd 状态
+
 ```bash
-launchctl print gui/$(id -u)/com.ryan.tk-dispatcher | sed -n '1,120p'
+launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.ryan | sed -n '1,120p'
+launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.colleague | sed -n '1,120p'
 ```
 
-### 手动重启服务
+### 重启服务
+
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.ryan.tk-dispatcher
+launchctl kickstart -k gui/$(id -u)/com.ryan.tk-dispatcher.ryan
+launchctl kickstart -k gui/$(id -u)/com.ryan.tk-dispatcher.colleague
 ```
 
-### 手动启动 dispatcher（非 launchd 方式）
+### 手动启动 dispatcher
+
 ```bash
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/run_dispatcher.sh
+cd /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual
+TK_INSTANCE=ryan TK_CONFIG_FILE=$PWD/config.ryan.json ./run_dispatcher_instance.sh
+TK_INSTANCE=colleague TK_CONFIG_FILE=$PWD/config.colleague.json ./run_dispatcher_instance.sh
 ```
 
-### 手动停止 dispatcher（非 launchd 方式）
+### 手动停止 dispatcher
+
 ```bash
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/stop_dispatcher.sh
+cd /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual
+TK_INSTANCE=ryan ./stop_dispatcher_instance.sh
+TK_INSTANCE=colleague ./stop_dispatcher_instance.sh
 ```
 
 ---
 
 ## 3. 健康检查
 
-### 跑一遍健康巡检
+### Ryan
+
 ```bash
-/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_healthcheck.py
+TK_INSTANCE=ryan TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.ryan.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
 ```
 
-### 检查 dispatcher 心跳
+### Colleague
+
 ```bash
-cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.dispatcher_heartbeat.json
+TK_INSTANCE=colleague TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.colleague.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
 ```
 
-### 心跳字段含义
-- `time`: 最近心跳时间
-- `status`: 运行状态（如 `running` / `crashed`）
-- `note`: 崩溃说明或附加说明
-- `pid`: 当时进程号
+### 心跳文件
+
+```bash
+cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.ryan.json
+cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.colleague.json
+```
+
+心跳字段含义：
+
+- `time`：最近心跳时间
+- `status`：运行状态
+- `note`：崩溃说明或附加说明
+- `pid`：当时进程号
 
 ---
 
 ## 4. 关键日志与状态文件
 
-### 主日志
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/dispatcher.log`
+### Ryan
 
-### launchd 输出日志
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/launchd.out.log`
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/launchd.err.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher.ryan.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher-runtime.ryan.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.ryan.out.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.ryan.err.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.ryan.json`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_metrics.ryan.json`
 
-### 运行中任务状态
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.running_tasks.json`
+### Colleague
 
-### 重试状态
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.retry_state.json`
-
-### dispatcher 心跳
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.dispatcher_heartbeat.json`
-
-### 每日统计
-- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.dispatcher_metrics.json`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher.colleague.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher-runtime.colleague.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.colleague.out.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/launchd.colleague.err.log`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.colleague.json`
+- `/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_metrics.colleague.json`
 
 ---
 
 ## 5. 快速排查顺序
 
-如果出现：
-- 爆款抓取没动静
-- 表格状态一直停在“待执行”
-- pipeline 某环节突然不跑
+如果出现爆款抓取没动静、表格状态一直停在“待执行”、pipeline 某环节突然不跑，按这个顺序查。
 
-按这个顺序查：
+### 第一步：看实例在不在
 
-### 第一步：看 dispatcher 在不在
 ```bash
-launchctl print gui/$(id -u)/com.ryan.tk-dispatcher | sed -n '1,80p'
+launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.ryan | sed -n '1,80p'
+launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.colleague | sed -n '1,80p'
 ```
 
-或者：
+### 第二步：看心跳
+
 ```bash
-cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.dispatcher_heartbeat.json
+cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.ryan.json
+cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/.dispatcher_heartbeat.colleague.json
 ```
 
-### 第二步：看健康检查
+### 第三步：跑健康检查
+
 ```bash
-python3 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/tk_healthcheck.py
+TK_INSTANCE=ryan TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.ryan.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
+TK_INSTANCE=colleague TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.colleague.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
 ```
 
-### 第三步：看最新日志
+### 第四步：看最新日志
+
 ```bash
-tail -n 120 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/dispatcher.log
+tail -n 120 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher.ryan.log
+tail -n 120 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/dispatcher.colleague.log
 ```
 
-### 第四步：看有没有任务真的被捞起
+### 第五步：确认任务是否被捞起
+
 关注日志里是否出现：
-- `🚀 已启动任务`
-- `✅ 完成`
-- `❌ 失败`
 
-### 第五步：看是不是 Feishu / Bitable 异常
-重点关注这些报错：
-- `code=1254002 msg=Fail`
-- `Read timed out`
-- `SSL EOF`
-- `获取飞书 Token 失败`
+- `已启动任务`
+- `完成`
+- `失败`
 
 ---
 
-## 6. 现在常见故障模式
+## 6. 常见故障模式
 
-### 故障模式 A：状态一直待执行，没有动静
+### 状态一直待执行，没有动静
+
 大概率原因：
-- dispatcher 没在跑
-- dispatcher 掉线了
+
+- 对应 dispatcher 实例没在跑
 - launchd 没拉起来
+- 记录状态字段不匹配
 
-优先检查：
-- launchd 状态
-- heartbeat
-- dispatcher.log
+优先检查 launchd 状态、heartbeat、dispatcher 日志。
 
-### 故障模式 B：dispatcher 在跑，但任务还是不动
+### dispatcher 在跑，但任务还是不动
+
 大概率原因：
+
 - 表格读失败
 - Feishu Bitable 异常
-- 目标表字段状态不匹配
+- 目标表字段或状态值不匹配
 
-优先检查：
-- `tk_healthcheck.py`
-- `dispatcher.log`
-- 表格里的状态字段值是否正确
+优先检查 `tk_healthcheck.py`、dispatcher 日志、表格里的状态字段值。
 
-### 故障模式 C：任务被启动了，但后面失败
+### 任务被启动了，但后面失败
+
 大概率原因：
+
 - 下游脚本自身报错
 - 外部 API 异常
 - 文件上传或写回失败
 
-优先检查：
-- `dispatcher.log`
-- 对应脚本日志输出
-- `.retry_state.json`
+优先检查 dispatcher 日志、对应脚本输出和 `.retry_state.<instance>.json`。
 
 ---
 
-## 7. 任务触发的关键规则
+## 7. 相关文件
 
-### 爆款抓取
-- 表：`TABLE_FETCH_CONFIG`
-- 状态字段：`执行状态`
-- 触发值：`待执行`
-- 运行中：`抓取中`
-- 脚本：`tk_fetch.py`
-
-如果某条爆款抓取任务不动，首先确认：
-- dispatcher 活着
-- 那条记录的 `执行状态` 真的等于 `待执行`
-
----
-
-## 8. 当前已做的稳定性增强
-
-已经做了这些：
-- dispatcher 顶层 crash 兜底
-- heartbeat 心跳文件
-- healthcheck 增强
-- 启停脚本清理 heartbeat
-- launchd 自动守护
-
-这意味着现在比以前更容易：
-- 发现掉线
-- 自动恢复
-- 查最后崩溃信息
-
----
-
-## 9. 当前仍需注意的风险
-
-虽然现在已经加了自动守护，但还不是绝对无敌。
-
-仍需关注：
-- Feishu / Bitable 波动
-- token 刷新失败
-- 网络超时
-- 下游脚本逻辑错误
-
-所以现在的状态是：
-- **不容易悄悄死掉**
-- 但外部依赖异常仍可能影响任务执行
-
----
-
-## 10. 出现问题时最短处理法
-
-### 如果你只想先恢复服务
-```bash
-launchctl kickstart -k gui/$(id -u)/com.ryan.tk-dispatcher
-```
-
-### 如果你想先快速看它是不是活着
-```bash
-cat /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.dispatcher_heartbeat.json
-```
-
-### 如果你想先看最近到底报了什么错
-```bash
-tail -n 120 /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/dispatcher.log
-```
-
----
-
-## 11. 相关文件
-
-### launchd 配置
-- `tk_toolkit/com.ryan.tk-dispatcher.plist`
-
-### 安装脚本
-- `tk_toolkit/install_launchd.sh`
-
-### 卸载脚本
-- `tk_toolkit/uninstall_launchd.sh`
-
-### 本文档
-- `tk_toolkit/OPS_QUICK_REFERENCE.md`
+- `tk_toolkit_dual/README_DUAL.md`
+- `tk_toolkit_dual/launchd_usage_dual.md`
+- `tk_toolkit_dual/com.ryan.tk-dispatcher.ryan.plist`
+- `tk_toolkit_dual/com.ryan.tk-dispatcher.colleague.plist`
+- `tk_toolkit_dual/install_launchd_instances.sh`
+- `tk_toolkit_dual/uninstall_launchd_instances.sh`
