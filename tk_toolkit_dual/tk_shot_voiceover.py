@@ -240,11 +240,19 @@ def upload_audio_to_feishu(token, file_path, file_name):
     return data['data']['file_token']
 
 
-def generate_voiceover(token, record_id):
+def resolve_voiceover_table(table='shot_storyboard'):
+    if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
+        if not TABLE_SCRIPT_DOC_SHOTS:
+            raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
+        return TABLE_SCRIPT_DOC_SHOTS
     if not TABLE_SHOT_STORYBOARD:
         raise Exception('config.json 尚未配置 shot_storyboard 表 ID')
+    return TABLE_SHOT_STORYBOARD
 
-    fields = safe_get_record(token, TABLE_SHOT_STORYBOARD, record_id)
+
+def generate_voiceover(token, record_id, table='shot_storyboard'):
+    table_id = resolve_voiceover_table(table)
+    fields = safe_get_record(token, table_id, record_id)
     voiceover_text = extract_text(fields.get('口播文本', '')).strip()
     if not voiceover_text:
         success_fields = {
@@ -252,15 +260,15 @@ def generate_voiceover(token, record_id):
             '口播音频时长秒': 0,
             '口播音频错误信息': '',
         }
-        safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields))
+        safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
         log_event('INFO', 'shot voiceover skipped empty text', record_id=record_id)
         return
 
     safe_update_record(
         token,
-        TABLE_SHOT_STORYBOARD,
+        table_id,
         record_id,
-        filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {'口播音频状态': '生成中', '口播音频错误信息': ''}),
+        filter_existing_fields(token, table_id, {'口播音频状态': '生成中', '口播音频错误信息': ''}),
     )
 
     config = apply_record_voice_options(find_stage_config(token), fields)
@@ -285,19 +293,20 @@ def generate_voiceover(token, record_id):
         '口播音频时长秒': result.get('duration_sec') or 0,
         '口播音频状态': '成功',
         '口播音频错误信息': '',
+        '口播音频FileToken': file_token,
         '生成时间': int(time.time() * 1000),
     }
-    safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields))
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
     try:
         safe_update_record(
             token,
-            TABLE_SHOT_STORYBOARD,
+            table_id,
             record_id,
-            filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {'口播音频': [{'file_token': file_token}]}),
+            filter_existing_fields(token, table_id, {'口播音频': [{'file_token': file_token}]}),
             max_attempts=1,
         )
     except Exception as e:
-        safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
+        safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, {
             '口播音频错误信息': f'口播音频附件写回失败，但本地音频已生成: {redact_secret(str(e))[:300]}',
         }))
     log_event('INFO', 'shot voiceover success', record_id=record_id, duration_sec=result.get('duration_sec'), trace_id=result.get('trace_id'))
@@ -319,14 +328,17 @@ def classify_voiceover_error(err):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print('用法: python3 tk_shot_voiceover.py <shot_storyboard_record_id>')
-        sys.exit(1)
-
-    record_id = sys.argv[1]
+    import argparse
+    parser = argparse.ArgumentParser(description='逐镜头口播音频生成')
+    parser.add_argument('record_id')
+    parser.add_argument('--table', default='shot_storyboard', choices=['shot_storyboard', 'script_doc'])
+    args = parser.parse_args()
+    record_id = args.record_id
     token = get_feishu_token()
+    table_id = None
     try:
-        generate_voiceover(token, record_id)
+        table_id = resolve_voiceover_table(args.table)
+        generate_voiceover(token, record_id, table=args.table)
     except Exception as e:
         payload = build_error_payload(e, stage='generate_voiceover')
         err = redact_secret(payload['message'])
@@ -337,7 +349,7 @@ def main():
                 '口播音频错误信息': err,
                 '失败分类': classify_voiceover_error(e),
             }
-            safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, fail_fields))
+            safe_update_record(token, table_id or TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, table_id or TABLE_SHOT_STORYBOARD, fail_fields))
         except Exception:
             pass
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")

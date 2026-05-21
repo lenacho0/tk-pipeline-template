@@ -174,6 +174,7 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         )
 
         self.assertEqual(fields["口播文本"], "เลือกให้ถูก")
+        self.assertEqual(fields["口播音频状态"], "不触发")
         self.assertNotIn("分镜文案", fields)
         self.assertNotIn("分镜说明", fields)
         self.assertNotIn("口播音频时长秒", fields)
@@ -212,6 +213,8 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         self.assertIn("Thai dialogue:", prompt)
         self.assertIn("Voice style:", prompt)
         self.assertIn("Voice identity:", prompt)
+        self.assertIn("Global voice anchor:", prompt)
+        self.assertIn("voice profile ID voice-a", prompt)
         self.assertIn("Veo must directly generate the final local-language spoken audio", prompt)
         self.assertNotIn("使用参考音频作为最终口播内容", prompt)
 
@@ -236,6 +239,7 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         self.assertIn("Thai dialogue:", prompt)
         self.assertIn("使用参考音频作为最终口播内容", prompt)
         self.assertIn("reference voiceover audio", prompt)
+        self.assertIn("Global voice anchor:", prompt)
         self.assertIn("产品包装必须保持写实", prompt)
         self.assertIn("no subtitles", prompt)
 
@@ -360,6 +364,26 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
 
         self.assertIn("Voiceover: legacy narration", prompt)
         self.assertIn("Visual Description: legacy visual", prompt)
+        self.assertIn("本次重生成修改要求", prompt)
+        self.assertIn("无", prompt)
+
+    def test_single_shot_prompt_includes_revision_note_for_regeneration(self):
+        prompt = shot_storyboard._build_single_shot_prompt(
+            "BASE",
+            {
+                "分镜序号": 2,
+                "总分镜数": 5,
+                "画面描述": "主人拿着产品坐在浴室地垫旁",
+                "分镜图修改要求": "改成平视近景，产品包装正面对镜头，人物表情更自然，背景仍然是浴室。",
+            },
+            "混合",
+        )
+
+        self.assertIn("本次重生成修改要求", prompt)
+        self.assertIn("改成平视近景", prompt)
+        self.assertIn("产品包装正面对镜头", prompt)
+        self.assertIn("必须优先满足该要求", prompt)
+        self.assertIn("不能破坏产品写实一致性", prompt)
 
     def test_single_shot_prompt_keeps_screen_text_as_post_production_only(self):
         prompt = shot_storyboard._build_single_shot_prompt(
@@ -383,6 +407,31 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         self.assertIn("Source Beat: 视频 2：三规格 CTA", prompt)
         self.assertIn("Video Prompt Notes: dog raises paw, tail wag", prompt)
         self.assertIn("不要把 Screen Text", prompt)
+
+    def test_single_shot_prompt_does_not_reuse_previous_full_prompt_as_draft(self):
+        prompt = shot_storyboard._build_single_shot_prompt(
+            "BASE",
+            {
+                "分镜序号": 3,
+                "总分镜数": 5,
+                "画面描述": "主人拿出喷雾，狗狗在旁边",
+                "提示词": "Reference image 1 = product reference.\nReference image 2 = selected pet model reference.\n\n## 当前任务不是生成九宫格\nold full prompt",
+            },
+            "全写实",
+        )
+
+        self.assertIn("Image Prompt Draft: ", prompt)
+        self.assertNotIn("old full prompt", prompt)
+
+    def test_build_shot_reference_prompt_note_marks_pet_as_hard_anchor(self):
+        note = shot_storyboard.build_shot_reference_prompt_note([
+            {"role": "product"},
+            {"role": "pet:pet_hero"},
+            {"role": "human:owner"},
+        ])
+
+        self.assertIn("Reference image 2 = selected pet model reference (pet_hero)", note)
+        self.assertIn("hard identity anchors", note)
 
 
 if __name__ == "__main__":

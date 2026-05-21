@@ -8,6 +8,16 @@ import json, os, sys, time, base64, re, requests
 from google.genai import types
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
+from otu_image import (
+    DEFAULT_OTU_API_BASE,
+    DEFAULT_OTU_IMAGE_MODEL,
+    DEFAULT_OTU_IMAGE_SIZE,
+    download_otu_image_result,
+    extract_otu_result_url,
+    normalize_image_model_choice,
+    poll_otu_image_task,
+    submit_otu_image_task,
+)
 
 BASE_WORK_DIR = os.path.join(WORKSPACE, 'storyboard_work')
 
@@ -76,6 +86,25 @@ def upload_image_to_feishu(token, file_path, file_name):
     if data.get('code') != 0:
         raise Exception(f"飞书上传失败: {data.get('msg')}")
     return data['data']['file_token']
+
+
+def get_tmp_download_url(token, file_token):
+    url = f'https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url?file_tokens={file_token}'
+    resp = requests.get(url, headers={'Authorization': f'Bearer {token}'}, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get('code') != 0:
+        raise Exception(f'飞书临时下载 URL 获取失败: {data}')
+    items = data.get('data', {}).get('tmp_download_urls') or []
+    if isinstance(items, dict):
+        tmp = items.get(file_token) or items.get('tmp_download_url') or ''
+    elif items:
+        tmp = items[0].get('tmp_download_url') or items[0].get('url') or ''
+    else:
+        tmp = ''
+    if not tmp:
+        raise Exception('飞书临时下载 URL 为空')
+    return tmp
 
 
 def strip_non_voiceover_lines(script):
@@ -235,33 +264,31 @@ PANEL DESCRIPTIONS (follow each panel's style suffix exactly):
 
 
 def render_storyboard_image(client, model_name, parts, grid_prompt, out_path):
-    parts_step2 = parts + [types.Part.from_text(text=grid_prompt)]
+    raise RuntimeError("render_storyboard_image 已切换为 OTU 路径，请不要再调用 Gemini 旧实现")
 
-    for attempt in range(1, 4):
-        try:
-            r = client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role='user', parts=parts_step2)],
-                config=types.GenerateContentConfig(
-                    response_modalities=['image', 'text'],
-                    temperature=0.2
-                )
-            )
-            for part in r.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
-                    data = part.inline_data.data
-                    binary = base64.b64decode(data) if isinstance(data, str) else data
-                    with open(out_path, 'wb') as f:
-                        f.write(binary)
-                    if os.path.getsize(out_path) < 1000:
-                        raise Exception('返回了图片，但文件太小')
-                    return out_path
-            raise Exception('图片模型未返回图片内容')
-        except Exception as e:
-            if attempt >= 3:
-                raise
-            log_event('WARN', 'storyboard image generation retry', attempt=attempt, error=str(e)[:300])
-            time.sleep(5)
+
+def render_storyboard_with_otu(token, record_id, task_dir, grid_prompt, ref_urls, api_key, api_base, model_name, out_path):
+    submit_task_id, submit_body = submit_otu_image_task(
+        {
+            "api_key": api_key,
+            "api_base": api_base or DEFAULT_OTU_API_BASE,
+            "model": normalize_image_model_choice(model_name or DEFAULT_OTU_IMAGE_MODEL),
+        },
+        grid_prompt,
+        input_mode="image-to-image" if ref_urls else "text-to-image",
+        image_path="",
+        metadata={"urls": ref_urls, "aspectRatio": "9:16"},
+        size=DEFAULT_OTU_IMAGE_SIZE,
+    )
+    result = submit_body if not submit_task_id else poll_otu_image_task(
+        {"api_key": api_key, "api_base": api_base or DEFAULT_OTU_API_BASE, "model": normalize_image_model_choice(model_name or DEFAULT_OTU_IMAGE_MODEL)},
+        submit_task_id,
+    )
+    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
+    if not result_url:
+        raise Exception('OTU 九宫格图任务完成但未返回图片地址')
+    download_otu_image_result(result_url, out_path)
+    return out_path
 
 
 def main():
@@ -325,17 +352,6 @@ def main():
         if not os.path.exists(product_path) or os.path.getsize(product_path) < 1000:
             raise Exception('产品图片缺失')
 
-        from google import genai
-        client = genai.Client(api_key=api_key, http_options={'base_url': api_base})
-
-        product_file = with_retry(lambda: client.files.upload(file=product_path), max_attempts=3, label='upload product image')
-        parts = [types.Part.from_uri(file_uri=product_file.uri, mime_type='image/png')]
-        model_file = None
-
-        if os.path.exists(model_path) and os.path.getsize(model_path) > 1000:
-            model_file = with_retry(lambda: client.files.upload(file=model_path), max_attempts=3, label='upload model image')
-            parts.append(types.Part.from_uri(file_uri=model_file.uri, mime_type='image/png'))
-
         # ── Step 1: Try structured shots JSON from script_gen output ──────────────
         raw_structured = task.get('结构化脚本JSON', '')
         structured_shots = None
@@ -370,7 +386,22 @@ def main():
             print(f'  使用普通grid_prompt (fallback)')
 
         out_path = os.path.join(task_dir, f'{record_id}_storyboard.png')
-        render_storyboard_image(client, model_name, parts, grid_prompt, out_path)
+        ref_urls = []
+        if os.path.exists(product_path) and os.path.getsize(product_path) > 1000:
+            ref_urls.append(get_tmp_download_url(token, upload_image_to_feishu(token, product_path, 'product.png')))
+        if os.path.exists(model_path) and os.path.getsize(model_path) > 1000:
+            ref_urls.append(get_tmp_download_url(token, upload_image_to_feishu(token, model_path, 'model.png')))
+        render_storyboard_with_otu(
+            token,
+            record_id,
+            task_dir,
+            grid_prompt,
+            ref_urls,
+            api_key,
+            api_base,
+            model_name,
+            out_path,
+        )
 
         # Always write back shots used (structured or LLM-generated)
         shots_data_for_writeback = {'shots': shots}

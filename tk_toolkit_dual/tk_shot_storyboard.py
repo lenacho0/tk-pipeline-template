@@ -8,9 +8,22 @@
    - 对单条 shot 记录生成 1 张分镜图
 """
 import json, os, sys, time, base64
+from pathlib import Path
 from google.genai import types
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
+from otu_image import (
+    DEFAULT_ASPECT_RATIO,
+    DEFAULT_OTU_API_BASE,
+    DEFAULT_OTU_IMAGE_MODEL,
+    DEFAULT_OTU_IMAGE_SIZE,
+    download_otu_image_result,
+    extract_otu_result_url,
+    normalize_image_channel,
+    normalize_image_model_choice,
+    poll_otu_image_task,
+    submit_otu_image_task,
+)
 from tk_storyboard import ensure_task_dir, safe_download_attachment, upload_image_to_feishu
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
 
@@ -45,6 +58,17 @@ def filter_existing_fields(token, table_id, fields):
     return {k: v for k, v in fields.items() if k in existing}
 
 
+def normalize_video_model_choice(value):
+    raw = extract_text(value).strip().lower().replace('_', '-').replace(' ', '')
+    if not raw or raw in {'待确认', 'pending', 'default'}:
+        return 'veo3.1'
+    if raw in {'seeddance', 'seeddance2', 'seeddance2.0', 'seed-dance', 'seed-dance-2.0', 'seedance', 'seedance2.0'}:
+        return 'seeddance2.0'
+    if raw in {'veo', 'veo3', 'veo3.1', 'veo-3.1'} or raw.startswith('veo-3.1') or raw.startswith('veo3.1'):
+        return 'veo3.1'
+    return 'veo3.1'
+
+
 def cleanup_shots_by_source(token, source_record_id):
     items = safe_list_records(token, TABLE_SHOT_STORYBOARD)
     to_delete = []
@@ -65,17 +89,6 @@ def cleanup_shots_by_source(token, source_record_id):
         )
         deleted += 1
     return deleted
-
-
-def normalize_video_model_choice(value):
-    raw = extract_text(value).strip().lower().replace('_', '-').replace(' ', '')
-    if not raw or raw in {'待确认', 'pending', 'default'}:
-        return 'veo3.1'
-    if raw in {'seeddance', 'seeddance2', 'seeddance2.0', 'seed-dance', 'seed-dance-2.0', 'seedance', 'seedance2.0'}:
-        return 'seeddance2.0'
-    if raw in {'veo', 'veo3', 'veo3.1', 'veo-3.1'} or raw.startswith('veo-3.1') or raw.startswith('veo3.1'):
-        return 'veo3.1'
-    return 'veo3.1'
 
 
 def build_shot_record_fields(source_fields, shot, *, source_record_id, idx, total_shots, product_name, source_video_id, voice_id):
@@ -103,7 +116,7 @@ def build_shot_record_fields(source_fields, shot, *, source_record_id, idx, tota
         '目标时长秒': shot.get('duration_sec', ''),
         '口播文本': voiceover_text,
         '口播音色ID': voice_id,
-        '口播音频状态': '待生成' if voiceover_text else '成功',
+        '口播音频状态': '不触发' if voiceover_text else '成功',
         '口播音频错误信息': '',
         '角色ID': ', '.join(str(x) for x in character_ids if x),
         '宠物ID': ', '.join(str(x) for x in pet_ids if x),
@@ -152,11 +165,23 @@ def build_shot_record_fields(source_fields, shot, *, source_record_id, idx, tota
     return fields
 
 
-def _voice_identity_text(voice_id, speaker):
+def build_global_voice_anchor_text(voice_id, speaker):
     speaker_label = speaker or 'the speaking character'
     if voice_id:
-        return f"{speaker_label}; stable voice identity from voice profile ID {voice_id}; keep the same age impression, gender quality, pitch, timbre, accent, speaking speed, and emotional baseline across shots."
-    return f"{speaker_label}; stable local-language TikTok voice, natural Thai pronunciation when Thai dialogue is present, consistent age impression, pitch, timbre, accent, speaking speed, and emotional baseline across shots."
+        return (
+            f"Global voice anchor: voice profile ID {voice_id}; "
+            f"{speaker_label}; keep the same age impression, gender quality, pitch, timbre, accent, speaking speed, breathing style, and emotional baseline across all shots of the same script. "
+            "Do not drift to a different voice, different accent, or different vocal texture between shots."
+        )
+    return (
+        f"Global voice anchor: stable local-language TikTok voice; {speaker_label}; "
+        "natural Thai pronunciation when Thai dialogue is present; consistent age impression, pitch, timbre, accent, speaking speed, breathing style, and emotional baseline across all shots of the same script. "
+        "Do not drift to a different voice, different accent, or different vocal texture between shots."
+    )
+
+
+def _voice_identity_text(voice_id, speaker):
+    return build_global_voice_anchor_text(voice_id, speaker)
 
 
 def _voice_style_text(content_type, emotion):
@@ -367,6 +392,37 @@ def _find_group_anchor_image(token, source_record_id, current_record_id):
     return candidates[0][1]
 
 
+SHOT_REVISION_NOTE_FIELDS = (
+    '分镜图修改要求',
+    '修改要求',
+    '重生成备注',
+    '备注',
+)
+
+
+def _extract_shot_revision_note(shot_fields):
+    for field_name in SHOT_REVISION_NOTE_FIELDS:
+        note = extract_text(shot_fields.get(field_name, '')).strip()
+        if note:
+            return note
+    return ''
+
+
+def _clean_image_prompt_draft(value):
+    text = extract_text(value).strip()
+    if not text:
+        return ''
+    generated_prompt_markers = (
+        'Reference image 1 =',
+        '## 当前任务不是生成九宫格',
+        '## 单张图输出要求',
+        'Use these reference images as hard identity anchors',
+    )
+    if any(marker in text for marker in generated_prompt_markers):
+        return ''
+    return text
+
+
 def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     narration = extract_text(shot_fields.get('分镜文案', ''))
     voiceover = extract_text(shot_fields.get('口播文本', ''))
@@ -379,7 +435,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     pet_id = extract_text(shot_fields.get('宠物ID', ''))
     environment_id = extract_text(shot_fields.get('环境ID', ''))
     target_duration = extract_text(shot_fields.get('目标时长秒', ''))
-    image_prompt = extract_text(shot_fields.get('提示词', ''))
+    image_prompt = _clean_image_prompt_draft(shot_fields.get('图片提示词') or shot_fields.get('提示词', ''))
     shot_no = extract_text(shot_fields.get('分镜序号', ''))
     total_shots = extract_text(shot_fields.get('总分镜数', ''))
     raw_meta = extract_text(shot_fields.get('文本', '')).strip()
@@ -394,6 +450,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     screen_text_zh = extract_text(meta.get('screen_text_zh', '')).strip()
     source_beat = extract_text(meta.get('source_beat', '')).strip()
     video_prompt_notes = extract_text(meta.get('video_prompt_notes', '')).strip()
+    revision_note = _extract_shot_revision_note(shot_fields)
 
     normalized_style = normalize_storyboard_style(style)
     style_policy_block = format_style_policy_for_prompt(normalized_style)
@@ -439,9 +496,13 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
 - Source Beat: {source_beat}
 - Video Prompt Notes: {video_prompt_notes}
 
+## 本次重生成修改要求（如为空则忽略）
+{revision_note or '无'}
+
 ## 单张图输出要求
 - 只生成 1 张图，不要九宫格，不要 panel layout
 - 画面比例 9:16 竖图
+- 如果“本次重生成修改要求”非空，必须优先满足该要求；但不能破坏产品写实一致性、主角/宠物身份一致性、场景连续性和当前 shot 的故事任务
 - 不要文字，不要字幕，不要贴纸，不要水印
 - 不要把 Screen Text / Screen Text Chinese Meaning 生成到图片里；它们只供后期叠加字幕或人工检查
 - 必须保持产品外观与参考图完全一致
@@ -457,33 +518,22 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     return (base_prompt + shot_block).strip()
 
 
-def _render_single_image(client, model_name, parts, prompt, out_path):
-    parts_step = parts + [types.Part.from_text(text=prompt)]
-    for attempt in range(1, 4):
-        try:
-            r = client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role='user', parts=parts_step)],
-                config=types.GenerateContentConfig(
-                    response_modalities=['image', 'text'],
-                    temperature=0.2
-                )
-            )
-            for part in r.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
-                    data = part.inline_data.data
-                    binary = base64.b64decode(data) if isinstance(data, str) else data
-                    with open(out_path, 'wb') as f:
-                        f.write(binary)
-                    if os.path.getsize(out_path) < 1000:
-                        raise Exception('返回图片过小')
-                    return out_path
-            raise Exception('图像模型未返回图片内容')
-        except Exception as e:
-            if attempt >= 3:
-                raise
-            log_event('WARN', 'single shot image generation retry', attempt=attempt, error=str(e)[:300])
-            time.sleep(5)
+def build_shot_reference_prompt_note(refs):
+    if not refs:
+        return "No extra reference images were uploaded."
+    lines = []
+    for idx, ref in enumerate(refs, start=1):
+        role = ref.get("role", "reference")
+        if role == "product":
+            lines.append(f"Reference image {idx} = product reference. Keep the product shape, label, color, and logo unchanged.")
+        elif role.startswith("pet:"):
+            lines.append(f"Reference image {idx} = selected pet model reference ({role.split(':', 1)[1]}). Keep the same pet identity, breed, face, coat pattern, fur length, ear shape, and body proportions.")
+        elif role.startswith("human:"):
+            lines.append(f"Reference image {idx} = selected human model reference ({role.split(':', 1)[1]}). Keep the same person identity, face, hairstyle, body shape, and clothing silhouette.")
+        else:
+            lines.append(f"Reference image {idx} = {role}. Keep it aligned with the current shot requirement.")
+    lines.append("Use these reference images as hard identity anchors, not optional inspiration.")
+    return "\n".join(lines)
 
 
 def classify_render_error(err):
@@ -503,7 +553,118 @@ def classify_render_error(err):
     return mapping.get(payload['error_code'], '运行时bug')
 
 
-def render_shot(token, record_id):
+def _upload_reference_image_parts(client, refs):
+    parts = []
+    for ref in refs:
+        path = ref.get('path', '')
+        if not path or not os.path.exists(path) or os.path.getsize(path) < 1000:
+            raise Exception(f"参考图文件无效: {ref.get('role', '')}")
+        uploaded = with_retry(
+            lambda p=path: client.files.upload(file=p),
+            max_attempts=3,
+            label=f"upload reference image {ref.get('role', '')}",
+        )
+        parts.append(types.Part.from_uri(file_uri=uploaded.uri, mime_type='image/png'))
+    return parts
+
+
+def render_script_doc_shot(token, record_id):
+    if not TABLE_SCRIPT_DOC_TASKS or not TABLE_SCRIPT_DOC_REFERENCE_ASSETS or not TABLE_SCRIPT_DOC_SHOTS:
+        raise Exception('config.json 尚未配置脚本文档拆分表 ID')
+
+    from tk_script_doc_shots import (
+        build_reference_prompt_note,
+        collect_reference_images_for_shot,
+    )
+
+    shot_fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    parent_record_id = extract_text(shot_fields.get('父文档记录ID', '')).strip()
+    if not parent_record_id:
+        raise Exception('缺少父文档记录ID')
+
+    parent_fields = safe_get_record(token, TABLE_SCRIPT_DOC_TASKS, parent_record_id)
+    style = extract_text(parent_fields.get('分镜风格', '混合（产品写实+角色动画）'))
+    visual_bible = extract_text(parent_fields.get('解析结果JSON', ''))
+
+    config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
+    config_prompt = config.get('prompt', '') or (
+        "你是TikTok电商分镜图片生成专家。请根据以下信息生成一张高质量单图分镜图。\n\n"
+        "## 输出要求\n"
+        "- 只生成1张图片，不是九宫格，不是panel layout\n"
+        "- 画面比例9:16竖图\n"
+        "- 不要文字/字幕/贴纸/水印\n"
+    )
+
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        '分镜图生成状态': '生成中',
+        '分镜图错误信息': '',
+    }))
+
+    task_dir = ensure_task_dir(record_id)
+    refs = collect_reference_images_for_shot(
+        token,
+        shot_fields,
+        parent_fields,
+        safe_list_records(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS),
+        Path(task_dir),
+    )
+
+    model_choice = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
+    api_key = config['api_key']
+    api_base = config['api_base'] or DEFAULT_OTU_API_BASE
+    if not api_key:
+        raise Exception('飞书配置表缺少 API Key')
+    prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
+    prompt = f"{build_shot_reference_prompt_note(refs)}\n\n{prompt}".strip()
+    out_path = os.path.join(task_dir, f'{record_id}_shot.png')
+    ref_paths = [ref.get('path') for ref in refs if ref.get('path')]
+    submit_task_id, submit_body = submit_otu_image_task(
+        {
+            'api_key': api_key,
+            'api_base': api_base,
+            'model': model_choice,
+        },
+        prompt,
+        input_mode='image-to-image' if ref_paths else 'text-to-image',
+        image_path=ref_paths[0] if ref_paths else '',
+        metadata={'urls': ref_paths, 'aspectRatio': '9:16'},
+        size=DEFAULT_OTU_IMAGE_SIZE,
+    )
+    result = submit_body if not submit_task_id else poll_otu_image_task({
+        'api_key': api_key,
+        'api_base': api_base,
+        'model': model_choice,
+    }, submit_task_id)
+    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
+    if not result_url:
+        raise Exception('OTU 图像任务完成但未返回图片地址')
+    download_otu_image_result(result_url, out_path)
+
+    file_token = with_retry(
+        lambda: upload_image_to_feishu(token, out_path, f'{record_id}_shot.png'),
+        max_attempts=3,
+        label='upload script doc shot image to feishu'
+    )
+
+    success_fields = {
+        '分镜图': [{'file_token': file_token}],
+        '分镜图file_token': file_token,
+        '分镜图本地路径': out_path,
+        '提示词': prompt[:10000],
+        '分镜图生成状态': '成功',
+        '分镜图生成时间': int(time.time() * 1000),
+        '分镜图错误信息': '',
+        '错误信息': '',
+    }
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
+    log_event('INFO', 'script doc shot storyboard render success', record_id=record_id, reference_count=len(refs))
+    print(f'✅ 脚本文档单张分镜图生成完成: {record_id}')
+
+
+def render_shot(token, record_id, table='shot_storyboard'):
+    if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
+        return render_script_doc_shot(token, record_id)
+
     if not TABLE_SHOT_SCRIPT_GEN or not TABLE_SHOT_STORYBOARD:
         raise Exception('config.json 尚未配置 shot_script_gen / shot_storyboard 表 ID')
 
@@ -539,32 +700,28 @@ def render_shot(token, record_id):
     product_path, model_path = _download_product_and_model(token, source_fields, task_dir)
     if not os.path.exists(product_path) or os.path.getsize(product_path) < 1000:
         raise Exception('产品图片缺失')
-    model_name = config['model'] or 'gemini-3.1-flash-image-preview'
+    model_name = config['model'] or DEFAULT_OTU_IMAGE_MODEL
     api_key = config['api_key']
-    api_base = config['api_base'] or 'https://aihubmix.com/gemini'
+    api_base = config['api_base'] or 'https://otuapi.com'
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
 
-    from google import genai
-    client = genai.Client(api_key=api_key, http_options={'base_url': api_base})
-
-    product_file = with_retry(lambda: client.files.upload(file=product_path), max_attempts=3, label='upload product image')
-    parts = [types.Part.from_uri(file_uri=product_file.uri, mime_type='image/png')]
-    if os.path.exists(model_path) and os.path.getsize(model_path) > 1000:
-        model_file = with_retry(lambda: client.files.upload(file=model_path), max_attempts=3, label='upload model image')
-        parts.append(types.Part.from_uri(file_uri=model_file.uri, mime_type='image/png'))
-
-    anchor_file_token = _find_group_anchor_image(token, source_record_id, record_id)
-    if anchor_file_token:
-        anchor_path = os.path.join(task_dir, 'anchor.png')
-        safe_download_attachment(token, anchor_file_token, anchor_path)
-        if os.path.exists(anchor_path) and os.path.getsize(anchor_path) > 1000:
-            anchor_file = with_retry(lambda: client.files.upload(file=anchor_path), max_attempts=3, label='upload anchor image')
-            parts.append(types.Part.from_uri(file_uri=anchor_file.uri, mime_type='image/png'))
-
     prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
+    prompt = f"{build_shot_reference_prompt_note([{'role': 'product'}])}\n\n{prompt}".strip()
     out_path = os.path.join(task_dir, f'{record_id}_shot.png')
-    _render_single_image(client, model_name, parts, prompt, out_path)
+    submit_task_id, submit_body = submit_otu_image_task(
+        {'api_key': api_key, 'api_base': api_base, 'model': model_name},
+        prompt,
+        input_mode='image-to-image',
+        image_path=product_path,
+        metadata={'urls': [product_path], 'aspectRatio': '9:16'},
+        size=DEFAULT_OTU_IMAGE_SIZE,
+    )
+    result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
+    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
+    if not result_url:
+        raise Exception('OTU 图像任务完成但未返回图片地址')
+    download_otu_image_result(result_url, out_path)
 
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f'{record_id}_shot.png'),
@@ -591,25 +748,43 @@ def render_shot(token, record_id):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print('用法: python3 tk_shot_storyboard.py <split|render> <record_id>')
-        sys.exit(1)
-    action = sys.argv[1]
-    record_id = sys.argv[2]
+    import argparse
+    parser = argparse.ArgumentParser(description='逐镜头分镜图生成')
+    parser.add_argument('action', choices=['split', 'render'])
+    parser.add_argument('record_id')
+    parser.add_argument('--table', default='shot_storyboard', choices=['shot_storyboard', 'script_doc'])
+    args = parser.parse_args()
+    action = args.action
+    record_id = args.record_id
     token = get_feishu_token()
 
     try:
         if action == 'split':
             split_shots(token, record_id)
         elif action == 'render':
-            render_shot(token, record_id)
+            render_shot(token, record_id, table=args.table)
         else:
             raise Exception(f'未知 action: {action}')
     except Exception as e:
         payload = build_error_payload(e, stage='generate_shot_image' if action == 'render' else action)
         err = payload['message']
         log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
-        if action == 'render':
+        if action == 'render' and args.table == 'script_doc':
+            fail_fields = {
+                '分镜图生成状态': '失败',
+                '分镜图错误信息': err,
+                '错误信息': err,
+            }
+            try:
+                safe_update_record(
+                    token,
+                    TABLE_SCRIPT_DOC_SHOTS,
+                    record_id,
+                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
+                )
+            except Exception:
+                pass
+        elif action == 'render':
             fail_fields = {
                 '生成状态': '失败',
                 '错误信息': err,
