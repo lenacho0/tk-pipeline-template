@@ -66,7 +66,10 @@
 
 ## TK Pipeline / 历史链路记忆
 
+- 2026-05-21: 003-3 与脚本文档分镜视频新增 OTU 视频通道。正式链路已改成 `视频通道` 决定平台、`视频生成模型` 决定具体模型：`AIHubMix` 继续走原有 AihubMix/Gemini/SeedDance 路径，`OTU` 走独立 `/v1/videos` submit/poll/download。脚本文档分镜生成与三表 schema 已补 `视频通道` 字段；OTU 配置记录已写入飞书配置表，模型为 `veo_3_1-fast-fl`。线上旧 `视频生成模型` select 字段通过 OpenAPI 更新受限，代码已兼容 OTU 模型值，UI 如需完整选项同步，可能需要在飞书页面手动补一次。
 - 2026-05-20: 003-3 逐镜头分镜视频生成已从 AIHubMix `/v1/videos` multipart `input_reference[]` 参考图路径修正为 Gemini native Veo 首帧路径。正式 worker `tk_toolkit_dual/tk_shot_video.py` 现在通过 Google GenAI SDK 调 `client.models.generate_videos(image=types.Image(...), config=GenerateVideosConfig(resolution="720p", aspect_ratio="9:16"))`，只把 003-3 `分镜图` 作为首帧，不传尾帧，不传 `referenceImages`；`/v1/videos` 旧路径实测会产出横屏 `1280x720`，不得再作为 003-3 首帧模式正式路径。配置表记录 `recvk4lsU0TGGD` 的代理地址已改为 `https://aihubmix.com/gemini`，模型为 `veo-3.1-fast-generate-preview`。smoke test 记录 `recvk2MLFnjq1K` 已成功生成竖屏视频，本地路径 `/Users/ryanlynn/.openclaw/workspace-tk/shot_video_work/recvk2MLFnjq1K/recvk2MLFnjq1K_video.mp4`，飞书 file_token `UJAVbECCRoUE4UxUtEtc1YC7nNc`，`ffprobe` 为 `720x1280`、`4.000000s`。
+- 2026-05-20: 脚本文档逐分镜链路已从 78 字段单表拆成三表：`脚本文档-任务表` `tblBC37ktQBHPLep`、`脚本文档-参考资产表` `tblFg33rvB7eCyzr`、`脚本文档-分镜生产表` `tbldPJLJhczlGzSt`。配置 keys 为 `script_doc_tasks`、`script_doc_reference_assets`、`script_doc_shots`，其中 `script_doc_shots` 指分镜生产表。正式逻辑：解析从任务表读取，参考资产/分镜分别写入独立表；分镜图生成从任务表取父任务和产品关联，从参考资产表取已审核底图；dispatcher 5 个脚本文档 watch 已按表拆分并重启 ryan 实例。
+- 2026-05-20: 脚本文档三表链路真实 smoke test 已跑通。任务 `recvk8uUo5tb4o` 解析出 2 个参考资产与 2 条分镜；分镜 1 `需要产品参考图=否`、分镜图 reference_count=2；分镜 2 `需要产品参考图=是`、分镜图 reference_count=3、口播与 Veo 视频成功。视频本地 `/Users/ryanlynn/.openclaw/workspace-tk/shot_video_work/recvk8vXL2JSsU/recvk8vXL2JSsU_video.mp4`，file_token `C3UGbM8Olox6UTxBoSlctsnon04`，`ffprobe` 为 `720x1280`、`4.000000s`。本轮顺手修复：参考图下载函数返回布尔 `True` 时的路径处理，以及 URL 字段裸字符串写回导致的 `URLFieldConvFail`。
 - 2026-03-28: TK pipeline 第二轮优化已从方案阶段进入真实落地阶段。
 - 已完成 dispatcher 第一轮硬化、扫描减负第一刀、runtime log 独立化,以及多个关键脚本的标准错误输出协议统一。
 - 后续默认沿"低风险收口 → 小批量真实验证 → 再推进更正式批量能力/状态机/批次语义"路线继续推进。
