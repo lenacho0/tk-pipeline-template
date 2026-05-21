@@ -9,6 +9,13 @@
       "data": "爆款数据表的 table_id",
       "analysis": "脚本分析表的 table_id",
       "script_gen": "产品脚本生成表的 table_id",
+      "shot_script_gen": "逐镜头脚本生成表的 table_id",
+      "shot_storyboard": "逐镜头分镜图表的 table_id",
+      "script_doc_tasks": "脚本文档任务表的 table_id",
+      "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
+      "script_doc_shots": "脚本文档分镜生产表的 table_id",
+      "voice_library": "音色库表的 table_id",
+      "text_audio": "文案转音频表的 table_id",
       "product": "产品信息表的 table_id",
       "model_appearance": "模特形象表的 table_id",
       "video": "视频制作表的 table_id"

@@ -81,6 +81,76 @@ WATCH_LIST = [
         'max_retries': 2,
     },
     {
+        'name': '脚本文档解析拆分',
+        'table': TABLE_SCRIPT_DOC_TASKS,
+        'status_field': '解析状态',
+        'trigger_value': '待解析',
+        'running_value': '解析中',
+        'failed_value': '失败',
+        'error_field': '解析错误信息',
+        'script': 'tk_script_doc_shots.py',
+        'args': ['parse'],
+        'timeout': 900,
+        'max_concurrency': 1,
+        'max_retries': 1,
+    },
+    {
+        'name': '脚本文档参考底图生成',
+        'table': TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        'status_field': '参考图生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_script_doc_shots.py',
+        'args': ['reference-image'],
+        'timeout': 1200,
+        'max_concurrency': 2,
+        'max_retries': 1,
+    },
+    {
+        'name': '脚本文档口播音频生成',
+        'table': TABLE_SCRIPT_DOC_SHOTS,
+        'status_field': '口播音频状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '口播音频错误信息',
+        'script': 'tk_shot_voiceover.py',
+        'args': ['--table', 'script_doc'],
+        'timeout': 300,
+        'max_concurrency': 2,
+        'max_retries': 2,
+    },
+    {
+        'name': '脚本文档分镜图生成',
+        'table': TABLE_SCRIPT_DOC_SHOTS,
+        'status_field': '分镜图生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '分镜图错误信息',
+        'script': 'tk_shot_storyboard.py',
+        'args': ['render', '--table', 'script_doc'],
+        'timeout': 1200,
+        'max_concurrency': 2,
+        'max_retries': 2,
+    },
+    {
+        'name': '脚本文档分镜视频生成',
+        'table': TABLE_SCRIPT_DOC_SHOTS,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '视频错误信息',
+        'script': 'tk_shot_video.py',
+        'args': ['--table', 'script_doc'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+    },
+    {
         'name': '逐镜头母任务创建',
         'table': TABLE_SCRIPT_GEN,
         'status_field': '逐镜头流程状态',
@@ -241,7 +311,7 @@ def register_dead_letter(watch, record_id, reason, payload=None):
 
 
 def circuit_breaker_key(watch):
-    return watch['script']
+    return f"{watch['script']}::{watch['name']}"
 
 
 def record_circuit_failure(watch):
@@ -378,10 +448,10 @@ def make_task_key(watch, record_id):
     return f"{watch['script']}::{record_id}"
 
 
-def count_running_by_script(script_name):
+def count_running_by_watch(watch_name):
     count = 0
     for proc in running_processes.values():
-        if proc['watch']['script'] == script_name:
+        if proc['watch']['name'] == watch_name:
             count += 1
     return count
 
@@ -590,7 +660,7 @@ def check_and_run(token, watch):
     watch = apply_stage_policy(watch)
     if is_circuit_open(watch):
         return
-    current_running = count_running_by_script(watch['script'])
+    current_running = count_running_by_watch(watch['name'])
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
     if available_slots <= 0:
         return

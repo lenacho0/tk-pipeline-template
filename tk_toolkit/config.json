@@ -37,7 +37,7 @@
   },
   "dispatcher": {
     "poll_interval": 30,
-    "healthcheck_hour": 8,
+    "healthcheck_hour": -1,
     "circuit_breaker": {
       "window_seconds": 900,
       "threshold": 3,

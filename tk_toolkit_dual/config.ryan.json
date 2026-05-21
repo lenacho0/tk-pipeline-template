@@ -16,7 +16,10 @@
       "product": "tblF2cZmbQEJMiUH",
       "model_appearance": "tblvpVOYockZmCG8",
       "video": "tblQdTGSsmQbPMQd",
-      "pet_reference_v1": "tblvS7q8hmQRlXEP"
+      "pet_reference_v1": "tblvS7q8hmQRlXEP",
+      "script_doc_shots": "tbldPJLJhczlGzSt",
+      "script_doc_tasks": "tblBC37ktQBHPLep",
+      "script_doc_reference_assets": "tblFg33rvB7eCyzr"
     }
   },
   "fastmoss": {
@@ -45,7 +48,7 @@
     "circuit_breaker": {
       "window_seconds": 900,
       "threshold": 3,
-      "cooldown_seconds": 600
+      "cooldown_seconds": 1800
     },
     "scan": {
       "table_min_interval_seconds": 20,
@@ -83,7 +86,7 @@
         "timeout": 1200
       },
       "tk_shot_video.py": {
-        "max_concurrency": 1,
+        "max_concurrency": 2,
         "max_retries": 1,
         "timeout": 2400
       },

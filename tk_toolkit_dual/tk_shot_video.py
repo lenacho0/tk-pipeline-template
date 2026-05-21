@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -25,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
+    TABLE_SCRIPT_DOC_SHOTS,
     TABLE_SHOT_STORYBOARD,
     WORKSPACE,
     build_error_payload,
@@ -38,16 +41,37 @@ from common import (  # noqa: E402
     safe_update_record,
     with_retry,
 )
+from tk_shot_storyboard import build_image_to_video_prompt  # noqa: E402
+from otu_image import (  # noqa: E402
+    DEFAULT_ASPECT_RATIO as OTU_DEFAULT_ASPECT_RATIO,
+    DEFAULT_OTU_API_BASE,
+    DEFAULT_OTU_IMAGE_MODEL,
+    DEFAULT_OTU_IMAGE_SIZE,
+    download_otu_image_result,
+    extract_otu_result_url,
+    format_model_choice_for_display,
+    image_model_write_value,
+    is_default_model_choice,
+    normalize_image_channel,
+    normalize_image_model_choice,
+    poll_otu_image_task,
+    resolve_selected_image_model,
+    split_prefixed_model_choice,
+    submit_otu_image_task,
+)
 
 
 STAGE_NAME = "逐镜头分镜视频生成"
 SEEDDANCE_STAGE_NAME = "九宫格生成视频-seeddance2.0"
+OTU_STAGE_NAME = "逐镜头分镜视频生成-OTU"
 BASE_WORK_DIR = Path(WORKSPACE) / "shot_video_work"
 DEFAULT_MODEL = "veo-3.1-fast-generate-preview"
+DEFAULT_OTU_MODEL = "veo_3_1-fast-fl"
 DEFAULT_SEEDDANCE_MODEL = "doubao-seedance-2-0-fast-260128"
 DEFAULT_API_BASE = "https://aihubmix.com"
 DEFAULT_GEMINI_API_BASE = "https://aihubmix.com/gemini"
 DEFAULT_SIZE = "720p"
+DEFAULT_OTU_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
 DEFAULT_SECONDS = "8"
 ALLOWED_SECONDS = {"4", "6", "8"}
@@ -63,6 +87,16 @@ Downloader = Callable[[str, str], str]
 Uploader = Callable[[str, str, str], str]
 ReferenceDownloader = Callable[[str, str, Path], Path]
 NativeClientFactory = Callable[[Dict[str, str]], Any]
+
+
+def resolve_video_table(table: str = "shot_storyboard") -> str:
+    if table in ("script_doc", "script_doc_shots", TABLE_SCRIPT_DOC_SHOTS):
+        if not TABLE_SCRIPT_DOC_SHOTS:
+            raise ValueError("config.json 尚未配置 script_doc_shots 表 ID")
+        return TABLE_SCRIPT_DOC_SHOTS
+    if not TABLE_SHOT_STORYBOARD:
+        raise ValueError("config.json 尚未配置 shot_storyboard 表 ID")
+    return TABLE_SHOT_STORYBOARD
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -81,13 +115,76 @@ def normalize_seconds(value: Any) -> str:
 
 def normalize_video_provider(value: Any) -> str:
     raw = extract_text(value).strip().lower().replace("_", "-").replace(" ", "")
-    if not raw or raw in {"待确认", "pending", "default"}:
+    if not raw or raw in {"待确认", "pending", "default", "默认", "默认（配置表）", "默认(配置表)", "配置表默认"}:
         return "veo3.1"
     if raw in {"seeddance", "seeddance2", "seeddance2.0", "seed-dance", "seed-dance-2.0", "seedance", "seedance2.0"}:
         return "seeddance2.0"
     if raw in {"veo", "veo3", "veo3.1", "veo-3.1"} or raw.startswith("veo-3.1") or raw.startswith("veo3.1"):
         return "veo3.1"
     return "veo3.1"
+
+
+def normalize_video_channel(value: Any) -> str:
+    raw = extract_text(value).strip().lower().replace("_", "-").replace(" ", "")
+    if raw in {"otu", "otuapi", "otu-api", "outapi", "out-api", "便宜通道"}:
+        return "OTU"
+    return "AIHubMix"
+
+
+def video_channel_write_value(channel: str) -> str:
+    return "OTU" if normalize_video_channel(channel) == "OTU" else "AIHubMix"
+
+
+def split_prefixed_model_choice(value: Any) -> Tuple[str, str]:
+    raw = extract_text(value).strip()
+    if " / " in raw:
+        prefix, rest = raw.split(" / ", 1)
+        channel = normalize_video_channel(prefix)
+        return channel, rest.strip()
+    return "", raw
+
+
+def is_default_model_choice(value: Any) -> bool:
+    raw = extract_text(value).strip().lower().replace("_", "-").replace(" ", "")
+    return not raw or raw in {"待确认", "pending", "default", "默认", "默认（配置表）", "默认(配置表)", "配置表默认"}
+
+
+def infer_model_channel(model_choice: Any) -> str:
+    _, raw = split_prefixed_model_choice(model_choice)
+    normalized = extract_text(raw).strip().lower().replace("_", "-").replace(" ", "")
+    if normalized in {"gpt-image-2", "gpt-image-2-2k", "gpt-image-2-4k"}:
+        return "OTU"
+    if normalized == "veo_3_1-fast-fl":
+        return "OTU"
+    if normalized in {"veo3.1", "seeddance2.0", "veo-3.1-fast-generate-preview"}:
+        return "AIHubMix"
+    return ""
+
+
+def format_model_choice_for_display(channel: str, model: str) -> str:
+    base_channel = normalize_video_channel(channel)
+    raw = extract_text(model).strip() or "默认（配置表）"
+    if " / " in raw:
+        return raw
+    return f"{base_channel} / {raw}"
+
+
+def resolve_selected_model(model_choice: Any, config: Dict[str, str], channel: str) -> str:
+    choice_channel, raw = split_prefixed_model_choice(model_choice)
+    if choice_channel and choice_channel != normalize_video_channel(channel):
+        raise ValueError(f"视频通道={channel} 时不能选择 {choice_channel} 模型：{raw}")
+    inferred_channel = infer_model_channel(raw)
+    if inferred_channel and inferred_channel != normalize_video_channel(channel):
+        raise ValueError(f"视频通道={channel} 与所选模型不匹配：{raw}")
+    if is_default_model_choice(raw) or raw in {"veo3.1", "seeddance2.0"}:
+        return config.get("model") or DEFAULT_MODEL
+    return raw
+
+
+def image_model_write_value(model: str, channel: str = "OTU") -> str:
+    return format_model_choice_for_display(channel, normalize_image_model_choice(model))
+def video_model_write_value(config: Dict[str, str], provider: str, table_id: str, channel: str = "AIHubMix") -> str:
+    return format_model_choice_for_display(channel, config.get("model") or (DEFAULT_OTU_MODEL if normalize_video_channel(channel) == "OTU" else DEFAULT_MODEL))
 
 
 def normalize_api_base(api_base: str) -> str:
@@ -130,10 +227,40 @@ def get_model_config(stage_name: str = STAGE_NAME) -> Tuple[str, Dict[str, str]]
     raise ValueError(f"找不到模型配置: {stage_name}")
 
 
+def resolve_model_config_stage(channel: str, provider: str) -> str:
+    if normalize_video_channel(channel) == "OTU":
+        return OTU_STAGE_NAME
+    if provider == "seeddance2.0":
+        return SEEDDANCE_STAGE_NAME
+    return STAGE_NAME
+
+
+def resolve_image_model_config_stage(channel: str) -> str:
+    return OTU_IMAGE_STAGE_NAME
+
+
 def ensure_work_dir(record_id: str) -> Path:
     work_dir = BASE_WORK_DIR / record_id
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
+
+
+def safe_filename_part(value: Any) -> str:
+    text = extract_text(value).strip()
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._-")
+
+
+def resolve_shot_video_filename(record_id: str, fields: Dict[str, Any]) -> str:
+    source_script_id = safe_filename_part(fields.get("源逐镜头脚本记录ID")) or safe_filename_part(record_id)
+    shot_number_text = (
+        extract_text(fields.get("分镜序号")).strip()
+        or extract_text(fields.get("镜头序号")).strip()
+        or extract_text(fields.get("Shot No")).strip()
+    )
+    match = re.search(r"\d+", shot_number_text)
+    if not match:
+        return f"{source_script_id}_video.mp4"
+    return f"{source_script_id}_shot{int(match.group(0)):02d}_video.mp4"
 
 
 def get_attachment_token(value: Any) -> str:
@@ -199,6 +326,55 @@ def build_model_prompt(fields: Dict[str, Any]) -> str:
     return prompt
 
 
+def _parse_shot_meta(fields: Dict[str, Any]) -> Dict[str, Any]:
+    raw = extract_text(fields.get("文本")).strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def rebuild_model_prompt_for_provider(fields: Dict[str, Any], provider: str) -> str:
+    meta = _parse_shot_meta(fields)
+    shot = {
+        "duration_sec": extract_text(fields.get("目标时长秒")).strip(),
+        "visual": extract_text(fields.get("画面描述")).strip(),
+        "camera": extract_text(meta.get("camera")).strip(),
+        "action": extract_text(meta.get("action")).strip(),
+        "emotion": extract_text(meta.get("emotion")).strip(),
+        "speaker": extract_text(meta.get("speaker")).strip(),
+        "speaker_visible": bool(meta.get("speaker_visible")),
+        "continuity_notes": extract_text(fields.get("连续性要求")).strip(),
+        "product_visibility": extract_text(fields.get("产品焦点")).strip(),
+        "must_show": meta.get("must_show") if isinstance(meta.get("must_show"), list) else [],
+        "forbidden": meta.get("forbidden") if isinstance(meta.get("forbidden"), list) else [],
+    }
+    return build_image_to_video_prompt(
+        shot,
+        idx=1,
+        total_shots=1,
+        product_name=extract_text(fields.get("产品名")).strip(),
+        voiceover_text=extract_text(fields.get("口播文本")).strip(),
+        voice_id=extract_text(fields.get("口播音色ID")).strip(),
+        video_model=provider,
+        screen_text=extract_text(meta.get("screen_text")).strip(),
+        screen_text_zh=extract_text(meta.get("screen_text_zh")).strip(),
+        video_prompt_notes=extract_text(meta.get("video_prompt_notes")).strip(),
+    )
+
+
+def resolve_model_prompt(fields: Dict[str, Any], provider: str) -> Tuple[str, bool]:
+    prompt = build_model_prompt(fields)
+    if provider == "seeddance2.0" and "使用参考音频作为最终口播内容" not in prompt:
+        return rebuild_model_prompt_for_provider(fields, provider), True
+    if provider == "veo3.1" and "使用参考音频作为最终口播内容" in prompt:
+        return rebuild_model_prompt_for_provider(fields, provider), True
+    return prompt, False
+
+
 def submit_aihubmix_video_task(
     config: Dict[str, str],
     prompt: str,
@@ -236,6 +412,63 @@ def submit_aihubmix_video_task(
     return task_id, body
 
 
+def submit_otu_video_task(
+    config: Dict[str, str],
+    prompt: str,
+    image_path: str,
+    seconds: str,
+    size: str = DEFAULT_OTU_SIZE,
+    aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+) -> Tuple[str, Dict[str, Any]]:
+    url = videos_url(config.get("api_base") or DEFAULT_OTU_API_BASE)
+    model_name = config.get("model") or DEFAULT_OTU_MODEL
+    headers = {"Authorization": f"Bearer {config['api_key']}"}
+    with open(image_path, "rb") as image_file:
+        files = [("input_reference[]", (os.path.basename(image_path), image_file, "image/png"))]
+        data = {
+            "model": model_name,
+            "prompt": prompt,
+            "seconds": seconds,
+            "size": size or DEFAULT_OTU_SIZE,
+            "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+        }
+        resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"raw_text": resp.text[:1000]}
+    if resp.status_code >= 400:
+        raise RuntimeError(f"OTU 视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+    task_id = extract_text(
+        body.get("id")
+        or body.get("task_id")
+        or (body.get("data") or {}).get("id")
+        or (body.get("data") or {}).get("task_id")
+    ).strip()
+    if not task_id:
+        raise RuntimeError(f"OTU 视频任务提交未返回任务 ID: {str(body)[:1200]}")
+    return task_id, body
+
+
+def extract_otu_result_url(data: Dict[str, Any]) -> str:
+    candidates = [
+        data.get("video_url"),
+        data.get("result_url"),
+        data.get("url"),
+        data.get("download_url"),
+    ]
+    nested = data.get("data") if isinstance(data.get("data"), dict) else {}
+    candidates.extend([nested.get("video_url"), nested.get("result_url"), nested.get("url"), nested.get("download_url")])
+    for key in ("result_urls", "urls"):
+        value = data.get(key) or nested.get(key)
+        if isinstance(value, list) and value:
+            candidates.append(value[0])
+    for value in candidates:
+        if isinstance(value, str) and value.startswith("http"):
+            return value
+    return ""
+
+
 def poll_aihubmix_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
     url = video_item_url(config.get("api_base") or DEFAULT_API_BASE, task_id)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
@@ -261,6 +494,33 @@ def poll_aihubmix_video_task(config: Dict[str, str], task_id: str) -> Dict[str, 
             raise RuntimeError(f"AIHubMix 视频生成失败: {str(last_body)[:1500]}")
         time.sleep(POLL_INTERVAL)
     raise TimeoutError(f"AIHubMix 视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
+
+
+def poll_otu_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
+    url = video_item_url(config.get("api_base") or DEFAULT_OTU_API_BASE, task_id)
+    headers = {"Authorization": f"Bearer {config['api_key']}"}
+    start = time.time()
+    last_body: Dict[str, Any] = {}
+    while time.time() - start < MAX_POLL_SECONDS:
+        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        last_body = body if isinstance(body, dict) else {"raw": body}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OTU 视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+        status = extract_text(
+            last_body.get("status")
+            or (last_body.get("data") or {}).get("status")
+            or (last_body.get("result") or {}).get("status")
+        ).lower()
+        if status in {"completed", "succeeded", "success", "done"}:
+            return last_body
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"OTU 视频生成失败: {str(last_body)[:1500]}")
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError(f"OTU 视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
 def iter_strings(value: Any):
@@ -378,17 +638,57 @@ def operation_to_dict(operation: Any) -> Dict[str, Any]:
 def poll_native_veo_operation(client: Any, operation: Any) -> Any:
     start = time.time()
     current = operation
+    original_operation_name = extract_text(getattr(operation, "name", "")).strip()
     while time.time() - start < MAX_POLL_SECONDS:
         if getattr(current, "done", False):
             if getattr(current, "error", None):
                 raise RuntimeError(f"Veo 首帧视频生成失败: {compact_json(operation_to_dict(current), 1500)}")
+            if not (getattr(current, "response", None) or getattr(current, "result", None)):
+                raw_operation = fetch_native_veo_operation_dict(client, current, fallback_operation_name=original_operation_name)
+                if raw_operation:
+                    return raw_operation
             return current
         time.sleep(POLL_INTERVAL)
-        current = client.operations.get(current)
+        try:
+            current = client.operations.get(current)
+        except Exception:
+            raw_operation = fetch_native_veo_operation_dict(client, current, fallback_operation_name=original_operation_name)
+            if raw_operation:
+                return raw_operation
+            raise
     raise TimeoutError(f"Veo 首帧视频任务超时: {getattr(operation, 'name', '')}")
 
 
+def fetch_native_veo_operation_dict(client: Any, operation: Any, fallback_operation_name: str = "") -> Optional[Dict[str, Any]]:
+    operation_name = fallback_operation_name or extract_text(getattr(operation, "name", "")).strip()
+    if not operation_name or not hasattr(client.operations, "_get_videos_operation"):
+        return None
+    raw = client.operations._get_videos_operation(operation_name=operation_name)
+    return raw if isinstance(raw, dict) else None
+
+
+def _dict_get_first(mapping: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return None
+
+
 def extract_native_generated_video(operation: Any) -> Any:
+    if isinstance(operation, dict):
+        response = _dict_get_first(operation, "response", "result") or {}
+        if not isinstance(response, dict):
+            response = {}
+        videos = _dict_get_first(response, "generated_videos", "generatedVideos", "videos")
+        if not videos and isinstance(operation.get("videos"), list):
+            videos = operation.get("videos")
+        if not videos:
+            raise RuntimeError(f"Veo 首帧视频生成完成但未返回视频: {compact_json(operation, 1500)}")
+        generated = videos[0]
+        if isinstance(generated, dict):
+            return generated.get("video") or generated
+        return generated
+
     response = getattr(operation, "response", None) or getattr(operation, "result", None)
     videos = getattr(response, "generated_videos", None) if response is not None else None
     if not videos:
@@ -398,12 +698,49 @@ def extract_native_generated_video(operation: Any) -> Any:
 
 
 def download_native_veo_video(client: Any, generated_video: Any, save_path: str) -> str:
+    if isinstance(generated_video, dict):
+        encoded = _dict_get_first(generated_video, "bytesBase64Encoded", "bytes_base64_encoded", "videoBytes", "video_bytes")
+        if encoded:
+            with open(save_path, "wb") as f:
+                f.write(base64.b64decode(encoded))
+            if os.path.getsize(save_path) < 10000:
+                raise RuntimeError(f"Veo 首帧视频下载成功但文件过小: {save_path}")
+            return save_path
+        uri = extract_text(generated_video.get("uri")).strip()
+        if uri:
+            content = client.files.download(file=generated_video)
+            with open(save_path, "wb") as f:
+                f.write(content)
+            if os.path.getsize(save_path) < 10000:
+                raise RuntimeError(f"Veo 首帧视频下载成功但文件过小: {save_path}")
+            return save_path
+        raise RuntimeError(f"Veo 首帧视频缺少可下载内容: {compact_json(generated_video, 1000)}")
+
+    video_bytes = getattr(generated_video, "video_bytes", None)
+    if video_bytes:
+        with open(save_path, "wb") as f:
+            f.write(video_bytes)
+        if os.path.getsize(save_path) < 10000:
+            raise RuntimeError(f"Veo 首帧视频下载成功但文件过小: {save_path}")
+        return save_path
+
     content = client.files.download(file=generated_video)
     with open(save_path, "wb") as f:
         f.write(content)
     if os.path.getsize(save_path) < 10000:
         raise RuntimeError(f"Veo 首帧视频下载成功但文件过小: {save_path}")
     return save_path
+
+
+def native_generated_video_uri(generated_video: Any) -> str:
+    if isinstance(generated_video, dict):
+        return extract_text(generated_video.get("uri")).strip()
+    return extract_text(getattr(generated_video, "uri", "")).strip()
+
+
+def is_native_veo_operation_id(task_id: str) -> bool:
+    raw = extract_text(task_id).strip()
+    return raw.startswith("operations/") or "/operations/" in raw
 
 
 def submit_seeddance_video_task(
@@ -509,6 +846,30 @@ def get_table_field_names(token: str, table_id: str) -> set:
     return field_names
 
 
+def get_table_field_types(token: str, table_id: str) -> Dict[str, int]:
+    field_types: Dict[str, int] = {}
+    page_token = None
+    while True:
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/fields?page_size=100"
+        if page_token:
+            url += f"&page_token={page_token}"
+        data = safe_request("get", url, headers=feishu_headers(token), timeout=30, max_attempts=3, acceptable_codes=(0,))
+        for item in data.get("data", {}).get("items", []) or []:
+            name = item.get("field_name")
+            if name:
+                field_types[name] = int(item.get("type") or 0)
+        if not data.get("data", {}).get("has_more"):
+            break
+        page_token = data.get("data", {}).get("page_token")
+    return field_types
+
+
+def format_url_field_value(url: str, field_type: int = 0) -> Any:
+    if field_type == 15:
+        return {"link": url, "text": url}
+    return url
+
+
 def filter_existing_fields(token: str, table_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     existing = get_table_field_names(token, table_id)
     return {key: value for key, value in fields.items() if key in existing}
@@ -521,25 +882,34 @@ def build_success_fields(
     video_url: str,
     local_path: str,
     file_token: str,
+    *,
+    provider: str = "veo3.1",
+    channel: str = "AIHubMix",
+    table_id: str = "",
+    field_types: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    return {
-        "视频生成模型": config["model"],
+    fields = {
+        "视频通道": video_channel_write_value(channel),
+        "视频生成模型": video_model_write_value(config, provider, table_id, channel),
         "视频生成状态": "成功",
         "分镜视频": [{"file_token": file_token, "name": Path(local_path).name}],
         "本地视频路径": local_path,
         "分镜视频file_token": file_token,
-        "分镜视频URL": video_url,
         "视频任务ID": task_id,
         "视频生成原始响应JSON": compact_json(result),
         "视频错误信息": "",
         "视频生成时间": int(time.time() * 1000),
     }
+    if video_url:
+        fields["分镜视频URL"] = format_url_field_value(video_url, (field_types or {}).get("分镜视频URL", 0))
+    return fields
 
 
 def run_shot_video_generation(
     record_id: str,
     *,
     dry_run: bool = False,
+    table: str = "shot_storyboard",
     token: Optional[str] = None,
     get_record_fn: RecordGetter = safe_get_record,
     update_record_fn: RecordUpdater = safe_update_record,
@@ -550,36 +920,46 @@ def run_shot_video_generation(
     seeddance_submitter: Callable[..., Tuple[str, Dict[str, Any]]] = submit_seeddance_video_task,
     seeddance_poller: Callable[[Dict[str, str], str], Dict[str, Any]] = poll_seeddance_video_task,
     seeddance_downloader: Downloader = download_video,
+    otu_submitter: Callable[..., Tuple[str, Dict[str, Any]]] = submit_otu_video_task,
+    otu_poller: Callable[[Dict[str, str], str], Dict[str, Any]] = poll_otu_video_task,
+    otu_downloader: Downloader = download_video,
     uploader: Uploader = upload_video_to_feishu,
 ) -> Dict[str, Any]:
-    if not TABLE_SHOT_STORYBOARD:
-        raise ValueError("config.json 尚未配置 shot_storyboard 表 ID")
+    table_id = resolve_video_table(table)
     token = token or get_feishu_token()
-    fields = get_record_fn(token, TABLE_SHOT_STORYBOARD, record_id)
+    fields = get_record_fn(token, table_id, record_id)
     status = extract_text(fields.get("视频生成状态")).strip()
     if status == "成功" and not dry_run:
         raise ValueError(f"003-3 {record_id} 已成功生成视频，拒绝重复生成")
 
-    provider = normalize_video_provider(fields.get("视频生成模型"))
-    cfg_record_id, config = get_model_config(SEEDDANCE_STAGE_NAME if provider == "seeddance2.0" else STAGE_NAME)
+    channel = normalize_video_channel(fields.get("视频通道"))
+    model_choice = extract_text(fields.get("视频生成模型")).strip()
+    provider = normalize_video_provider(model_choice)
+    cfg_record_id, config = get_model_config(resolve_model_config_stage(channel, provider))
+    runtime_config = dict(config)
+    runtime_config["model"] = resolve_selected_model(model_choice, config, channel)
     work_dir = ensure_work_dir(record_id)
     image_path = resolve_reference_image(token, record_id, fields, work_dir)
-    prompt = build_model_prompt(fields)
+    prompt, prompt_rebuilt = resolve_model_prompt(fields, provider)
     seconds = normalize_seconds(fields.get("目标时长秒"))
-    size = config.get("size") or DEFAULT_SIZE
+    size = config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
     aspect_ratio = config.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
-    output_path = str(work_dir / f"{record_id}_video.mp4")
+    output_filename = resolve_shot_video_filename(record_id, fields)
+    output_path = str(work_dir / output_filename)
     voiceover_dependency = resolve_voiceover_audio_dependency(fields, provider)
-
+    existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     summary: Dict[str, Any] = {
         "record_id": record_id,
+        "table_id": table_id,
         "dry_run": dry_run,
         "config_record_id": cfg_record_id,
+        "video_channel": channel,
         "video_provider": provider,
-        "model": config["model"],
-        "api_base": native_veo_api_base(config) if provider == "veo3.1" else normalize_api_base(config.get("api_base") or DEFAULT_API_BASE),
+        "model": runtime_config["model"],
+        "api_base": native_veo_api_base(config) if channel == "AIHubMix" and provider == "veo3.1" else normalize_api_base(config.get("api_base") or (DEFAULT_OTU_API_BASE if channel == "OTU" else DEFAULT_API_BASE)),
         "first_frame_image_path": str(image_path),
         "voiceover_audio_dependency": voiceover_dependency,
+        "prompt_rebuilt_for_provider": prompt_rebuilt,
         "prompt_chars": len(prompt),
         "seconds": seconds,
         "size": size,
@@ -590,28 +970,39 @@ def run_shot_video_generation(
         summary["status"] = "dry_run_ready"
         return summary
 
+    field_types = get_table_field_types(token, table_id) if update_record_fn is safe_update_record else {}
+
     task_id = ""
     try:
-        if provider == "seeddance2.0":
-            update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
-                "视频生成模型": config["model"],
+        if prompt_rebuilt:
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频提示词": prompt[:10000],
+            }))
+        if channel == "OTU":
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频通道": video_channel_write_value(channel),
+                "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
                 "视频生成状态": "生成中",
-                "视频错误信息": "准备提交 SeedDance 2.0 首帧图生视频任务；如有口播，已要求参考音频先生成成功。",
+                "视频错误信息": "准备提交 OTU 首帧图生视频任务...",
             }))
-            task_id, submit_body = seeddance_submitter(config, prompt, str(image_path), seconds, size, aspect_ratio)
-            update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
-                "视频任务ID": task_id,
-                "视频生成原始响应JSON": compact_json({"submit": submit_body}),
-                "视频错误信息": f"已提交 SeedDance 2.0 图生视频任务，正在轮询。task_id={task_id}",
-            }))
-            result = seeddance_poller(config, task_id)
+            if existing_task_id:
+                task_id = existing_task_id
+                result = otu_poller(runtime_config, task_id)
+            else:
+                task_id, submit_body = otu_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio)
+                update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                    "视频任务ID": task_id,
+                    "视频生成原始响应JSON": compact_json({"submit": submit_body}),
+                    "视频错误信息": f"已提交 OTU 图生视频任务，正在轮询。task_id={task_id}",
+                }))
+                result = otu_poller(runtime_config, task_id)
             video_url = extract_video_url(result)
             if not video_url:
-                raise RuntimeError(f"SeedDance 2.0 生成完成但未返回可下载视频 URL: {compact_json(result, 1200)}")
-            seeddance_downloader(video_url, output_path)
-            video_file_token = uploader(token, output_path, f"{record_id}_video.mp4")
-            success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token)
-            update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields))
+                raise RuntimeError(f"OTU 生成完成但未返回可下载视频 URL: {compact_json(result, 1200)}")
+            otu_downloader(video_url, output_path)
+            video_file_token = uploader(token, output_path, output_filename)
+            success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token, provider=provider, channel=channel, table_id=table_id, field_types=field_types)
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
             summary.update({
                 "status": "success",
                 "task_id": task_id,
@@ -621,29 +1012,84 @@ def run_shot_video_generation(
             })
             return summary
 
-        update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
-            "视频生成模型": config["model"],
+        if provider == "seeddance2.0":
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频通道": video_channel_write_value(channel),
+                "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
+                "视频生成状态": "生成中",
+                "视频错误信息": "准备提交 SeedDance 2.0 首帧图生视频任务；如有口播，已要求参考音频先生成成功。",
+            }))
+            task_id, submit_body = seeddance_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio)
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频任务ID": task_id,
+                "视频生成原始响应JSON": compact_json({"submit": submit_body}),
+                "视频错误信息": f"已提交 SeedDance 2.0 图生视频任务，正在轮询。task_id={task_id}",
+            }))
+            result = seeddance_poller(runtime_config, task_id)
+            video_url = extract_video_url(result)
+            if not video_url:
+                raise RuntimeError(f"SeedDance 2.0 生成完成但未返回可下载视频 URL: {compact_json(result, 1200)}")
+            seeddance_downloader(video_url, output_path)
+            video_file_token = uploader(token, output_path, output_filename)
+            success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token, provider=provider, channel=channel, table_id=table_id, field_types=field_types)
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
+            summary.update({
+                "status": "success",
+                "task_id": task_id,
+                "video_url": video_url,
+                "video_file_token": video_file_token,
+                "output_size": os.path.getsize(output_path),
+            })
+            return summary
+
+        update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+            "视频通道": video_channel_write_value(channel),
+            "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
             "视频生成状态": "生成中",
             "视频错误信息": "准备提交 AIHubMix Gemini/Veo 首帧视频任务...",
         }))
-        client = native_client_factory(config)
-        operation = native_submitter(config, prompt, str(image_path), seconds, size, aspect_ratio, client=client)
-        task_id = extract_text(getattr(operation, "name", "")).strip()
-        if not task_id:
-            raise RuntimeError(f"Veo 首帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
-        update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
-            "视频任务ID": task_id,
-            "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}),
-            "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首帧视频任务，正在轮询。task_id={task_id}",
-        }))
+        client = native_client_factory(runtime_config)
+        if existing_task_id and is_native_veo_operation_id(existing_task_id):
+            task_id = existing_task_id
+            operation = types.GenerateVideosOperation(name=existing_task_id)
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频通道": video_channel_write_value(channel),
+                "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
+                "视频生成状态": "生成中",
+                "视频错误信息": f"检测到已有 AIHubMix Gemini/Veo operation，复用并继续轮询下载。task_id={task_id}",
+            }))
+        else:
+            if existing_task_id:
+                update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                    "视频任务ID": "",
+                    "视频错误信息": f"旧视频任务ID不是 Gemini/Veo operation，已忽略并重新提交。old_task_id={existing_task_id}",
+                }))
+            operation = native_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, client=client)
+            task_id = extract_text(getattr(operation, "name", "")).strip()
+            if not task_id:
+                raise RuntimeError(f"Veo 首帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频任务ID": task_id,
+                "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}),
+                "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首帧视频任务，正在轮询。task_id={task_id}",
+            }))
         completed_operation = native_poller(client, operation)
         generated_video = extract_native_generated_video(completed_operation)
-        native_downloader(client, generated_video, output_path)
         result = operation_to_dict(completed_operation)
-        video_url = extract_text(getattr(generated_video, "uri", "")).strip()
-        video_file_token = uploader(token, output_path, f"{record_id}_video.mp4")
-        success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token)
-        update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields))
+        video_url = native_generated_video_uri(generated_video)
+        try:
+            native_downloader(client, generated_video, output_path)
+        except Exception as download_exc:
+            raw_operation = fetch_native_veo_operation_dict(client, completed_operation, fallback_operation_name=task_id)
+            if not raw_operation:
+                raise download_exc
+            generated_video = extract_native_generated_video(raw_operation)
+            result = raw_operation
+            video_url = native_generated_video_uri(generated_video)
+            native_downloader(client, generated_video, output_path)
+        video_file_token = uploader(token, output_path, output_filename)
+        success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token, provider=provider, channel=channel, table_id=table_id, field_types=field_types)
+        update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
         summary.update({
             "status": "success",
             "task_id": task_id,
@@ -656,7 +1102,7 @@ def run_shot_video_generation(
         payload = build_error_payload(exc, stage="generate_shot_video")
         error_message = f"错误[{payload['error_code']}]: {payload['message']}"
         try:
-            update_record_fn(token, TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, TABLE_SHOT_STORYBOARD, {
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
                 "视频生成状态": "失败",
                 "视频任务ID": task_id,
                 "视频错误信息": error_message[:1000],
@@ -669,11 +1115,12 @@ def run_shot_video_generation(
 def main() -> int:
     parser = argparse.ArgumentParser(description="003-3 单镜头 AIHubMix/Veo 分镜视频生成")
     parser.add_argument("record_id", help="003-3 shot_storyboard record_id")
+    parser.add_argument("--table", default="shot_storyboard", choices=["shot_storyboard", "script_doc"], help="选择来源表")
     parser.add_argument("--dry-run", action="store_true", help="只验证输入和配置，不提交视频任务")
     parser.add_argument("--output-file", help="保存运行摘要 JSON")
     args = parser.parse_args()
     try:
-        result = run_shot_video_generation(args.record_id, dry_run=args.dry_run)
+        result = run_shot_video_generation(args.record_id, dry_run=args.dry_run, table=args.table)
         text = compact_json(result)
         print(text)
         if args.output_file:
