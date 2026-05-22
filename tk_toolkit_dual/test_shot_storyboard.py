@@ -41,6 +41,22 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertIn("final frame", prompt.lower())
         self.assertNotIn("nine-grid", prompt.lower())
 
+    def test_infer_last_frame_description_extracts_ending_frame_from_image_prompt(self):
+        desc = storyboard.infer_script_doc_last_frame_description({
+            "图片提示词": "[Starting Frame] stained rug\n\n[Ending Frame] same rug is clean and slightly damp."
+        })
+        self.assertEqual(desc, "same rug is clean and slightly damp.")
+
+    def test_build_storyboard_success_fields_auto_triggers_last_frame_when_enabled(self):
+        fields = storyboard.build_script_doc_storyboard_success_fields(
+            {"首尾帧视频模式": "启用", "图片提示词": "[Starting Frame] stain [Ending Frame] clean rug"},
+            file_token="ft_first",
+            out_path="/tmp/shot.png",
+            prompt="prompt",
+        )
+        self.assertEqual(fields["尾帧图生成状态"], "待生成")
+        self.assertEqual(fields["尾帧画面描述"], "clean rug")
+
     def test_render_script_doc_last_frame_generates_and_writes_tail_frame(self):
         shot_fields = {
             "首尾帧视频模式": "启用",

@@ -708,16 +708,12 @@ def render_script_doc_shot(token, record_id):
         label='upload script doc shot image to feishu'
     )
 
-    success_fields = {
-        '分镜图': [{'file_token': file_token}],
-        '分镜图file_token': file_token,
-        '分镜图本地路径': out_path,
-        '提示词': prompt[:10000],
-        '分镜图生成状态': '成功',
-        '分镜图生成时间': int(time.time() * 1000),
-        '分镜图错误信息': '',
-        '错误信息': '',
-    }
+    success_fields = build_script_doc_storyboard_success_fields(
+        shot_fields,
+        file_token=file_token,
+        out_path=out_path,
+        prompt=prompt,
+    )
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
     log_event('INFO', 'script doc shot storyboard render success', record_id=record_id, reference_count=len(refs))
     print(f'✅ 脚本文档单张分镜图生成完成: {record_id}')
@@ -728,8 +724,79 @@ def is_end_frame_mode_enabled(fields):
     return raw in {'启用', '是', 'yes', 'true', '1', 'enabled', 'enable'}
 
 
-def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
+def extract_ending_frame_section(text):
+    raw = extract_text(text).strip()
+    if not raw:
+        return ''
+    markers = ['[Ending Frame]', 'Ending Frame:', '尾帧：', '尾帧:', '结束帧：', '结束帧:']
+    lower = raw.lower()
+    start = -1
+    marker_len = 0
+    for marker in markers:
+        idx = lower.find(marker.lower())
+        if idx >= 0:
+            start = idx
+            marker_len = len(marker)
+            break
+    if start < 0:
+        return ''
+    tail = raw[start + marker_len:].strip()
+    for marker in ['[Video Prompt]', '[Restrictions]', '[Negative Prompt]', '[Starting Frame]']:
+        idx = tail.lower().find(marker.lower())
+        if idx > 0:
+            tail = tail[:idx].strip()
+    return ' '.join(tail.split())
+
+
+def infer_script_doc_last_frame_description(fields):
     explicit_tail = extract_text(fields.get('尾帧画面描述')).strip()
+    if explicit_tail:
+        return explicit_tail
+    for field_name in ('图片提示词', '提示词', '结构化分镜JSON'):
+        candidate = extract_ending_frame_section(fields.get(field_name))
+        if candidate:
+            return candidate
+    raw_json = extract_text(fields.get('结构化分镜JSON')).strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+        except Exception:
+            parsed = {}
+        if isinstance(parsed, dict):
+            for key in ('image_prompt', 'video_prompt', 'continuity_notes'):
+                candidate = extract_ending_frame_section(parsed.get(key))
+                if candidate:
+                    return candidate
+            continuity = extract_text(parsed.get('continuity_notes')).strip()
+            if continuity:
+                return continuity
+    return ''
+
+
+def build_script_doc_storyboard_success_fields(shot_fields, *, file_token, out_path, prompt):
+    success_fields = {
+        '分镜图': [{'file_token': file_token}],
+        '分镜图file_token': file_token,
+        '分镜图本地路径': out_path,
+        '提示词': prompt[:10000],
+        '分镜图生成状态': '成功',
+        '分镜图生成时间': int(time.time() * 1000),
+        '分镜图错误信息': '',
+        '错误信息': '',
+    }
+    if is_end_frame_mode_enabled(shot_fields):
+        tail_description = infer_script_doc_last_frame_description(shot_fields)
+        if tail_description and not extract_text(shot_fields.get('尾帧画面描述')).strip():
+            success_fields['尾帧画面描述'] = tail_description[:10000]
+        tail_status = extract_text(shot_fields.get('尾帧图生成状态')).strip()
+        if tail_status not in {'成功', '生成中'}:
+            success_fields['尾帧图生成状态'] = '待生成'
+            success_fields['尾帧图错误信息'] = ''
+    return success_fields
+
+
+def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
+    explicit_tail = infer_script_doc_last_frame_description(fields)
     visual = extract_text(fields.get('画面描述')).strip()
     video_prompt = extract_text(fields.get('视频提示词')).strip()
     continuity = extract_text(fields.get('连续性要求')).strip()
