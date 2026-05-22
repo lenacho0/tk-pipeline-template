@@ -9,7 +9,7 @@
 """
 import json, os, sys, time, base64
 from pathlib import Path
-from google.genai import types
+from typing import List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 from otu_image import (
@@ -536,6 +536,42 @@ def build_shot_reference_prompt_note(refs):
     return "\n".join(lines)
 
 
+def build_reference_urls(token: str, refs: List[dict]) -> List[str]:
+    urls = []
+    for ref in refs:
+        file_token = ref.get("file_token", "")
+        if not file_token:
+            continue
+        url = "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url"
+        data = safe_request(
+            "get",
+            url,
+            headers=feishu_headers(token),
+            params={"file_tokens": file_token},
+            timeout=60,
+            max_attempts=3,
+            acceptable_codes=(0,),
+        )
+        items = data.get("data", {}).get("tmp_download_urls") or []
+        if isinstance(items, dict):
+            tmp = extract_text(items.get(file_token) or items.get("tmp_download_url") or "").strip()
+        elif items:
+            tmp = ""
+            for item in items:
+                item = item or {}
+                if extract_text(item.get("file_token") or "").strip() == file_token:
+                    tmp = extract_text(item.get("tmp_download_url") or item.get("url") or "").strip()
+                    break
+            if not tmp:
+                first = items[0] or {}
+                tmp = extract_text(first.get("tmp_download_url") or first.get("url") or "").strip()
+        else:
+            tmp = ""
+        if tmp:
+            urls.append(tmp)
+    return urls
+
+
 def classify_render_error(err):
     payload = build_error_payload(err, stage='generate_shot_image')
     mapping = {
@@ -554,6 +590,8 @@ def classify_render_error(err):
 
 
 def _upload_reference_image_parts(client, refs):
+    from google.genai import types
+
     parts = []
     for ref in refs:
         path = ref.get('path', '')
@@ -618,6 +656,7 @@ def render_script_doc_shot(token, record_id):
     prompt = f"{build_shot_reference_prompt_note(refs)}\n\n{prompt}".strip()
     out_path = os.path.join(task_dir, f'{record_id}_shot.png')
     ref_paths = [ref.get('path') for ref in refs if ref.get('path')]
+    reference_urls = build_reference_urls(token, refs)
     submit_task_id, submit_body = submit_otu_image_task(
         {
             'api_key': api_key,
@@ -627,7 +666,7 @@ def render_script_doc_shot(token, record_id):
         prompt,
         input_mode='image-to-image' if ref_paths else 'text-to-image',
         image_path=ref_paths[0] if ref_paths else '',
-        metadata={'urls': ref_paths, 'aspectRatio': '9:16'},
+        metadata={'urls': reference_urls, 'reference_roles': [ref.get('role', 'reference') for ref in refs], 'aspectRatio': '9:16'},
         size=DEFAULT_OTU_IMAGE_SIZE,
     )
     result = submit_body if not submit_task_id else poll_otu_image_task({
