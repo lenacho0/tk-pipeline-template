@@ -61,6 +61,13 @@ class ShotVideoTest(unittest.TestCase):
             "视频生成原始响应JSON": "",
         })
 
+    def test_dispatcher_has_script_doc_last_frame_watch(self):
+        watch = next(item for item in dispatcher.WATCH_LIST if item["name"] == "脚本文档尾帧图生成")
+        self.assertEqual(watch["table"], dispatcher.TABLE_SCRIPT_DOC_SHOTS)
+        self.assertEqual(watch["status_field"], "尾帧图生成状态")
+        self.assertEqual(watch["script"], "tk_shot_storyboard.py")
+        self.assertEqual(watch["args"], ["last-frame", "--table", "script_doc"])
+
     def test_normalize_seconds_limits_to_veo_values(self):
         self.assertEqual(video.normalize_seconds(4), "4")
         self.assertEqual(video.normalize_seconds("6秒"), "6")
@@ -142,6 +149,97 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(kwargs["config"].resolution, "720p")
         self.assertEqual(kwargs["config"].duration_seconds, 8)
         self.assertIsNone(kwargs["config"].last_frame)
+
+    def test_call_native_veo_uses_optional_last_frame(self):
+        fake_client = Mock()
+        fake_client.models.generate_videos.return_value = SimpleNamespace(name="operations/native_1")
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
+            first.write(b"first frame bytes")
+            first.flush()
+            last.write(b"last frame bytes")
+            last.flush()
+            video.call_native_veo_first_frame_task(
+                {
+                    "model": "veo-3.1-fast-generate-preview",
+                    "api_key": "sk-test",
+                    "api_base": "https://aihubmix.com/gemini",
+                },
+                "prompt text",
+                first.name,
+                "8",
+                "720p",
+                "9:16",
+                last_frame_path=last.name,
+                client=fake_client,
+            )
+        kwargs = fake_client.models.generate_videos.call_args.kwargs
+        self.assertEqual(kwargs["image"].image_bytes, b"first frame bytes")
+        self.assertEqual(kwargs["config"].last_frame.image_bytes, b"last frame bytes")
+        self.assertEqual(kwargs["config"].last_frame.mime_type, "image/png")
+
+    def test_submit_otu_video_task_sends_first_and_last_reference_images(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
+            first.write(b"first")
+            first.flush()
+            last.write(b"last")
+            last.flush()
+            response = Mock()
+            response.status_code = 200
+            response.json.return_value = {"id": "otu_task_1"}
+            response.text = '{"id":"otu_task_1"}'
+            with patch("tk_shot_video.requests.post", return_value=response) as post:
+                task_id, _ = video.submit_otu_video_task(
+                    {"api_base": "https://otuapi.com", "api_key": "sk-test", "model": "veo_3_1-fast-fl"},
+                    "prompt text",
+                    first.name,
+                    "8",
+                    "720x1280",
+                    "9:16",
+                    last_frame_path=last.name,
+                )
+        self.assertEqual(task_id, "otu_task_1")
+        files = post.call_args.kwargs["files"]
+        reference_files = [item for item in files if item[0] == "input_reference[]"]
+        self.assertEqual(len(reference_files), 2)
+        self.assertEqual(reference_files[0][1][0], os.path.basename(first.name))
+        self.assertEqual(reference_files[1][1][0], os.path.basename(last.name))
+
+    def test_resolve_last_frame_image_requires_success_when_enabled(self):
+        fields = sample_fields()
+        fields["首尾帧视频模式"] = "启用"
+        fields["尾帧图生成状态"] = "待生成"
+        fields["尾帧图"] = [{"file_token": "ft_last"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "尾帧图生成状态=成功"):
+                video.resolve_last_frame_image("t", "rec1", fields, Path(tmp), download_fn=Mock())
+
+    def test_run_dry_run_includes_last_frame_when_end_frame_mode_enabled(self):
+        fields = sample_fields()
+        fields["首尾帧视频模式"] = "启用"
+        fields["尾帧图生成状态"] = "成功"
+        fields["尾帧图"] = [{"file_token": "ft_last"}]
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref, \
+             patch("tk_shot_video.resolve_last_frame_image") as last_ref:
+            cfg.return_value = ("cfg1", {
+                "model": "veo-3.1-fast-generate-preview",
+                "api_key": "sk",
+                "api_base": "https://aihubmix.com/gemini",
+                "size": "720p",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+            last_ref.return_value = Path("/tmp/last.png")
+            result = video.run_shot_video_generation(
+                "rec1",
+                dry_run=True,
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+            )
+        self.assertEqual(result["end_frame_mode"], True)
+        self.assertEqual(result["last_frame_image_path"], "/tmp/last.png")
 
     def test_extract_and_download_native_inline_video_response(self):
         video_bytes = b"0" * 12000
@@ -475,6 +573,35 @@ class ShotVideoTest(unittest.TestCase):
                     get_record_fn=lambda token, table, rid: fields,
                 )
 
+    def test_end_frame_mode_rejects_seeddance_provider(self):
+        fields = sample_fields()
+        fields["首尾帧视频模式"] = "启用"
+        fields["尾帧图生成状态"] = "成功"
+        fields["尾帧图"] = [{"file_token": "ft_last"}]
+        fields["视频生成模型"] = "seeddance2.0"
+        fields["口播文本"] = ""
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref, \
+             patch("tk_shot_video.resolve_last_frame_image") as last_ref:
+            cfg.return_value = ("cfg1", {
+                "model": "doubao-seedance-2-0-fast-260128",
+                "api_key": "sk",
+                "api_base": "https://aihubmix.com",
+                "size": "720p",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+            last_ref.return_value = Path("/tmp/last.png")
+            with self.assertRaisesRegex(ValueError, "首尾帧视频模式仅支持 Veo"):
+                video.run_shot_video_generation(
+                    "rec1",
+                    dry_run=True,
+                    token="t",
+                    get_record_fn=lambda token, table, rid: fields,
+                )
+
     def test_seeddance_dry_run_allows_silent_shot_without_audio(self):
         fields = sample_fields()
         fields["视频生成模型"] = "seeddance2.0"
@@ -604,6 +731,7 @@ class ShotVideoTest(unittest.TestCase):
             "8",
             "720p",
             "9:16",
+            last_frame_path=None,
             client=fake_client,
         )
         poller.assert_called_once_with(fake_client, operation)

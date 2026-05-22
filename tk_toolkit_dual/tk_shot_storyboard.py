@@ -58,6 +58,29 @@ def filter_existing_fields(token, table_id, fields):
     return {k: v for k, v in fields.items() if k in existing}
 
 
+def get_attachment_token(value):
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict) and item.get('file_token'):
+                return str(item.get('file_token')).strip()
+    return ''
+
+
+def download_feishu_media(token, file_token, save_path):
+    url = f"https://open.feishu.cn/open-apis/drive/v1/medias/{file_token}/download"
+    resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=300, stream=True)
+    if resp.status_code != 200:
+        raise RuntimeError(f"飞书附件下载失败: HTTP {resp.status_code}, file_token={file_token}")
+    save_path = Path(save_path)
+    with save_path.open("wb") as f:
+        for chunk in resp.iter_content(8192):
+            if chunk:
+                f.write(chunk)
+    if save_path.stat().st_size < 1000:
+        raise RuntimeError(f"飞书附件下载结果过小: {save_path}")
+    return save_path
+
+
 def normalize_video_model_choice(value):
     raw = extract_text(value).strip().lower().replace('_', '-').replace(' ', '')
     if not raw or raw in {'待确认', 'pending', 'default'}:
@@ -700,6 +723,101 @@ def render_script_doc_shot(token, record_id):
     print(f'✅ 脚本文档单张分镜图生成完成: {record_id}')
 
 
+def is_end_frame_mode_enabled(fields):
+    raw = extract_text(fields.get('首尾帧视频模式')).strip().lower().replace(' ', '')
+    return raw in {'启用', '是', 'yes', 'true', '1', 'enabled', 'enable'}
+
+
+def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
+    explicit_tail = extract_text(fields.get('尾帧画面描述')).strip()
+    visual = extract_text(fields.get('画面描述')).strip()
+    video_prompt = extract_text(fields.get('视频提示词')).strip()
+    continuity = extract_text(fields.get('连续性要求')).strip()
+    product_focus = extract_text(fields.get('产品焦点')).strip()
+    target = explicit_tail or (
+        "Infer the final moment of the shot from the action prompt. "
+        "Show the natural end state after the described motion is completed."
+    )
+    parts = [
+        "Create one high-quality 9:16 vertical final frame image for an image-to-video shot.",
+        "Use the uploaded image as the first-frame visual reference; preserve the same character identity, product, outfit, scene, lighting, camera angle, and overall composition continuity.",
+        f"Final frame target: {target}",
+    ]
+    if visual:
+        parts.append(f"Original shot visual: {visual}")
+    if video_prompt:
+        parts.append(f"Motion/video prompt context: {video_prompt}")
+    if continuity:
+        parts.append(f"Continuity requirements: {continuity}")
+    if product_focus:
+        parts.append(f"Product exposure/focus: {product_focus}")
+    if first_frame_prompt:
+        parts.append(f"First-frame image prompt reference: {first_frame_prompt}")
+    parts.append("Output only a single final frame image, not a grid, not a panel layout, not a before-after comparison.")
+    parts.append("No subtitles, captions, stickers, watermark, UI, text overlays, logo changes, product morphing, face drift, outfit change, or new characters.")
+    return "\n".join(parts)
+
+
+def render_script_doc_last_frame(token, record_id):
+    if not TABLE_SCRIPT_DOC_SHOTS:
+        raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
+
+    fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    if not is_end_frame_mode_enabled(fields):
+        raise Exception('首尾帧视频模式未启用，拒绝生成尾帧图')
+    first_frame_token = get_attachment_token(fields.get('分镜图'))
+    if not first_frame_token:
+        raise Exception('缺少分镜图附件，无法生成尾帧图')
+
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        '尾帧图生成状态': '生成中',
+        '尾帧图错误信息': '',
+    }))
+
+    task_dir = ensure_task_dir(record_id)
+    first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
+    config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
+    model_name = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
+    api_key = config['api_key']
+    api_base = config['api_base'] or DEFAULT_OTU_API_BASE
+    if not api_key:
+        raise Exception('飞书配置表缺少 API Key')
+
+    prompt = build_script_doc_last_frame_prompt(fields, extract_text(fields.get('图片提示词') or fields.get('提示词')).strip())
+    out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
+    submit_task_id, submit_body = submit_otu_image_task(
+        {'api_key': api_key, 'api_base': api_base, 'model': model_name},
+        prompt,
+        input_mode='image-to-image',
+        image_path=str(first_frame_path),
+        metadata={'urls': [], 'reference_roles': ['first_frame'], 'aspectRatio': '9:16'},
+        size=DEFAULT_OTU_IMAGE_SIZE,
+    )
+    result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
+    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
+    if not result_url:
+        raise Exception('OTU 尾帧图任务完成但未返回图片地址')
+    download_otu_image_result(result_url, out_path)
+
+    file_token = with_retry(
+        lambda: upload_image_to_feishu(token, out_path, f'{record_id}_last_frame.png'),
+        max_attempts=3,
+        label='upload script doc last frame image to feishu'
+    )
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        '尾帧图': [{'file_token': file_token}],
+        '尾帧图file_token': file_token,
+        '尾帧图本地路径': out_path,
+        '尾帧图提示词': prompt[:10000],
+        '尾帧图生成状态': '成功',
+        '尾帧图生成时间': int(time.time() * 1000),
+        '尾帧图错误信息': '',
+        '错误信息': '',
+    }))
+    log_event('INFO', 'script doc last frame render success', record_id=record_id)
+    print(f'✅ 脚本文档尾帧图生成完成: {record_id}')
+
+
 def render_shot(token, record_id, table='shot_storyboard'):
     if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
         return render_script_doc_shot(token, record_id)
@@ -789,7 +907,7 @@ def render_shot(token, record_id, table='shot_storyboard'):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='逐镜头分镜图生成')
-    parser.add_argument('action', choices=['split', 'render'])
+    parser.add_argument('action', choices=['split', 'render', 'last-frame'])
     parser.add_argument('record_id')
     parser.add_argument('--table', default='shot_storyboard', choices=['shot_storyboard', 'script_doc'])
     args = parser.parse_args()
@@ -802,13 +920,32 @@ def main():
             split_shots(token, record_id)
         elif action == 'render':
             render_shot(token, record_id, table=args.table)
+        elif action == 'last-frame':
+            if args.table != 'script_doc':
+                raise Exception('last-frame 仅支持 --table script_doc')
+            render_script_doc_last_frame(token, record_id)
         else:
             raise Exception(f'未知 action: {action}')
     except Exception as e:
-        payload = build_error_payload(e, stage='generate_shot_image' if action == 'render' else action)
+        payload = build_error_payload(e, stage='generate_last_frame_image' if action == 'last-frame' else ('generate_shot_image' if action == 'render' else action))
         err = payload['message']
         log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
-        if action == 'render' and args.table == 'script_doc':
+        if action == 'last-frame':
+            fail_fields = {
+                '尾帧图生成状态': '失败',
+                '尾帧图错误信息': err,
+                '错误信息': err,
+            }
+            try:
+                safe_update_record(
+                    token,
+                    TABLE_SCRIPT_DOC_SHOTS,
+                    record_id,
+                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
+                )
+            except Exception:
+                pass
+        elif action == 'render' and args.table == 'script_doc':
             fail_fields = {
                 '分镜图生成状态': '失败',
                 '分镜图错误信息': err,

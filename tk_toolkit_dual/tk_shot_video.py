@@ -319,6 +319,30 @@ def resolve_reference_image(
     return download_fn(token, file_token, work_dir / f"{record_id}_shot.png")
 
 
+def is_end_frame_mode_enabled(fields: Dict[str, Any]) -> bool:
+    raw = extract_text(fields.get("首尾帧视频模式")).strip().lower().replace(" ", "")
+    return raw in {"启用", "是", "yes", "true", "1", "enabled", "enable"}
+
+
+def resolve_last_frame_image(
+    token: str,
+    record_id: str,
+    fields: Dict[str, Any],
+    work_dir: Path,
+    *,
+    download_fn: ReferenceDownloader = download_feishu_media,
+) -> Optional[Path]:
+    if not is_end_frame_mode_enabled(fields):
+        return None
+    status = extract_text(fields.get("尾帧图生成状态")).strip()
+    if status != "成功":
+        raise ValueError("首尾帧视频模式已启用，必须先满足 尾帧图生成状态=成功")
+    file_token = get_attachment_token(fields.get("尾帧图"))
+    if not file_token:
+        raise ValueError("首尾帧视频模式已启用，但缺少尾帧图附件")
+    return download_fn(token, file_token, work_dir / f"{record_id}_last_frame.png")
+
+
 def build_model_prompt(fields: Dict[str, Any]) -> str:
     prompt = extract_text(fields.get("视频提示词")).strip()
     if not prompt:
@@ -419,20 +443,29 @@ def submit_otu_video_task(
     seconds: str,
     size: str = DEFAULT_OTU_SIZE,
     aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    *,
+    last_frame_path: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     url = videos_url(config.get("api_base") or DEFAULT_OTU_API_BASE)
     model_name = config.get("model") or DEFAULT_OTU_MODEL
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     with open(image_path, "rb") as image_file:
         files = [("input_reference[]", (os.path.basename(image_path), image_file, "image/png"))]
-        data = {
-            "model": model_name,
-            "prompt": prompt,
-            "seconds": seconds,
-            "size": size or DEFAULT_OTU_SIZE,
-            "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
-        }
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+        last_file = open(last_frame_path, "rb") if last_frame_path else None
+        try:
+            if last_file:
+                files.append(("input_reference[]", (os.path.basename(last_frame_path), last_file, "image/png")))
+            data = {
+                "model": model_name,
+                "prompt": prompt,
+                "seconds": seconds,
+                "size": size or DEFAULT_OTU_SIZE,
+                "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+            }
+            resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+        finally:
+            if last_file:
+                last_file.close()
     try:
         body = resp.json()
     except Exception:
@@ -603,11 +636,16 @@ def call_native_veo_first_frame_task(
     size: str = DEFAULT_SIZE,
     aspect_ratio: str = DEFAULT_ASPECT_RATIO,
     *,
+    last_frame_path: Optional[str] = None,
     client: Any = None,
 ):
     client = client or get_native_veo_client(config)
     with open(image_path, "rb") as image_file:
         first_frame = types.Image(image_bytes=image_file.read(), mime_type="image/png")
+    last_frame = None
+    if last_frame_path:
+        with open(last_frame_path, "rb") as last_file:
+            last_frame = types.Image(image_bytes=last_file.read(), mime_type="image/png")
     return client.models.generate_videos(
         model=config.get("model") or DEFAULT_MODEL,
         prompt=prompt,
@@ -616,6 +654,7 @@ def call_native_veo_first_frame_task(
             duration_seconds=int(normalize_seconds(seconds)),
             resolution=size or DEFAULT_SIZE,
             aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO,
+            last_frame=last_frame,
         ),
     )
 
@@ -941,6 +980,9 @@ def run_shot_video_generation(
     runtime_config["model"] = resolve_selected_model(model_choice, config, channel)
     work_dir = ensure_work_dir(record_id)
     image_path = resolve_reference_image(token, record_id, fields, work_dir)
+    last_frame_path = resolve_last_frame_image(token, record_id, fields, work_dir)
+    if last_frame_path and provider != "veo3.1":
+        raise ValueError("首尾帧视频模式仅支持 Veo 视频模型")
     prompt, prompt_rebuilt = resolve_model_prompt(fields, provider)
     seconds = normalize_seconds(fields.get("目标时长秒"))
     size = config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
@@ -960,6 +1002,8 @@ def run_shot_video_generation(
         "model": runtime_config["model"],
         "api_base": native_veo_api_base(config) if channel == "AIHubMix" and provider == "veo3.1" else normalize_api_base(config.get("api_base") or (DEFAULT_OTU_API_BASE if channel == "OTU" else DEFAULT_API_BASE)),
         "first_frame_image_path": str(image_path),
+        "end_frame_mode": bool(last_frame_path),
+        "last_frame_image_path": str(last_frame_path) if last_frame_path else "",
         "voiceover_audio_dependency": voiceover_dependency,
         "prompt_rebuilt_for_provider": prompt_rebuilt,
         "prompt_chars": len(prompt),
@@ -996,7 +1040,7 @@ def run_shot_video_generation(
                 task_id = existing_task_id
                 result = otu_poller(runtime_config, task_id)
             else:
-                task_id, submit_body = otu_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio)
+                task_id, submit_body = otu_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, last_frame_path=str(last_frame_path) if last_frame_path else None)
                 update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
                     "视频任务ID": task_id,
                     "视频生成原始响应JSON": compact_json({"submit": submit_body}),
@@ -1071,7 +1115,7 @@ def run_shot_video_generation(
                     "视频任务ID": "",
                     "视频错误信息": f"旧视频任务ID不是 Gemini/Veo operation，已忽略并重新提交。old_task_id={existing_task_id}",
                 }))
-            operation = native_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, client=client)
+            operation = native_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, last_frame_path=str(last_frame_path) if last_frame_path else None, client=client)
             task_id = extract_text(getattr(operation, "name", "")).strip()
             if not task_id:
                 raise RuntimeError(f"Veo 首帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")

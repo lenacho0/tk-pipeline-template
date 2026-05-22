@@ -141,6 +141,10 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(fields["生成时间"]["type"], "datetime")
 
         views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_shots")["views"]
+        self.assertIn("首尾帧视频模式", views["01-分镜图生成"])
+        self.assertIn("尾帧画面描述", views["01-分镜图生成"])
+        self.assertIn("尾帧图生成状态", views["01-分镜图生成"])
+        self.assertIn("尾帧图", views["01-分镜图生成"])
         self.assertIn("视频通道", views["03-分镜视频"])
         self.assertIn("视频生成模型", views["03-分镜视频"])
         self.assertNotIn("发布平台", views["04-发布素材"])
