@@ -931,6 +931,7 @@ def run_shot_video_generation(
     status = extract_text(fields.get("视频生成状态")).strip()
     if status == "成功" and not dry_run:
         raise ValueError(f"003-3 {record_id} 已成功生成视频，拒绝重复生成")
+    force_new_task = status == "待生成"
 
     channel = normalize_video_channel(fields.get("视频通道"))
     model_choice = extract_text(fields.get("视频生成模型")).strip()
@@ -947,7 +948,8 @@ def run_shot_video_generation(
     output_filename = resolve_shot_video_filename(record_id, fields)
     output_path = str(work_dir / output_filename)
     voiceover_dependency = resolve_voiceover_audio_dependency(fields, provider)
-    existing_task_id = extract_text(fields.get("视频任务ID")).strip()
+    raw_existing_task_id = extract_text(fields.get("视频任务ID")).strip()
+    existing_task_id = "" if force_new_task else raw_existing_task_id
     summary: Dict[str, Any] = {
         "record_id": record_id,
         "table_id": table_id,
@@ -974,6 +976,11 @@ def run_shot_video_generation(
 
     task_id = ""
     try:
+        if force_new_task and raw_existing_task_id:
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频任务ID": "",
+                "视频生成原始响应JSON": "",
+            }))
         if prompt_rebuilt:
             update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
                 "视频提示词": prompt[:10000],

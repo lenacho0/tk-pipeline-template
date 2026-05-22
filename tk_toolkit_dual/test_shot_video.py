@@ -40,6 +40,27 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(dispatcher.count_running_by_watch("脚本文档分镜视频生成"), 1)
         self.assertEqual(dispatcher.count_running_by_watch("逐镜头分镜视频生成"), 1)
 
+    def test_dispatcher_clears_claim_fields_when_triggering_rerun(self):
+        watch = {
+            "table": "tbl1",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "claim_clear_fields": ["视频任务ID", "视频生成原始响应JSON"],
+        }
+        updates = []
+
+        with patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "待生成"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"):
+            self.assertTrue(dispatcher.try_claim_task("t", watch, "rec1"))
+
+        self.assertEqual(updates[0], {
+            "视频生成状态": "生成中",
+            "视频任务ID": "",
+            "视频生成原始响应JSON": "",
+        })
+
     def test_normalize_seconds_limits_to_veo_values(self):
         self.assertEqual(video.normalize_seconds(4), "4")
         self.assertEqual(video.normalize_seconds("6秒"), "6")
@@ -700,6 +721,7 @@ class ShotVideoTest(unittest.TestCase):
 
     def test_run_generation_reuses_existing_native_task_id(self):
         fields = sample_fields()
+        fields["视频生成状态"] = "生成中"
         fields["视频任务ID"] = "operations/existing_1"
         fake_client = Mock()
         completed = {
@@ -748,6 +770,102 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(poller.call_args.args[1].name, "operations/existing_1")
         self.assertEqual(result["task_id"], "operations/existing_1")
         self.assertEqual(result["status"], "success")
+
+    def test_run_generation_resubmits_when_pending_even_with_existing_native_task_id(self):
+        fields = sample_fields()
+        fields["视频生成状态"] = "待生成"
+        fields["视频任务ID"] = "operations/old_1"
+        fake_client = Mock()
+        operation = SimpleNamespace(name="operations/native_2", done=False)
+        completed = {
+            "name": "operations/native_2",
+            "done": True,
+            "response": {
+                "videos": [{
+                    "bytesBase64Encoded": base64.b64encode(b"5" * 12000).decode("ascii"),
+                    "mimeType": "video/mp4",
+                }]
+            },
+        }
+        updates = []
+
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref, \
+             patch("tk_shot_video.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_video.os.path.getsize", return_value=123456):
+            cfg.return_value = ("cfg1", {
+                "model": "veo-3.1-fast-generate-preview",
+                "api_key": "sk",
+                "api_base": "https://aihubmix.com/gemini",
+                "size": "720p",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+            submitter = Mock(return_value=operation)
+
+            result = video.run_shot_video_generation(
+                "rec1",
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+                update_record_fn=lambda token, table, rid, patch_fields: updates.append(patch_fields),
+                native_client_factory=lambda config: fake_client,
+                native_submitter=submitter,
+                native_poller=Mock(return_value=completed),
+                native_downloader=Mock(return_value="/tmp/rec1_video.mp4"),
+                uploader=Mock(return_value="ft_video"),
+            )
+
+        submitter.assert_called_once()
+        self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
+        self.assertEqual(result["task_id"], "operations/native_2")
+        self.assertEqual(result["status"], "success")
+
+    def test_run_otu_resubmits_when_pending_even_with_existing_task_id(self):
+        fields = sample_fields()
+        fields["视频生成状态"] = "待生成"
+        fields["视频通道"] = "OTU"
+        fields["视频生成模型"] = "OTU / veo_3_1-fast-fl"
+        fields["视频任务ID"] = "task_old_otu"
+        submitter = Mock(return_value=("task_new_otu", {"id": "task_new_otu"}))
+        poller = Mock(return_value={"status": "completed", "data": {"result_url": "https://x.test/new-otu.mp4"}})
+        downloader = Mock(return_value="/tmp/rec1_video.mp4")
+        uploader = Mock(return_value="ft_video")
+        updates = []
+
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref, \
+             patch("tk_shot_video.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_video.os.path.getsize", return_value=123456):
+            cfg.return_value = ("cfg_otu", {
+                "model": "veo_3_1-fast-fl",
+                "api_key": "sk",
+                "api_base": "https://otuapi.com",
+                "size": "720x1280",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+
+            result = video.run_shot_video_generation(
+                "rec1",
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+                update_record_fn=lambda token, table, rid, patch_fields: updates.append(patch_fields),
+                native_submitter=Mock(),
+                otu_submitter=submitter,
+                otu_poller=poller,
+                otu_downloader=downloader,
+                uploader=uploader,
+            )
+
+        submitter.assert_called_once()
+        poller.assert_called_once_with(submitter.call_args.args[0], "task_new_otu")
+        self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
+        self.assertEqual(result["task_id"], "task_new_otu")
+        self.assertEqual(result["video_url"], "https://x.test/new-otu.mp4")
 
     def test_run_generation_ignores_legacy_non_native_task_id(self):
         fields = sample_fields()

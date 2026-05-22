@@ -149,6 +149,7 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
+        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
     },
     {
         'name': '逐镜头母任务创建',
@@ -215,6 +216,7 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
+        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
     },
 ]
 
@@ -621,9 +623,10 @@ def try_claim_task(token, watch, record_id):
         if latest_status not in valid_trigger_values:
             update_record_state_cache(watch, record_id, latest_status)
             return False
-        safe_update_record(token, watch['table'], record_id, {
-            watch['status_field']: watch['running_value']
-        })
+        claim_fields = {watch['status_field']: watch['running_value']}
+        for field_name in watch.get('claim_clear_fields') or []:
+            claim_fields[field_name] = ''
+        safe_update_record(token, watch['table'], record_id, claim_fields)
         update_record_state_cache(watch, record_id, watch['running_value'])
         return True
     except Exception as e:
