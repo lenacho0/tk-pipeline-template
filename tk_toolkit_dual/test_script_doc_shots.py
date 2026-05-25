@@ -147,6 +147,10 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("尾帧图", views["01-分镜图生成"])
         self.assertIn("视频通道", views["03-分镜视频"])
         self.assertIn("视频生成模型", views["03-分镜视频"])
+        self.assertEqual(
+            views["03-分镜视频"],
+            ["任务名称", "关联任务", "分镜序号", "目标时长秒", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "尾帧图错误信息", "视频提示词", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间"],
+        )
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
 

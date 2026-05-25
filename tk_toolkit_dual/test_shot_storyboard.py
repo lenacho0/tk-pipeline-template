@@ -32,6 +32,21 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(safe_request.call_args_list[0].kwargs["params"], {"file_tokens": "ft_pet"})
         self.assertEqual(safe_request.call_args_list[1].kwargs["params"], {"file_tokens": "ft_human"})
 
+    def test_get_tmp_download_url_for_attachment_uses_single_file_token(self):
+        response = {
+            "code": 0,
+            "data": {
+                "tmp_download_urls": [
+                    {"file_token": "ft_first", "tmp_download_url": "https://x.test/first.png"},
+                ]
+            },
+        }
+        with patch("tk_shot_storyboard.safe_request", return_value=response) as safe_request:
+            url = storyboard.get_tmp_download_url_for_attachment("token", "ft_first")
+
+        self.assertEqual(url, "https://x.test/first.png")
+        self.assertEqual(safe_request.call_args.kwargs["params"], {"file_tokens": "ft_first"})
+
     def test_build_last_frame_prompt_uses_explicit_tail_description(self):
         prompt = storyboard.build_script_doc_last_frame_prompt(
             {"尾帧画面描述": "hero holds product at the end", "画面描述": "hero starts walking", "视频提示词": "walk forward"},
@@ -57,6 +72,46 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(fields["尾帧图生成状态"], "待生成")
         self.assertEqual(fields["尾帧画面描述"], "clean rug")
 
+    def test_single_shot_prompt_uses_only_starting_frame_when_end_frame_enabled(self):
+        prompt = storyboard._build_single_shot_prompt(
+            "base prompt",
+            {
+                "首尾帧视频模式": "启用",
+                "图片提示词": "[Starting Frame] stained sofa with product bottle\n\n[Ending Frame] sofa is clean and towel is wet",
+                "画面描述": "cleaning demo",
+            },
+            "写实",
+            "",
+        )
+
+        self.assertIn("stained sofa with product bottle", prompt)
+        self.assertNotIn("sofa is clean and towel is wet", prompt)
+        self.assertNotIn("[Ending Frame]", prompt)
+
+    def test_last_frame_prompt_preserves_ending_frame_instruction_verbatim(self):
+        ending = "Preserve the same Thai living room and product packaging. The pale yellow urine stain is completely gone. The cleaned area looks slightly damp. The paper towel is wet."
+        prompt = storyboard.build_script_doc_last_frame_prompt(
+            {
+                "尾帧画面描述": ending,
+                "图片提示词": "[Starting Frame] stained sofa with original product bottle\n\n[Ending Frame] sofa is clean and towel is wet",
+            },
+            first_frame_prompt="[Starting Frame] stained sofa with original product bottle\n\n[Ending Frame] sofa is clean and towel is wet",
+        )
+
+        lower = prompt.lower()
+        self.assertIn("uploaded first-frame image", lower)
+        self.assertIn("visual reference", lower)
+        self.assertIn("ending frame instruction", lower)
+        self.assertIn(ending, prompt)
+        self.assertIn("preserve the same thai living room", lower)
+        self.assertIn("pale yellow urine stain is completely gone", lower)
+        self.assertIn("cleaned area looks slightly damp", lower)
+        self.assertIn("paper towel is wet", lower)
+        self.assertNotIn("only change", lower)
+        self.assertNotIn("exact product bottle shape, label, colors, logo, text layout, position, and scale", lower)
+        self.assertNotIn("stained sofa with original product bottle", prompt)
+        self.assertNotIn("[Ending Frame]", prompt)
+
     def test_render_script_doc_last_frame_generates_and_writes_tail_frame(self):
         shot_fields = {
             "首尾帧视频模式": "启用",
@@ -73,6 +128,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
              patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
              patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
              patch("tk_shot_storyboard.download_feishu_media", return_value=Path(tmp) / "first.png"), \
+             patch("tk_shot_storyboard.get_tmp_download_url_for_attachment", return_value="https://x.test/first-frame.png"), \
              patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
              patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
              patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
@@ -86,6 +142,43 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
         self.assertIn("尾帧图提示词", updates[-1])
         self.assertEqual(submitter.call_args.kwargs["input_mode"], "image-to-image")
+
+    def test_render_script_doc_last_frame_uses_only_first_frame_url_as_visual_reference(self):
+        shot_fields = {
+            "首尾帧视频模式": "启用",
+            "尾帧画面描述": "same sofa, stain removed, towel is wet",
+            "分镜图": [{"file_token": "ft_first"}],
+            "父文档记录ID": "parent1",
+            "画面描述": "start pose",
+            "视频提示词": "remove stain",
+            "图片提示词": "[Starting Frame] stained sofa with exact product bottle\n\n[Ending Frame] same sofa, stain removed",
+        }
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", return_value=shot_fields), \
+             patch("tk_shot_storyboard.build_reference_urls") as build_reference_urls, \
+             patch("tk_shot_storyboard.get_tmp_download_url_for_attachment", return_value="https://x.test/first-frame.png") as tmp_url_getter, \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.download_feishu_media", return_value=Path(tmp) / "first.png"), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
+             patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
+             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
+             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
+            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
+            storyboard.render_script_doc_last_frame("t", "rec1")
+
+        metadata = submitter.call_args.kwargs["metadata"]
+        self.assertEqual(metadata["urls"], ["https://x.test/first-frame.png"])
+        self.assertEqual(metadata["reference_roles"], ["first_frame"])
+        tmp_url_getter.assert_called_once_with("t", "ft_first")
+        build_reference_urls.assert_not_called()
+        prompt = submitter.call_args.args[1]
+        self.assertIn("ending frame instruction", prompt.lower())
+        self.assertNotIn("product reference wins", prompt.lower())
 
 
 if __name__ == "__main__":

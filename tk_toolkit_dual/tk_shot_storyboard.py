@@ -446,6 +446,50 @@ def _clean_image_prompt_draft(value):
     return text
 
 
+STARTING_FRAME_MARKERS = ['[Starting Frame]', 'Starting Frame:', '首帧：', '首帧:', '开始帧：', '开始帧:']
+ENDING_FRAME_MARKERS = ['[Ending Frame]', 'Ending Frame:', '尾帧：', '尾帧:', '结束帧：', '结束帧:']
+FRAME_BOUNDARY_MARKERS = STARTING_FRAME_MARKERS + ENDING_FRAME_MARKERS + ['[Video Prompt]', '[Restrictions]', '[Negative Prompt]']
+
+
+def _extract_marked_frame_section(text, markers, stop_markers=None):
+    raw = extract_text(text).strip()
+    if not raw:
+        return ''
+    lower = raw.lower()
+    start = -1
+    marker_len = 0
+    for marker in markers:
+        idx = lower.find(marker.lower())
+        if idx >= 0:
+            start = idx
+            marker_len = len(marker)
+            break
+    if start < 0:
+        return ''
+    section = raw[start + marker_len:].strip()
+    stops = stop_markers if stop_markers is not None else FRAME_BOUNDARY_MARKERS
+    section_lower = section.lower()
+    end = len(section)
+    for marker in stops:
+        idx = section_lower.find(marker.lower())
+        if idx >= 0:
+            end = min(end, idx)
+    return ' '.join(section[:end].strip().split())
+
+
+def extract_starting_frame_section(text):
+    return _extract_marked_frame_section(text, STARTING_FRAME_MARKERS)
+
+
+def image_prompt_for_first_frame(fields):
+    image_prompt = _clean_image_prompt_draft(fields.get('图片提示词') or fields.get('提示词', ''))
+    if is_end_frame_mode_enabled(fields):
+        starting = extract_starting_frame_section(image_prompt)
+        if starting:
+            return starting
+    return image_prompt
+
+
 def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     narration = extract_text(shot_fields.get('分镜文案', ''))
     voiceover = extract_text(shot_fields.get('口播文本', ''))
@@ -458,7 +502,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     pet_id = extract_text(shot_fields.get('宠物ID', ''))
     environment_id = extract_text(shot_fields.get('环境ID', ''))
     target_duration = extract_text(shot_fields.get('目标时长秒', ''))
-    image_prompt = _clean_image_prompt_draft(shot_fields.get('图片提示词') or shot_fields.get('提示词', ''))
+    image_prompt = image_prompt_for_first_frame(shot_fields)
     shot_no = extract_text(shot_fields.get('分镜序号', ''))
     total_shots = extract_text(shot_fields.get('总分镜数', ''))
     raw_meta = extract_text(shot_fields.get('文本', '')).strip()
@@ -525,6 +569,7 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
 ## 单张图输出要求
 - 只生成 1 张图，不要九宫格，不要 panel layout
 - 画面比例 9:16 竖图
+- 只生成当前分镜的单一时刻，不要 split screen，不要 before-after comparison，不要 two-panel，不要 collage
 - 如果“本次重生成修改要求”非空，必须优先满足该要求；但不能破坏产品写实一致性、主角/宠物身份一致性、场景连续性和当前 shot 的故事任务
 - 不要文字，不要字幕，不要贴纸，不要水印
 - 不要把 Screen Text / Screen Text Chinese Meaning 生成到图片里；它们只供后期叠加字幕或人工检查
@@ -593,6 +638,11 @@ def build_reference_urls(token: str, refs: List[dict]) -> List[str]:
         if tmp:
             urls.append(tmp)
     return urls
+
+
+def get_tmp_download_url_for_attachment(token: str, file_token: str) -> str:
+    urls = build_reference_urls(token, [{"role": "attachment", "file_token": file_token}])
+    return urls[0] if urls else ""
 
 
 def classify_render_error(err):
@@ -725,27 +775,7 @@ def is_end_frame_mode_enabled(fields):
 
 
 def extract_ending_frame_section(text):
-    raw = extract_text(text).strip()
-    if not raw:
-        return ''
-    markers = ['[Ending Frame]', 'Ending Frame:', '尾帧：', '尾帧:', '结束帧：', '结束帧:']
-    lower = raw.lower()
-    start = -1
-    marker_len = 0
-    for marker in markers:
-        idx = lower.find(marker.lower())
-        if idx >= 0:
-            start = idx
-            marker_len = len(marker)
-            break
-    if start < 0:
-        return ''
-    tail = raw[start + marker_len:].strip()
-    for marker in ['[Video Prompt]', '[Restrictions]', '[Negative Prompt]', '[Starting Frame]']:
-        idx = tail.lower().find(marker.lower())
-        if idx > 0:
-            tail = tail[:idx].strip()
-    return ' '.join(tail.split())
+    return _extract_marked_frame_section(text, ENDING_FRAME_MARKERS)
 
 
 def infer_script_doc_last_frame_description(fields):
@@ -797,31 +827,20 @@ def build_script_doc_storyboard_success_fields(shot_fields, *, file_token, out_p
 
 def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
     explicit_tail = infer_script_doc_last_frame_description(fields)
-    visual = extract_text(fields.get('画面描述')).strip()
-    video_prompt = extract_text(fields.get('视频提示词')).strip()
-    continuity = extract_text(fields.get('连续性要求')).strip()
-    product_focus = extract_text(fields.get('产品焦点')).strip()
-    target = explicit_tail or (
+    target = extract_text(explicit_tail).strip() or (
         "Infer the final moment of the shot from the action prompt. "
         "Show the natural end state after the described motion is completed."
     )
     parts = [
-        "Create one high-quality 9:16 vertical final frame image for an image-to-video shot.",
-        "Use the uploaded image as the first-frame visual reference; preserve the same character identity, product, outfit, scene, lighting, camera angle, and overall composition continuity.",
-        f"Final frame target: {target}",
+        "Edit the uploaded first-frame image according to the following Ending Frame instruction.",
+        "Use the uploaded first-frame image as the visual reference.",
+        "Follow the Ending Frame instruction exactly.",
+        "",
+        "Ending Frame instruction:",
+        target,
+        "",
+        "Output one single 9:16 final frame image, not a split-screen or before-after comparison.",
     ]
-    if visual:
-        parts.append(f"Original shot visual: {visual}")
-    if video_prompt:
-        parts.append(f"Motion/video prompt context: {video_prompt}")
-    if continuity:
-        parts.append(f"Continuity requirements: {continuity}")
-    if product_focus:
-        parts.append(f"Product exposure/focus: {product_focus}")
-    if first_frame_prompt:
-        parts.append(f"First-frame image prompt reference: {first_frame_prompt}")
-    parts.append("Output only a single final frame image, not a grid, not a panel layout, not a before-after comparison.")
-    parts.append("No subtitles, captions, stickers, watermark, UI, text overlays, logo changes, product morphing, face drift, outfit change, or new characters.")
     return "\n".join(parts)
 
 
@@ -843,6 +862,7 @@ def render_script_doc_last_frame(token, record_id):
 
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
+    first_frame_tmp_url = get_tmp_download_url_for_attachment(token, first_frame_token)
     config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
     model_name = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = config['api_key']
@@ -850,14 +870,17 @@ def render_script_doc_last_frame(token, record_id):
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
 
-    prompt = build_script_doc_last_frame_prompt(fields, extract_text(fields.get('图片提示词') or fields.get('提示词')).strip())
+    prompt = build_script_doc_last_frame_prompt(
+        fields,
+        extract_text(fields.get('图片提示词') or fields.get('提示词')).strip(),
+    )
     out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
     submit_task_id, submit_body = submit_otu_image_task(
         {'api_key': api_key, 'api_base': api_base, 'model': model_name},
         prompt,
         input_mode='image-to-image',
         image_path=str(first_frame_path),
-        metadata={'urls': [], 'reference_roles': ['first_frame'], 'aspectRatio': '9:16'},
+        metadata={'urls': [first_frame_tmp_url] if first_frame_tmp_url else [], 'reference_roles': ['first_frame'], 'aspectRatio': '9:16'},
         size=DEFAULT_OTU_IMAGE_SIZE,
     )
     result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
