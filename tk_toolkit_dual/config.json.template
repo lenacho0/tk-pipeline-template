@@ -14,6 +14,7 @@
       "script_doc_tasks": "脚本文档任务表的 table_id",
       "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
+      "storyboard_video": "故事板图片视频生成表的 table_id",
       "voice_library": "音色库表的 table_id",
       "text_audio": "文案转音频表的 table_id",
       "product": "产品信息表的 table_id",
@@ -29,6 +30,7 @@
     "analysis": "脚本分析在「模型与API配置」表中的 record_id",
     "script_gen": "产品脚本生成在「模型与API配置」表中的 record_id",
     "storyboard": "分镜图生成在「模型与API配置」表中的 record_id",
+    "storyboard_video_prompt": "故事板图片提示词拆分在「模型与API配置」表中的 record_id（可选；为空时复用逐镜头脚本生成配置）",
     "video": "视频制作在「模型与API配置」表中的 record_id"
   },
   "products": {
