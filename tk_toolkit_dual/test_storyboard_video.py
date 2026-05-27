@@ -124,32 +124,31 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("日常口语化对白", prompt)
         self.assertIn("【完整脚本内容】", prompt)
 
-    def test_text_generation_config_uses_split_prompt_without_requiring_api_key(self):
-        with patch.object(storyboard_video, "get_model_config", return_value={
+    def test_text_generation_config_uses_dedicated_storyboard_split_record(self):
+        with patch.dict(storyboard_video.CONFIG_RECORDS, {"storyboard_text_split": "rec_story_split"}, clear=True), \
+             patch.object(storyboard_video, "get_model_config", return_value={
             "model": "gemini-3.1-pro-preview",
             "api_key": "sk-text",
             "api_base": "https://aihubmix.com/gemini",
-            "prompt": "base prompt",
-        }), patch.object(storyboard_video, "safe_list_records", return_value=[
-            {"record_id": "recPrompt", "fields": {"环节": "故事板图片提示词拆分", "提示词": "configured split prompt"}}
-        ]):
+            "prompt": "configured split prompt",
+        }) as getter:
             cfg = storyboard_video.get_text_generation_config("token")
 
+        getter.assert_called_once_with("token", "rec_story_split")
         self.assertEqual(cfg["model"], "gemini-3.1-pro-preview")
         self.assertEqual(cfg["api_key"], "sk-text")
         self.assertEqual(cfg["api_base"], "https://aihubmix.com/gemini")
         self.assertEqual(cfg["prompt"], "configured split prompt")
-        self.assertEqual(cfg["prompt_record_id"], "recPrompt")
+        self.assertEqual(cfg["prompt_record_id"], "rec_story_split")
 
     def test_text_generation_config_falls_back_when_split_prompt_empty(self):
-        with patch.object(storyboard_video, "get_model_config", return_value={
+        with patch.dict(storyboard_video.CONFIG_RECORDS, {"storyboard_text_split": "rec_story_split"}, clear=True), \
+             patch.object(storyboard_video, "get_model_config", return_value={
             "model": "gemini-3.1-pro-preview",
             "api_key": "sk-text",
             "api_base": "https://aihubmix.com/gemini",
-            "prompt": "base prompt",
-        }), patch.object(storyboard_video, "safe_list_records", return_value=[
-            {"record_id": "recPrompt", "fields": {"环节": "故事板图片提示词拆分", "提示词": ""}}
-        ]):
+            "prompt": "",
+        }):
             cfg = storyboard_video.get_text_generation_config("token")
 
         self.assertEqual(cfg["prompt"], storyboard_video.STORYBOARD_PROMPT_RULES)
@@ -724,12 +723,12 @@ Omni Video Prompt:
                  {"record_id": "rec_image", "fields": {"环节": "故事板图片生成-OTU"}}
              ]), \
              patch.object(bootstrap_config, "config_field_names", return_value={"环节", "模型名称", "API Key", "API 代理地址", "调用方式", "状态", "备注", "提示词"}), \
-             patch.dict(os.environ, {"STORYBOARD_VIDEO_OTU_API_KEY": "sk-test"}, clear=False), \
+             patch.dict(os.environ, {"STORYBOARD_VIDEO_OTU_API_KEY": "sk-test", "STORYBOARD_TEXT_SPLIT_API_KEY": "sk-text"}, clear=False), \
              patch.object(bootstrap_config, "create_config_record", side_effect=lambda token, fields, existing_fields: created.append(fields) or "rec_new"), \
              patch("tk_bootstrap_storyboard_video_config.print") as printer:
             bootstrap_config.main()
 
-        self.assertEqual([item["环节"] for item in created], ["故事板图片提示词拆分", "故事板视频生成-Omni"])
+        self.assertEqual([item["环节"] for item in created], ["故事板图片提示词拆分-Gemini", "故事板视频生成-Omni"])
         self.assertIn("强制视觉网格排版", created[0]["提示词"])
         self.assertIn("第二区块", created[0]["提示词"])
         self.assertIn("素材区", created[0]["提示词"])
@@ -738,7 +737,9 @@ Omni Video Prompt:
         self.assertIn("纯净代码块", created[0]["提示词"])
         self.assertIn("Storyboard 01 Prompt:", created[0]["提示词"])
         self.assertNotIn("JSON schema", created[0]["提示词"])
-        self.assertNotIn("API Key", created[0])
+        self.assertEqual(created[0]["模型名称"], "gemini-3.1-pro-preview")
+        self.assertEqual(created[0]["API 代理地址"], "https://aihubmix.com/gemini")
+        self.assertEqual(created[0]["API Key"], "sk-text")
         self.assertEqual(created[1]["模型名称"], "omni_flash-10s")
         self.assertEqual(created[1]["API 代理地址"], "https://otuapi.com")
         self.assertIn("根据上传图片的核心人物形象", created[1]["提示词"])
@@ -747,24 +748,21 @@ Omni Video Prompt:
         printed = printer.call_args.args[0]
         self.assertIn("故事板视频生成-Omni", printed)
         self.assertNotIn("sk-test", printed)
+        self.assertNotIn("sk-text", printed)
 
-    def test_bootstrap_split_prompt_does_not_require_otu_api_key(self):
+    def test_bootstrap_split_prompt_requires_own_text_key_not_otu_key(self):
         created = []
         with patch.object(bootstrap_config, "get_feishu_token", return_value="token"), \
              patch.object(bootstrap_config, "safe_list_records", return_value=[
                  {"record_id": "rec_image", "fields": {"环节": "故事板图片生成-OTU"}},
                  {"record_id": "rec_video", "fields": {"环节": "故事板视频生成-Omni"}},
              ]), \
-             patch.object(bootstrap_config, "config_field_names", return_value={"环节", "调用方式", "状态", "备注", "提示词"}), \
+             patch.object(bootstrap_config, "config_field_names", return_value={"环节", "模型名称", "API Key", "API 代理地址", "调用方式", "状态", "备注", "提示词"}), \
              patch.dict(os.environ, {}, clear=True), \
              patch.object(bootstrap_config, "create_config_record", side_effect=lambda token, fields, existing_fields: created.append(fields) or "rec_new"):
             bootstrap_config.main()
 
-        self.assertEqual(len(created), 1)
-        self.assertEqual(created[0]["环节"], "故事板图片提示词拆分")
-        self.assertIn("纯净代码块", created[0]["提示词"])
-        self.assertIn("Storyboard 01 Prompt:", created[0]["提示词"])
-        self.assertIn("第二区块", created[0]["提示词"])
+        self.assertEqual(created, [])
 
 
 if __name__ == "__main__":

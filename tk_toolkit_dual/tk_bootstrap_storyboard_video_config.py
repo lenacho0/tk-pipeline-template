@@ -5,7 +5,8 @@
 图片/视频 API Key 从环境变量读取，避免写入仓库：
   STORYBOARD_VIDEO_OTU_API_KEY=... python3 tk_bootstrap_storyboard_video_config.py
 
-故事板图片提示词拆分只写入可编辑系统提示词，不需要 OTU API Key。
+故事板图片提示词拆分-Gemini 使用独立 Gemini 配置：
+  STORYBOARD_TEXT_SPLIT_API_KEY=... python3 tk_bootstrap_storyboard_video_config.py
 """
 from __future__ import annotations
 
@@ -22,10 +23,12 @@ from tk_storyboard_video_prompt import (  # noqa: E402
 )
 
 
-SPLIT_STAGE_NAME = "故事板图片提示词拆分"
+SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
 IMAGE_STAGE_NAME = "故事板图片生成-OTU"
 OMNI_STAGE_NAME = "故事板视频生成-Omni"
 DEFAULT_API_BASE = "https://otuapi.com"
+DEFAULT_TEXT_API_BASE = "https://aihubmix.com/gemini"
+DEFAULT_TEXT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_IMAGE_SIZE = "1024x1024"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
@@ -85,16 +88,20 @@ def create_config_record(token: str, fields: Dict[str, Any], existing_fields: se
 
 def main() -> None:
     api_key = os.environ.get("STORYBOARD_VIDEO_OTU_API_KEY", "").strip()
+    text_api_key = os.environ.get("STORYBOARD_TEXT_SPLIT_API_KEY", "").strip()
     token = get_feishu_token()
     existing = existing_stage_records(token)
     existing_fields = config_field_names(token)
     wanted: List[Dict[str, Any]] = [
         {
             "环节": SPLIT_STAGE_NAME,
-            "调用方式": "复用 shot_script_gen 文本模型",
+            "模型名称": DEFAULT_TEXT_MODEL,
+            "API Key": text_api_key,
+            "API 代理地址": DEFAULT_TEXT_API_BASE,
+            "调用方式": "Gemini 原生 SDK",
             "状态": "启用",
             "提示词": DEFAULT_SPLIT_PROMPT,
-            "备注": "故事板图片提示词拆分系统提示词；模型/API 复用 shot_script_gen，可在此字段直接调整规则。",
+            "备注": "001 故事板图片提示词拆分专用配置；提示词、模型与 API 均由本记录维护。",
         },
         {
             "环节": IMAGE_STAGE_NAME,
@@ -126,6 +133,9 @@ def main() -> None:
         stage = fields["环节"]
         if existing.get(stage):
             skipped.append({"stage": stage, "record_id": existing[stage]})
+            continue
+        if stage == SPLIT_STAGE_NAME and not text_api_key:
+            skipped.append({"stage": stage, "reason": "missing STORYBOARD_TEXT_SPLIT_API_KEY"})
             continue
         if stage in {IMAGE_STAGE_NAME, OMNI_STAGE_NAME} and not api_key:
             skipped.append({"stage": stage, "reason": "missing STORYBOARD_VIDEO_OTU_API_KEY"})

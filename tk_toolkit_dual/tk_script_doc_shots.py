@@ -37,9 +37,11 @@ from common import (  # noqa: E402
     get_product_record,
     log_event,
     safe_get_record,
+    safe_download_attachment,
     safe_list_records,
     safe_request,
     safe_update_record,
+    upload_image_to_feishu,
     with_retry,
 )
 from tk_shot_script_gen import (  # noqa: E402
@@ -62,7 +64,6 @@ from tk_shot_storyboard import (  # noqa: E402
     build_image_to_video_prompt,
     filter_existing_fields,
 )
-from tk_storyboard import safe_download_attachment, upload_image_to_feishu  # noqa: E402
 
 
 ASSET_TYPES = {"pet", "environment", "human"}
@@ -386,6 +387,19 @@ def _extract_attachment_token(value: Any) -> str:
     return ""
 
 
+def _extract_attachment_tokens(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    tokens = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        token = str(item.get("file_token") or "").strip()
+        if token:
+            tokens.append(token)
+    return tokens
+
+
 def _downloaded_path(downloaded: Any, fallback: Path) -> str:
     if isinstance(downloaded, (str, os.PathLike)):
         return str(downloaded)
@@ -419,12 +433,13 @@ def collect_reference_images_for_shot(
             or shot_fields.get("关联产品")
         )
         _, product_fields = product_getter(token, product_value)
-        product_token = _extract_attachment_token((product_fields or {}).get("产品图片"))
-        if not product_token:
+        product_tokens = _extract_attachment_tokens((product_fields or {}).get("产品图片"))
+        if not product_tokens:
             raise ValueError("该分镜需要产品参考图，但产品表缺少 产品图片")
-        product_path = task_dir / "reference_product.png"
-        downloaded = download_fn(token, product_token, str(product_path))
-        refs.append({"role": "product", "path": _downloaded_path(downloaded, product_path), "file_token": product_token})
+        for idx, product_token in enumerate(product_tokens, start=1):
+            product_path = task_dir / f"reference_product_{idx}.png"
+            downloaded = download_fn(token, product_token, str(product_path))
+            refs.append({"role": f"product:{idx}", "path": _downloaded_path(downloaded, product_path), "file_token": product_token})
 
     requested_ids = _asset_ids_from_fields(shot_fields)
     if not requested_ids:
@@ -475,12 +490,12 @@ def build_reference_prompt_note(refs: List[Dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def build_parse_prompt(parent_fields: Dict[str, Any], raw_script: str) -> str:
+def build_parse_prompt(parent_fields: Dict[str, Any], raw_script: str, *, system_prompt: str = DEFAULT_PARSE_PROMPT) -> str:
     target_seconds = extract_text(parent_fields.get("视频时长") or "15s")
     style = extract_text(parent_fields.get("分镜风格") or "混合（产品写实+角色动画）")
     product = extract_text(parent_fields.get("产品名") or parent_fields.get("关联产品记录") or parent_fields.get("关联产品") or parent_fields.get("选择产品"))
     return f"""
-{DEFAULT_PARSE_PROMPT}
+{system_prompt or DEFAULT_PARSE_PROMPT}
 
 ## 目标参数
 - 目标总时长：{target_seconds}
@@ -535,13 +550,16 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     if not raw_script:
         raise ValueError("脚本文档正文为空")
     target_seconds = parse_target_seconds(fields.get("视频时长", "15s"))
-    cfg = get_model_config(token, CONFIG_RECORDS.get("shot_script_gen"))
+    config_record_id = CONFIG_RECORDS.get("script_doc_text_split")
+    if not config_record_id:
+        raise ValueError("config_records 缺少 script_doc_text_split")
+    cfg = get_model_config(token, config_record_id)
     model_name = cfg["model"] or "gemini-2.5-flash"
     api_key = cfg["api_key"]
     api_base = cfg["api_base"] or "https://aihubmix.com/gemini"
     if not api_key:
-        raise ValueError("逐镜头脚本生成配置缺少 API Key")
-    prompt = build_parse_prompt(fields, raw_script)
+        raise ValueError("脚本文档结构化拆分-Gemini 缺少 API Key")
+    prompt = build_parse_prompt(fields, raw_script, system_prompt=cfg.get("prompt") or DEFAULT_PARSE_PROMPT)
 
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if dry_run:
@@ -602,7 +620,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     prompt = extract_text(fields.get("参考提示词")).strip()
     if not prompt:
         raise ValueError("参考提示词为空")
-    cfg = get_model_config(token, CONFIG_RECORDS.get("shot_storyboard"))
+    cfg = get_model_config(token, CONFIG_RECORDS.get("main_image_otu"))
     model_name = normalize_image_model_choice(cfg["model"] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = cfg["api_key"]
     api_base = cfg["api_base"] or DEFAULT_OTU_API_BASE

@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -172,13 +173,51 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(shot_records[0]["fields"]["父文档记录ID"], "recParent")
         self.assertEqual(shot_records[0]["fields"]["关联产品记录"], ["recProduct"])
 
+    def test_parse_parent_record_uses_script_doc_text_split_config(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档正文": "0-4s: hook",
+            "视频时长": "8s",
+        }
+        with patch.dict(doc_shots.CONFIG_RECORDS, {"script_doc_text_split": "rec_script_split"}, clear=True), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=parent_fields), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-text",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "prompt": "CONFIGURED SCRIPT DOC PROMPT",
+             }) as getter:
+            result = doc_shots.parse_parent_record("recParent", dry_run=True)
+
+        getter.assert_called_once_with("token", "rec_script_split")
+        self.assertEqual(result["status"], "dry_run_ready")
+        self.assertEqual(result["record_id"], "recParent")
+
+    def test_build_parse_prompt_uses_configured_system_prompt(self):
+        prompt = doc_shots.build_parse_prompt(
+            {"视频时长": "8s", "分镜风格": "写实", "产品名": "Pet Spray"},
+            "0-4s: hook",
+            system_prompt="CONFIGURED SCRIPT DOC PROMPT",
+        )
+
+        self.assertIn("CONFIGURED SCRIPT DOC PROMPT", prompt)
+        self.assertIn("## 目标参数", prompt)
+        self.assertIn("0-4s: hook", prompt)
+
     def test_collect_reference_images_uses_only_shot_requested_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            product_path = tmp_path / "product.png"
+            product_paths = [
+                tmp_path / "product_1.png",
+                tmp_path / "product_2.png",
+                tmp_path / "product_3.png",
+            ]
             pet_path = tmp_path / "pet.png"
             env_path = tmp_path / "env.png"
-            product_path.write_bytes(b"x" * 2000)
+            for path in product_paths:
+                path.write_bytes(b"x" * 2000)
             pet_path.write_bytes(b"x" * 2000)
             env_path.write_bytes(b"x" * 2000)
             fields = {
@@ -211,8 +250,12 @@ class ScriptDocShotsTests(unittest.TestCase):
                     },
                 },
             ]
-            download = Mock(side_effect=[product_path, pet_path])
-            get_product = Mock(return_value=("recProduct", {"产品图片": [{"file_token": "ft_product"}]}))
+            download = Mock(side_effect=[*product_paths, pet_path])
+            get_product = Mock(return_value=("recProduct", {"产品图片": [
+                {"file_token": "ft_product_1"},
+                {"file_token": "ft_product_2"},
+                {"file_token": "ft_product_3"},
+            ]}))
 
             refs = doc_shots.collect_reference_images_for_shot(
                 "token",
@@ -224,8 +267,19 @@ class ScriptDocShotsTests(unittest.TestCase):
                 product_getter=get_product,
             )
 
-            self.assertEqual([r["role"] for r in refs], ["product", "pet:pet_hero"])
-            self.assertEqual([call.args[1] for call in download.call_args_list], ["ft_product", "ft_pet"])
+            self.assertEqual([r["role"] for r in refs], ["product:1", "product:2", "product:3", "pet:pet_hero"])
+            self.assertEqual(
+                [call.args[1] for call in download.call_args_list],
+                ["ft_product_1", "ft_product_2", "ft_product_3", "ft_pet"],
+            )
+            self.assertEqual(
+                [call.args[2] for call in download.call_args_list[:3]],
+                [
+                    str(tmp_path / "reference_product_1.png"),
+                    str(tmp_path / "reference_product_2.png"),
+                    str(tmp_path / "reference_product_3.png"),
+                ],
+            )
 
     def test_collect_reference_images_rejects_unapproved_required_asset(self):
         with tempfile.TemporaryDirectory() as tmp:

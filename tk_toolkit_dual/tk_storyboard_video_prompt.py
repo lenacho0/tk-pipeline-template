@@ -1,4 +1,4 @@
-"""故事板图片提示词拆分系统提示词。"""
+"""故事板图片提示词拆分-Gemini 系统提示词。"""
 
 STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT = """
 我已经确定了本次带货微短剧的镜头文本脚本。

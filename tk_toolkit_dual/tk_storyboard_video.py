@@ -38,9 +38,11 @@ from common import (  # noqa: E402
     get_model_config,
     log_event,
     safe_get_record,
+    safe_download_attachment,
     safe_list_records,
     safe_request,
     safe_update_record,
+    upload_image_to_feishu,
     with_retry,
 )
 from otu_image import (  # noqa: E402
@@ -60,10 +62,9 @@ from tk_storyboard_video_prompt import (  # noqa: E402
     STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT,
     STORYBOARD_OMNI_VIDEO_PROMPT,
 )
-from tk_storyboard import safe_download_attachment, upload_image_to_feishu  # noqa: E402
 
 
-SPLIT_STAGE_NAME = "故事板图片提示词拆分"
+SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
 IMAGE_STAGE_NAME = "故事板图片生成-OTU"
 OMNI_STAGE_NAME = "故事板视频生成-Omni"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
@@ -558,23 +559,15 @@ def cleanup_child_storyboards(token: str, parent_record_id: str) -> int:
 
 
 def get_text_generation_config(token: str) -> Dict[str, str]:
-    record_id = CONFIG_RECORDS.get("shot_script_gen")
+    record_id = CONFIG_RECORDS.get("storyboard_text_split")
     if not record_id:
-        raise ValueError("config_records 缺少 shot_script_gen")
+        raise ValueError("config_records 缺少 storyboard_text_split")
     cfg = get_model_config(token, record_id)
     if not cfg.get("api_key"):
-        raise ValueError("故事板提示词拆分配置缺少 API Key")
-    cfg["prompt"] = STORYBOARD_PROMPT_RULES
-    cfg["prompt_record_id"] = ""
-    for rec in safe_list_records(token, TABLE_CONFIG):
-        fields = rec.get("fields", {})
-        if extract_text(fields.get("环节")).strip() != SPLIT_STAGE_NAME:
-            continue
-        prompt = extract_text(fields.get("提示词")).strip()
-        if prompt:
-            cfg["prompt"] = prompt
-            cfg["prompt_record_id"] = rec.get("record_id") or rec.get("id") or ""
-        break
+        raise ValueError(f"{SPLIT_STAGE_NAME} 缺少 API Key")
+    prompt = extract_text(cfg.get("prompt")).strip()
+    cfg["prompt"] = prompt or STORYBOARD_PROMPT_RULES
+    cfg["prompt_record_id"] = record_id if prompt else ""
     return cfg
 
 
