@@ -144,6 +144,182 @@ WATCH_LIST = [
         },
     },
     {
+        'name': '首尾帧批量场景拆分',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '拆分状态',
+        'trigger_value': '待拆分',
+        'running_value': '拆分中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['batch-parse'],
+        'timeout': 1200,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['场景子任务']},
+    },
+    {
+        'name': '首尾帧文档拆分',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '文档拆分状态',
+        'trigger_value': '待拆分',
+        'running_value': '拆分中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['parse'],
+        'timeout': 900,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'skip_deprecated_records': True,
+    },
+    {
+        'name': '首尾帧场景重新拆分',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '场景拆分操作',
+        'trigger_value': '重新拆分场景',
+        'running_value': '重新拆分场景',
+        'failed_value': '不触发',
+        'error_field': '错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['regenerate-split'],
+        'timeout': 1200,
+        'max_concurrency': 1,
+        'max_retries': 0,
+        'skip_deprecated_records': True,
+        'required_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧首帧图重生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '首帧图操作',
+        'trigger_value': '重新生成首帧图',
+        'running_value': '重新生成首帧图',
+        'failed_value': '不触发',
+        'error_field': '首帧图错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['regenerate-first-frame'],
+        'timeout': 120,
+        'max_concurrency': 2,
+        'max_retries': 0,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧首帧图生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '首帧图生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '首帧图错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['first-frame'],
+        'timeout': 1200,
+        'max_concurrency': 1,
+        'max_retries': 2,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧首帧审核推进',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '首帧审核状态',
+        'trigger_value': '通过',
+        'running_value': '通过',
+        'failed_value': '不通过',
+        'error_field': '错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['advance-first-review'],
+        'timeout': 120,
+        'max_concurrency': 2,
+        'max_retries': 1,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧尾帧图重生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '尾帧图操作',
+        'trigger_value': '重新生成尾帧图',
+        'running_value': '重新生成尾帧图',
+        'failed_value': '不触发',
+        'error_field': '尾帧图错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['regenerate-last-frame'],
+        'timeout': 120,
+        'max_concurrency': 2,
+        'max_retries': 0,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧尾帧图生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '尾帧图生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '尾帧图错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['last-frame'],
+        'timeout': 1200,
+        'max_concurrency': 1,
+        'max_retries': 2,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧尾帧审核推进',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '尾帧审核状态',
+        'trigger_value': '通过',
+        'running_value': '通过',
+        'failed_value': '不通过',
+        'error_field': '错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['advance-last-review'],
+        'timeout': 120,
+        'max_concurrency': 2,
+        'max_retries': 1,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧视频重生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '视频操作',
+        'trigger_value': '重新生成首尾帧视频',
+        'running_value': '重新生成首尾帧视频',
+        'failed_value': '不触发',
+        'error_field': '视频错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['regenerate-video'],
+        'timeout': 120,
+        'max_concurrency': 2,
+        'max_retries': 0,
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
+        'name': '首尾帧视频生成',
+        'table': TABLE_FIRST_LAST_VIDEO,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '视频错误信息',
+        'script': 'tk_first_last_video.py',
+        'args': ['video'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
+        'skip_deprecated_records': True,
+        'skip_if_field_values': {'记录类型': ['母任务']},
+    },
+    {
         'name': '脚本文档解析拆分',
         'table': TABLE_SCRIPT_DOC_TASKS,
         'status_field': '解析状态',
@@ -298,6 +474,7 @@ WATCH_LIST = [
 ]
 
 
+RAW_WATCH_LIST = list(WATCH_LIST)
 WATCH_LIST = [w for w in WATCH_LIST if w.get('table')]
 
 
@@ -700,9 +877,29 @@ def apply_claim_clear_fields(claim_fields, watch):
     return claim_fields
 
 
+def record_matches_watch_filters(watch, fields):
+    if watch.get('skip_deprecated_records'):
+        if extract_text(fields.get('记录状态', '')).strip() == '已废弃':
+            return False
+
+    for field_name, blocked_values in (watch.get('skip_if_field_values') or {}).items():
+        value = extract_text(fields.get(field_name, '')).strip()
+        if value in blocked_values:
+            return False
+
+    for field_name, required_values in (watch.get('required_field_values') or {}).items():
+        value = extract_text(fields.get(field_name, '')).strip()
+        if value not in required_values:
+            return False
+
+    return True
+
+
 def try_claim_task(token, watch, record_id):
     try:
         latest = safe_get_record(token, watch['table'], record_id)
+        if not record_matches_watch_filters(watch, latest):
+            return False
         latest_status = extract_text(latest.get(watch['status_field'], ''))
         valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
         if latest_status not in valid_trigger_values:
@@ -768,6 +965,8 @@ def check_and_run(token, watch):
 
         record_id = rec['record_id']
         fields = rec.get('fields', {})
+        if not record_matches_watch_filters(watch, fields):
+            continue
         status = extract_text(fields.get(watch['status_field'], ''))
         valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
         if status not in valid_trigger_values:

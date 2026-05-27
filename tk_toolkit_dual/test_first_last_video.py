@@ -1,0 +1,643 @@
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import tk_create_first_last_video_table as create_table
+import tk_dispatcher as dispatcher
+import tk_first_last_video as first_last
+import tk_healthcheck as healthcheck
+
+
+def parsed_payload():
+    return {
+        "first_frame_prompt": "A clean vertical product hero opening frame.",
+        "last_frame_prompt": "The same scene after the transformation is complete.",
+        "video_prompt": "Animate naturally from the first frame to the last frame.",
+    }
+
+
+class FirstLastVideoTableTests(unittest.TestCase):
+    def test_table_definition_has_parent_child_regeneration_fields_and_views(self):
+        field_names = [field["name"] for field in create_table.FIRST_LAST_VIDEO_FIELDS]
+
+        for name in [
+            "任务名称",
+            "记录类型",
+            "记录状态",
+            "父任务记录ID",
+            "批次ID",
+            "当前批次ID",
+            "场景编号",
+            "场景标题",
+            "首尾帧文档",
+            "首尾帧文档附件",
+            "目标时长秒",
+            "文档拆分状态",
+            "拆分状态",
+            "总场景数",
+            "场景拆分操作",
+            "拆分结果JSON",
+            "拆分版本",
+            "首帧生图提示词",
+            "尾帧生图提示词",
+            "首尾帧生视频提示词",
+            "首帧图操作",
+            "首帧图版本",
+            "首帧图生成状态",
+            "首帧图",
+            "首帧审核状态",
+            "尾帧图操作",
+            "尾帧图版本",
+            "尾帧图生成状态",
+            "尾帧图",
+            "尾帧审核状态",
+            "视频操作",
+            "视频版本",
+            "视频生成状态",
+            "首尾帧视频",
+            "历史生成记录JSON",
+        ]:
+            self.assertIn(name, field_names)
+
+        self.assertNotIn("首尾帧文档链接", field_names)
+
+        self.assertEqual(create_table.TABLE_DEFINITION["key"], "first_last_video")
+        self.assertIn("01-用户入口", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("02-场景子任务", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("03-首帧审核", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("04-尾帧审核", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("05-视频结果", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("99-排错", create_table.TABLE_DEFINITION["views"])
+
+    def test_user_entry_view_has_single_split_control(self):
+        entry_fields = create_table.TABLE_DEFINITION["views"]["01-用户入口"]
+
+        self.assertEqual(entry_fields, [
+            "任务名称",
+            "首尾帧文档",
+            "首尾帧文档附件",
+            "目标时长秒",
+            "拆分状态",
+            "总场景数",
+            "错误信息",
+        ])
+        for hidden_field in [
+            "记录类型",
+            "记录状态",
+            "批量拆分状态",
+            "文档拆分状态",
+            "场景拆分操作",
+            "当前批次ID",
+            "首帧生图提示词",
+            "尾帧生图提示词",
+            "首尾帧生视频提示词",
+        ]:
+            self.assertNotIn(hidden_field, entry_fields)
+
+    def test_migrate_renamed_fields_renames_batch_split_status_without_duplicate(self):
+        calls = []
+
+        def fake_run_json(args):
+            if "+field-list" in args:
+                return {"data": {"items": [{"id": "fld_old", "name": "批量拆分状态", "type": "select"}]}}
+            if "+field-update" in args:
+                calls.append(args)
+                return {"data": {"field": {"id": "fld_old", "name": "拆分状态"}}}
+            raise AssertionError(args)
+
+        with patch.object(create_table, "run_json", side_effect=fake_run_json):
+            renamed = create_table.migrate_renamed_fields("app_token", "tbl_first_last")
+
+        self.assertEqual(renamed, ["批量拆分状态 -> 拆分状态"])
+        self.assertEqual(len(calls), 1)
+        update_args = calls[0]
+        self.assertIn("--yes", update_args)
+        self.assertEqual(update_args[update_args.index("--field-id") + 1], "fld_old")
+        payload = json.loads(update_args[update_args.index("--json") + 1])
+        self.assertEqual(payload["name"], "拆分状态")
+        self.assertEqual(payload["type"], "select")
+
+    def test_config_template_includes_first_last_video_table_key(self):
+        template_path = Path(__file__).resolve().parent / "config.json.template"
+        data = json.loads(template_path.read_text(encoding="utf-8"))
+
+        self.assertIn("first_last_video", data["feishu"]["tables"])
+
+    def test_dispatcher_has_all_first_last_video_watches(self):
+        watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
+
+        expected = {
+            "首尾帧批量场景拆分": ("拆分状态", "待拆分", "拆分中", ["batch-parse"]),
+            "首尾帧文档拆分": ("文档拆分状态", "待拆分", "拆分中", ["parse"]),
+            "首尾帧场景重新拆分": ("场景拆分操作", "重新拆分场景", "重新拆分场景", ["regenerate-split"]),
+            "首尾帧首帧图重生成": ("首帧图操作", "重新生成首帧图", "重新生成首帧图", ["regenerate-first-frame"]),
+            "首尾帧首帧图生成": ("首帧图生成状态", "待生成", "生成中", ["first-frame"]),
+            "首尾帧首帧审核推进": ("首帧审核状态", "通过", "通过", ["advance-first-review"]),
+            "首尾帧尾帧图重生成": ("尾帧图操作", "重新生成尾帧图", "重新生成尾帧图", ["regenerate-last-frame"]),
+            "首尾帧尾帧图生成": ("尾帧图生成状态", "待生成", "生成中", ["last-frame"]),
+            "首尾帧尾帧审核推进": ("尾帧审核状态", "通过", "通过", ["advance-last-review"]),
+            "首尾帧视频重生成": ("视频操作", "重新生成首尾帧视频", "重新生成首尾帧视频", ["regenerate-video"]),
+            "首尾帧视频生成": ("视频生成状态", "待生成", "生成中", ["video"]),
+        }
+        for name, (status_field, trigger_value, running_value, args) in expected.items():
+            self.assertIn(name, watches)
+            self.assertEqual(watches[name]["table"], dispatcher.TABLE_FIRST_LAST_VIDEO)
+            self.assertEqual(watches[name]["status_field"], status_field)
+            self.assertEqual(watches[name]["trigger_value"], trigger_value)
+            self.assertEqual(watches[name]["running_value"], running_value)
+            self.assertEqual(watches[name]["script"], "tk_first_last_video.py")
+            self.assertEqual(watches[name]["args"], args)
+
+        self.assertEqual(watches["首尾帧视频生成"]["claim_clear_fields"], ["视频任务ID", "视频生成原始响应JSON"])
+        self.assertEqual(watches["首尾帧首帧图生成"]["skip_if_field_values"]["记录类型"], ["母任务"])
+        self.assertTrue(watches["首尾帧首帧图生成"]["skip_deprecated_records"])
+
+    def test_dispatcher_skips_deprecated_first_last_records(self):
+        watch = {
+            "name": "首尾帧首帧图生成",
+            "skip_deprecated_records": True,
+            "skip_if_field_values": {"记录类型": ["母任务"]},
+        }
+
+        self.assertFalse(dispatcher.record_matches_watch_filters(watch, {"记录状态": "已废弃", "记录类型": "场景子任务"}))
+        self.assertFalse(dispatcher.record_matches_watch_filters(watch, {"记录状态": "有效", "记录类型": "母任务"}))
+        self.assertTrue(dispatcher.record_matches_watch_filters(watch, {"记录状态": "有效", "记录类型": "场景子任务"}))
+
+    def test_healthcheck_validates_first_last_video_table_and_configs(self):
+        config_records = [
+            {"fields": {"环节": "分镜头图片生成", "模型名称": "gpt-image-2", "API Key": "sk-img", "API 代理地址": "https://otuapi.com"}},
+            {"fields": {"环节": "逐镜头分镜视频生成-OTU", "模型名称": "veo_3_1-fast-fl", "API Key": "sk-video", "API 代理地址": "https://otuapi.com"}},
+        ]
+        with patch.object(healthcheck, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(healthcheck, "get_feishu_token", return_value="token"), \
+             patch.object(healthcheck, "get_table_field_names", return_value={
+                 "记录类型",
+                 "记录状态",
+                 "父任务记录ID",
+                 "批次ID",
+                 "当前批次ID",
+                 "场景编号",
+                 "首尾帧文档附件",
+                 "拆分状态",
+                 "场景拆分操作",
+                 "首帧图操作",
+                 "尾帧图操作",
+                 "视频操作",
+                 "拆分版本",
+                 "首帧图版本",
+                 "尾帧图版本",
+                 "视频版本",
+             }), \
+             patch.object(healthcheck, "safe_list_records", return_value=config_records):
+            ok, msg = healthcheck.check_first_last_video_config()
+
+        self.assertTrue(ok, msg)
+        self.assertIn("分镜头图片生成", msg)
+        self.assertIn("逐镜头分镜视频生成-OTU", msg)
+
+
+class FirstLastVideoWorkerTests(unittest.TestCase):
+    def test_normalize_parse_payload_requires_three_prompts(self):
+        payload = first_last.normalize_parse_payload({
+            "first_frame_prompt": "first",
+            "last_frame_prompt": "last",
+            "video_prompt": "video",
+        })
+
+        self.assertEqual(payload["first_frame_prompt"], "first")
+        self.assertEqual(payload["last_frame_prompt"], "last")
+        self.assertEqual(payload["video_prompt"], "video")
+
+        with self.assertRaisesRegex(ValueError, "video_prompt"):
+            first_last.normalize_parse_payload({
+                "first_frame_prompt": "first",
+                "last_frame_prompt": "last",
+            })
+
+    def test_normalize_batch_parse_payload_requires_scene_prompts(self):
+        payload = first_last.normalize_batch_parse_payload({
+            "scenes": [
+                {
+                    "scene_no": 1,
+                    "title": "Opening",
+                    "first_frame_prompt": "first 1",
+                    "last_frame_prompt": "last 1",
+                    "video_prompt": "video 1",
+                },
+                {
+                    "scene_no": 2,
+                    "scene_title": "Ending",
+                    "首帧生图提示词": "first 2",
+                    "尾帧生图提示词": "last 2",
+                    "首尾帧生视频提示词": "video 2",
+                },
+            ],
+        })
+
+        self.assertEqual(len(payload["scenes"]), 2)
+        self.assertEqual(payload["scenes"][0]["scene_no"], 1)
+        self.assertEqual(payload["scenes"][1]["title"], "Ending")
+        self.assertEqual(payload["scenes"][1]["video_prompt"], "video 2")
+
+        with self.assertRaisesRegex(ValueError, "scene 1.*video_prompt"):
+            first_last.normalize_batch_parse_payload({"scenes": [{"first_frame_prompt": "first", "last_frame_prompt": "last"}]})
+
+    def test_parse_structured_markdown_scenes_extracts_three_prompts_per_scene(self):
+        doc = """
+## S01 浅瓷砖地板
+
+### S01-1 首帧生图提示词
+
+```text
+first prompt 1
+```
+
+中文拍摄理解：ignore me
+
+### S01-2 尾帧生图 / 编辑提示词
+
+```text
+last prompt 1
+```
+
+### S01-3 首尾帧图生视频提示词
+
+```text
+video prompt 1
+```
+
+---
+
+## S02 木纹地板
+
+### S02-1 首帧生图提示词
+
+```text
+first prompt 2
+```
+
+### S02-2 尾帧生图 / 编辑提示词
+
+```text
+last prompt 2
+```
+
+### S02-3 首尾帧图生视频提示词
+
+```text
+video prompt 2
+```
+""".strip()
+
+        payload = first_last.parse_structured_markdown_scenes(doc)
+
+        self.assertEqual(len(payload["scenes"]), 2)
+        self.assertEqual(payload["scenes"][0]["scene_no"], 1)
+        self.assertEqual(payload["scenes"][0]["title"], "浅瓷砖地板")
+        self.assertEqual(payload["scenes"][0]["first_frame_prompt"], "first prompt 1")
+        self.assertEqual(payload["scenes"][1]["last_frame_prompt"], "last prompt 2")
+        self.assertEqual(payload["scenes"][1]["video_prompt"], "video prompt 2")
+
+    def test_read_source_document_text_uses_raw_attachment_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc_path = Path(tmp) / "source.txt"
+            doc_path.write_text("short scene doc", encoding="utf-8")
+            fields = {"首尾帧文档附件": [{"file_token": "doc_token"}], "拆分版本": 1}
+            with patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "download_feishu_attachment_raw", return_value=doc_path) as raw_downloader, \
+                 patch.object(first_last, "download_feishu_media") as image_downloader:
+                text = first_last.read_source_document_text("token", "rec1", fields)
+
+        self.assertEqual(text, "short scene doc")
+        raw_downloader.assert_called_once()
+        image_downloader.assert_not_called()
+
+    def test_batch_parse_deprecates_old_children_and_creates_new_batch(self):
+        updates = []
+        created_batches = []
+        parent_fields = {
+            "记录类型": "母任务",
+            "记录状态": "有效",
+            "任务名称": "尿味分解",
+            "首尾帧文档": "12 scenes doc",
+            "当前批次ID": "old_batch",
+            "拆分版本": 1,
+            "目标时长秒": 6,
+        }
+        existing_records = [
+            {"record_id": "old1", "fields": {"记录类型": "场景子任务", "记录状态": "有效", "父任务记录ID": "parent", "批次ID": "old_batch"}},
+            {"record_id": "old2", "fields": {"记录类型": "场景子任务", "记录状态": "", "父任务记录ID": "parent", "批次ID": "old_batch"}},
+            {"record_id": "other", "fields": {"记录类型": "场景子任务", "记录状态": "有效", "父任务记录ID": "elsewhere"}},
+        ]
+        model_output = {
+            "scenes": [
+                {"scene_no": 1, "title": "开场", "first_frame_prompt": "first 1", "last_frame_prompt": "last 1", "video_prompt": "video 1"},
+                {"scene_no": 2, "title": "收尾", "first_frame_prompt": "first 2", "last_frame_prompt": "last 2", "video_prompt": "video 2"},
+            ]
+        }
+
+        def capture_create(token, table, records):
+            created_batches.append(records)
+            return len(records)
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=parent_fields), \
+             patch.object(first_last, "safe_list_records", return_value=existing_records), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(first_last, "create_records", side_effect=capture_create), \
+             patch.object(first_last, "make_batch_id", return_value="batch_new"), \
+             patch.object(first_last, "parse_structured_markdown_scenes", return_value={}) as markdown_parser:
+            result = first_last.batch_parse_document("parent", raw_model_output=model_output)
+
+        markdown_parser.assert_not_called()
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["created_records"], 2)
+        deprecated = {rid: fields for rid, fields in updates if rid in {"old1", "old2"}}
+        self.assertEqual(deprecated["old1"]["记录状态"], "已废弃")
+        self.assertEqual(deprecated["old2"]["首帧图生成状态"], "不触发")
+        created = created_batches[0]
+        self.assertEqual(len(created), 2)
+        self.assertEqual(created[0]["fields"]["记录类型"], "场景子任务")
+        self.assertEqual(created[0]["fields"]["记录状态"], "有效")
+        self.assertEqual(created[0]["fields"]["父任务记录ID"], "parent")
+        self.assertEqual(created[0]["fields"]["批次ID"], "batch_new")
+        self.assertEqual(created[0]["fields"]["场景编号"], 1)
+        self.assertEqual(created[0]["fields"]["首帧图生成状态"], "待生成")
+        self.assertEqual(created[0]["fields"]["尾帧图生成状态"], "不触发")
+        self.assertEqual(created[0]["fields"]["视频生成状态"], "不触发")
+        parent_final = updates[-1][1]
+        self.assertEqual(parent_final["当前批次ID"], "batch_new")
+        self.assertEqual(parent_final["总场景数"], 2)
+        self.assertEqual(parent_final["拆分版本"], 2)
+        self.assertEqual(parent_final["场景拆分操作"], "不触发")
+
+    def test_first_frame_regeneration_clears_dependent_outputs_and_bumps_version(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "首帧图版本": 2,
+            "首帧图file_token": "old_first",
+            "尾帧图file_token": "old_last",
+            "首尾帧视频file_token": "old_video",
+        }
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.request_first_frame_regeneration("rec1")
+
+        patch_fields = updates[-1]
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(patch_fields["首帧图版本"], 3)
+        self.assertEqual(patch_fields["首帧图"], [])
+        self.assertEqual(patch_fields["首帧图file_token"], "")
+        self.assertEqual(patch_fields["尾帧图"], [])
+        self.assertEqual(patch_fields["尾帧图file_token"], "")
+        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertIsNone(patch_fields["首尾帧视频URL"])
+        self.assertEqual(patch_fields["首尾帧视频file_token"], "")
+        self.assertEqual(patch_fields["首帧图生成状态"], "待生成")
+        self.assertEqual(patch_fields["尾帧图生成状态"], "不触发")
+        self.assertEqual(patch_fields["视频生成状态"], "不触发")
+        self.assertEqual(patch_fields["首帧图操作"], "不触发")
+
+    def test_last_frame_regeneration_keeps_first_frame_and_clears_video(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "尾帧图版本": 4,
+            "首帧图file_token": "keep_first",
+            "尾帧图file_token": "old_last",
+            "首尾帧视频file_token": "old_video",
+        }
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.request_last_frame_regeneration("rec1")
+
+        patch_fields = updates[-1]
+        self.assertEqual(result["status"], "triggered")
+        self.assertNotIn("首帧图file_token", patch_fields)
+        self.assertEqual(patch_fields["尾帧图版本"], 5)
+        self.assertEqual(patch_fields["尾帧图"], [])
+        self.assertEqual(patch_fields["尾帧图file_token"], "")
+        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertIsNone(patch_fields["首尾帧视频URL"])
+        self.assertEqual(patch_fields["视频生成状态"], "不触发")
+        self.assertEqual(patch_fields["尾帧图生成状态"], "待生成")
+
+    def test_video_regeneration_keeps_frames_and_clears_only_video(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "视频版本": 7,
+            "首帧图file_token": "keep_first",
+            "尾帧图file_token": "keep_last",
+            "首尾帧视频file_token": "old_video",
+        }
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.request_video_regeneration("rec1")
+
+        patch_fields = updates[-1]
+        self.assertEqual(result["status"], "triggered")
+        self.assertNotIn("首帧图file_token", patch_fields)
+        self.assertNotIn("尾帧图file_token", patch_fields)
+        self.assertEqual(patch_fields["视频版本"], 8)
+        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertIsNone(patch_fields["首尾帧视频URL"])
+        self.assertEqual(patch_fields["首尾帧视频file_token"], "")
+        self.assertEqual(patch_fields["视频生成状态"], "待生成")
+        self.assertEqual(patch_fields["视频操作"], "不触发")
+
+    def test_stale_guard_rejects_changed_version_or_task(self):
+        with patch.object(first_last, "safe_get_record", return_value={
+            "记录状态": "有效",
+            "首帧图生成状态": "生成中",
+            "首帧图版本": 3,
+            "首帧图任务ID": "new_task",
+        }):
+            with self.assertRaisesRegex(RuntimeError, "首帧图版本 已变更"):
+                first_last.ensure_current_generation("token", "rec1", "首帧图生成状态", "生成中", "首帧图版本", 2, "首帧图任务ID", "old_task")
+
+        with patch.object(first_last, "safe_get_record", return_value={
+            "记录状态": "有效",
+            "首帧图生成状态": "生成中",
+            "首帧图版本": 3,
+            "首帧图任务ID": "new_task",
+        }):
+            with self.assertRaisesRegex(RuntimeError, "首帧图任务ID 已变更"):
+                first_last.ensure_current_generation("token", "rec1", "首帧图生成状态", "生成中", "首帧图版本", 3, "首帧图任务ID", "old_task")
+
+        with patch.object(first_last, "safe_get_record", return_value={
+            "记录状态": "已废弃",
+            "首帧图生成状态": "生成中",
+            "首帧图版本": 3,
+            "首帧图任务ID": "task",
+        }):
+            with self.assertRaisesRegex(RuntimeError, "记录状态已变更为 已废弃"):
+                first_last.ensure_current_generation("token", "rec1", "首帧图生成状态", "生成中", "首帧图版本", 3, "首帧图任务ID", "task")
+
+    def test_parse_document_writes_prompts_and_triggers_first_frame(self):
+        updates = []
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value={"首尾帧文档": "free form doc", "目标时长秒": "6"}), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = first_last.parse_document("rec1", raw_model_output=parsed_payload())
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(updates[-1]["文档拆分状态"], "成功")
+        self.assertEqual(updates[-1]["首帧生图提示词"], parsed_payload()["first_frame_prompt"])
+        self.assertEqual(updates[-1]["尾帧生图提示词"], parsed_payload()["last_frame_prompt"])
+        self.assertEqual(updates[-1]["首尾帧生视频提示词"], parsed_payload()["video_prompt"])
+        self.assertEqual(updates[-1]["首帧图生成状态"], "待生成")
+        self.assertEqual(updates[-1]["首帧审核状态"], "待确认")
+        self.assertEqual(updates[-1]["尾帧图生成状态"], "不触发")
+        self.assertEqual(updates[-1]["视频生成状态"], "不触发")
+        self.assertEqual(updates[-1]["记录状态"], "有效")
+        self.assertEqual(updates[-1]["首帧图版本"], 1)
+        self.assertEqual(updates[-1]["尾帧图版本"], 1)
+        self.assertEqual(updates[-1]["视频版本"], 1)
+
+    def test_render_first_frame_uses_text_to_image_and_writes_review_gate(self):
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+                 patch.object(first_last, "get_feishu_token", return_value="token"), \
+                 patch.object(first_last, "safe_get_record", side_effect=[
+                     {"记录类型": "场景子任务", "记录状态": "有效", "首帧生图提示词": "first prompt", "首帧图版本": 2},
+                     {"记录状态": "有效", "首帧图生成状态": "生成中", "首帧图版本": 2, "首帧图任务ID": "img_task_1"},
+                 ]), \
+                 patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+                 patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
+                 patch.object(first_last, "submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
+                 patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/first.png"}), \
+                 patch.object(first_last, "download_otu_image_result") as downloader, \
+                 patch.object(first_last, "upload_image_to_feishu", return_value="ft_first"):
+                result = first_last.render_first_frame("rec1")
+
+        self.assertEqual(result["status"], "success")
+        kwargs = submitter.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "text-to-image")
+        self.assertEqual(kwargs["metadata"]["aspectRatio"], "9:16")
+        downloader.assert_called_once()
+        self.assertEqual(updates[-1]["首帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["首帧审核状态"], "待确认")
+        self.assertEqual(updates[-1]["首帧图file_token"], "ft_first")
+        self.assertEqual(updates[-1]["首帧图版本"], 2)
+        self.assertIn("first_frame_v2", updates[-1]["首帧图本地路径"])
+
+    def test_advance_first_review_is_idempotent(self):
+        updates = []
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value={"首帧审核状态": "通过", "尾帧图生成状态": "不触发"}), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = first_last.advance_first_review("rec1")
+
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(updates[-1]["首帧审核状态"], "已触发尾帧")
+        self.assertEqual(updates[-1]["尾帧图生成状态"], "待生成")
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value={"首帧审核状态": "已触发尾帧", "尾帧图生成状态": "待生成"}), \
+             patch.object(first_last, "safe_update_record") as updater:
+            result = first_last.advance_first_review("rec1")
+
+        self.assertEqual(result["status"], "skipped")
+        updater.assert_not_called()
+
+    def test_render_last_frame_uses_first_frame_reference(self):
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp:
+            first_path = Path(tmp) / "first.png"
+            first_path.write_bytes(b"x" * 2000)
+            with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+                 patch.object(first_last, "get_feishu_token", return_value="token"), \
+                 patch.object(first_last, "safe_get_record", side_effect=[
+                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "old_attachment"}], "首帧图file_token": "ft_first", "尾帧图版本": 3},
+                     {"记录状态": "有效", "尾帧图生成状态": "生成中", "尾帧图版本": 3, "尾帧图任务ID": "img_task_2"},
+                 ]), \
+                 patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+                 patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "download_feishu_media", return_value=first_path) as media_downloader, \
+                 patch.object(first_last, "get_tmp_download_url_for_attachment", return_value="https://x.test/first.png"), \
+                 patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
+                 patch.object(first_last, "submit_otu_image_task", return_value=("img_task_2", {"id": "img_task_2"})) as submitter, \
+                 patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
+                 patch.object(first_last, "download_otu_image_result"), \
+                 patch.object(first_last, "upload_image_to_feishu", return_value="ft_last"):
+                result = first_last.render_last_frame("rec1")
+
+        self.assertEqual(result["status"], "success")
+        media_downloader.assert_called_once()
+        self.assertEqual(media_downloader.call_args.args[1], "ft_first")
+        kwargs = submitter.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], str(first_path))
+        self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/first.png"])
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame"])
+        self.assertEqual(updates[-1]["尾帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["尾帧审核状态"], "待确认")
+        self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
+        self.assertEqual(updates[-1]["尾帧图版本"], 3)
+
+    def test_submit_first_last_video_task_uses_two_reference_frames(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
+            first.write(b"first")
+            first.flush()
+            last.write(b"last")
+            last.flush()
+            response = Mock()
+            response.status_code = 200
+            response.json.return_value = {"id": "task_video", "status": "queued"}
+            response.text = '{"id":"task_video"}'
+
+            with patch.object(first_last.requests, "post", return_value=response) as post:
+                task_id, body = first_last.submit_first_last_video_task(
+                    {"api_key": "sk", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
+                    "video prompt",
+                    first.name,
+                    last.name,
+                    seconds="6",
+                    size="720x1280",
+                    aspect_ratio="9:16",
+                )
+
+        self.assertEqual(task_id, "task_video")
+        self.assertEqual(body["status"], "queued")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://otuapi.com/v1/videos")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk")
+        self.assertEqual(kwargs["data"]["prompt"], "video prompt")
+        self.assertEqual(kwargs["data"]["seconds"], "6")
+        self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
+
+
+if __name__ == "__main__":
+    unittest.main()

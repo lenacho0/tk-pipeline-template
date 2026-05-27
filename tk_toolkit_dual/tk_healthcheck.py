@@ -12,6 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INSTANCE = os.environ.get('TK_INSTANCE', 'default')
 sys.path.insert(0, SCRIPT_DIR)
 from common import *
+from tk_shot_storyboard import get_table_field_names
 
 
 def check_fastmoss():
@@ -185,6 +186,67 @@ def check_pet_reference_analysis_config():
         return False, f'失败: {e}'
 
 
+def check_first_last_video_config():
+    try:
+        if not TABLE_FIRST_LAST_VIDEO:
+            return False, 'config.json 缺少 first_last_video 表 ID'
+        token = get_feishu_token()
+        required_table_fields = {
+            '记录类型',
+            '记录状态',
+            '父任务记录ID',
+            '批次ID',
+            '当前批次ID',
+            '场景编号',
+            '首尾帧文档附件',
+            '拆分状态',
+            '场景拆分操作',
+            '首帧图操作',
+            '尾帧图操作',
+            '视频操作',
+            '拆分版本',
+            '首帧图版本',
+            '尾帧图版本',
+            '视频版本',
+        }
+        field_names = get_table_field_names(token, TABLE_FIRST_LAST_VIDEO)
+        missing_table_fields = sorted(required_table_fields - set(field_names))
+        if missing_table_fields:
+            return False, f"首尾帧表缺少字段: {', '.join(missing_table_fields)}"
+
+        required = {
+            '分镜头图片生成': ('模型名称', 'API Key', 'API 代理地址'),
+            '逐镜头分镜视频生成-OTU': ('模型名称', 'API Key', 'API 代理地址'),
+        }
+        records = safe_list_records(token, TABLE_CONFIG)
+        stage_map = {}
+        for rec in records:
+            fields = rec.get('fields', {})
+            stage_name = extract_text(fields.get('环节', '')).strip()
+            if stage_name in required:
+                stage_map[stage_name] = fields
+
+        missing_stages = [name for name in required if name not in stage_map]
+        if missing_stages:
+            return False, f"缺少配置环节: {', '.join(missing_stages)}"
+
+        bad = []
+        for stage_name, field_names in required.items():
+            fields = stage_map[stage_name]
+            missing_fields = [
+                field_name
+                for field_name in field_names
+                if not extract_text(fields.get(field_name, '')).strip()
+            ]
+            if missing_fields:
+                bad.append(f"{stage_name} 缺少 {', '.join(missing_fields)}")
+        if bad:
+            return False, '；'.join(bad)
+        return True, f"正常 (表={TABLE_FIRST_LAST_VIDEO}, 分镜头图片生成✓, 逐镜头分镜视频生成-OTU✓)"
+    except Exception as e:
+        return False, f'失败: {e}'
+
+
 def check_dispatcher():
     try:
         heartbeat_file = os.path.join(SCRIPT_DIR, f'.dispatcher_heartbeat.{INSTANCE}.json')
@@ -281,6 +343,7 @@ def send_feishu_report(results):
             'gemini': '🤖 Gemini (环节②③④)',
             'sora': '🎬 Sora 连通性',
             'nine_grid_video': '🎞️ 九宫格生成视频',
+            'first_last_video': '🎬 首尾帧视频',
             'dispatcher': '⚡ 调度器',
         }
         for key, (ok, msg) in results.items():
@@ -320,6 +383,7 @@ def main():
         ('sora', 'Sora API', check_sora),
         ('nine_grid_video', '九宫格生成视频配置', check_nine_grid_video),
         ('pet_reference_analysis', '宠物拟人参考视频深拆配置', check_pet_reference_analysis_config),
+        ('first_last_video', '首尾帧视频配置', check_first_last_video_config),
         ('dispatcher', '调度器', check_dispatcher),
     ]
     for key, label, check_fn in checks:
