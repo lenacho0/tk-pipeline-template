@@ -107,6 +107,19 @@ WATCH_LIST = [
         'timeout': 1200,
         'max_concurrency': 1,
         'max_retries': 2,
+        'claim_clear_values': {
+            '故事板图': [],
+            '故事板图片任务ID': '',
+            '故事板图片错误信息': '',
+            '故事板图片生成时间': None,
+            '分镜视频': [],
+            '分镜视频URL': '',
+            '视频任务ID': '',
+            '视频错误信息': '',
+            '视频生成时间': None,
+            '视频生成状态': '不触发',
+            '错误信息': '',
+        },
     },
     {
         'name': '故事板Omni视频生成',
@@ -121,7 +134,14 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
-        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
+        'claim_clear_values': {
+            '分镜视频': [],
+            '分镜视频URL': '',
+            '视频任务ID': '',
+            '视频错误信息': '',
+            '视频生成时间': None,
+            '错误信息': '',
+        },
     },
     {
         'name': '脚本文档解析拆分',
@@ -672,6 +692,14 @@ def update_record_state_cache(watch, record_id, status):
     save_record_state_cache(cleaned)
 
 
+def apply_claim_clear_fields(claim_fields, watch):
+    for field_name in watch.get('claim_clear_fields') or []:
+        claim_fields[field_name] = ''
+    for field_name, value in (watch.get('claim_clear_values') or {}).items():
+        claim_fields[field_name] = value
+    return claim_fields
+
+
 def try_claim_task(token, watch, record_id):
     try:
         latest = safe_get_record(token, watch['table'], record_id)
@@ -681,8 +709,7 @@ def try_claim_task(token, watch, record_id):
             update_record_state_cache(watch, record_id, latest_status)
             return False
         claim_fields = {watch['status_field']: watch['running_value']}
-        for field_name in watch.get('claim_clear_fields') or []:
-            claim_fields[field_name] = ''
+        apply_claim_clear_fields(claim_fields, watch)
         safe_update_record(token, watch['table'], record_id, claim_fields)
         update_record_state_cache(watch, record_id, watch['running_value'])
         return True

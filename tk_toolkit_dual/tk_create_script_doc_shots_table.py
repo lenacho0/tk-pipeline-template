@@ -331,6 +331,8 @@ def create_or_update_views(base_token, table_id, view_definitions):
                     ])
                     break
                 except RuntimeError as exc:
+                    if "800070003" in str(exc) or "no operation produced" in str(exc):
+                        break
                     if "800004135" not in str(exc) or attempt == 3:
                         raise
                     time.sleep(2 + attempt * 2)

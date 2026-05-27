@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tk_storyboard_video as storyboard_video
 import tk_create_storyboard_video_table as create_table
 import tk_bootstrap_storyboard_video_config as bootstrap_config
+import tk_dispatcher as dispatcher
 
 
 def parent_fields():
@@ -17,19 +18,34 @@ def parent_fields():
         "记录类型": "母任务",
         "任务名称": "story task",
         "脚本内容": "0-10s hook\n10-20s product demo",
-        "产品名称": "Pet odor spray",
-        "目标人群": "Thai pet owners",
+        "关联产品记录": [{"record_ids": ["recProduct"], "text": "Pet odor spray"}],
+        "选择模特": [{"record_ids": ["recModel"], "text": "Momo"}],
         "核心冲突场景": "cat urine smell in the house",
         "黄金3秒/戏剧钩子": "The cat confesses the smell problem",
-        "产品图": [{"file_token": "ft_product"}],
-        "角色图": [{"file_token": "ft_character"}],
         "环境图": [{"file_token": "ft_environment"}],
     }
 
 
+def fake_parent_lookup(token, table_id, record_id):
+    if record_id == "recProduct":
+        return {
+            "产品名称-zh": "宠物除臭喷雾",
+            "产品名称-th": "Pet odor spray TH",
+            "目标用户": "Thai pet owners",
+            "产品图片": [{"file_token": "ft_product"}],
+        }
+    if record_id == "recModel":
+        return {
+            "模特名称": "Momo",
+            "模特照片": [{"file_token": "ft_character"}],
+        }
+    raise AssertionError((token, table_id, record_id))
+
+
 class StoryboardVideoTests(unittest.TestCase):
     def test_prompt_instructions_keep_conflict_hook_only_on_storyboard_01(self):
-        prompt = storyboard_video.build_storyboard_prompt_generation_request(parent_fields())
+        fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
+        prompt = storyboard_video.build_storyboard_prompt_generation_request(fields)
 
         self.assertIn("Storyboard 01", prompt)
         self.assertIn("核心冲突场景", prompt)
@@ -79,7 +95,7 @@ class StoryboardVideoTests(unittest.TestCase):
         })
 
         records = storyboard_video.build_child_storyboard_records(
-            parent_fields(),
+            dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"}),
             payload,
             parent_record_id="recParent",
             batch_id="SB-1",
@@ -105,8 +121,8 @@ class StoryboardVideoTests(unittest.TestCase):
                 "父任务记录ID": "recParent",
             }
             parent = {
-                "产品图": [{"file_token": "ft_product"}],
-                "角色图": [{"file_token": "ft_character"}],
+                "关联产品记录": [{"record_ids": ["recProduct"]}],
+                "选择模特": [{"record_ids": ["recModel"]}],
                 "环境图": [{"file_token": "ft_environment"}],
             }
             download = Mock(side_effect=[
@@ -122,6 +138,7 @@ class StoryboardVideoTests(unittest.TestCase):
                 parent,
                 tmp_path,
                 download_fn=download,
+                get_record_fn=fake_parent_lookup,
             )
 
         self.assertEqual([ref["role"] for ref in refs], ["storyboard", "product:1", "character:1", "environment:1"])
@@ -130,7 +147,7 @@ class StoryboardVideoTests(unittest.TestCase):
     def test_build_omni_video_prompt_rejects_rendering_storyboard_board(self):
         prompt = storyboard_video.build_omni_video_prompt(
             {"故事板图片提示词": "board prompt", "视频提示词": ""},
-            parent_fields(),
+            dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"}),
         )
 
         self.assertIn("Do not render the storyboard board", prompt)
@@ -173,8 +190,22 @@ class StoryboardVideoTests(unittest.TestCase):
         field_names = [field["name"] for field in create_table.STORYBOARD_VIDEO_FIELDS]
         self.assertIn("记录类型", field_names)
         self.assertIn("脚本内容", field_names)
-        self.assertIn("产品图", field_names)
-        self.assertIn("角色图", field_names)
+        self.assertIn("关联产品记录", field_names)
+        self.assertIn("选择模特", field_names)
+        self.assertNotIn("产品名称", field_names)
+        self.assertNotIn("目标人群", field_names)
+        self.assertNotIn("产品图", field_names)
+        self.assertNotIn("角色图", field_names)
+        self.assertNotIn("故事板图本地路径", field_names)
+        self.assertNotIn("故事板图file_token", field_names)
+        self.assertNotIn("故事板图片原始响应JSON", field_names)
+        self.assertNotIn("视频通道", field_names)
+        self.assertNotIn("视频生成模型", field_names)
+        self.assertNotIn("本地视频路径", field_names)
+        self.assertNotIn("分镜视频file_token", field_names)
+        self.assertNotIn("视频生成原始响应JSON", field_names)
+        self.assertNotIn("失败分类", field_names)
+        self.assertNotIn("生成时间", field_names)
         self.assertIn("环境图", field_names)
         self.assertIn("Storyboard编号", field_names)
         self.assertIn("故事板图片生成状态", field_names)
@@ -184,6 +215,72 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("01-母任务入口", create_table.TABLE_DEFINITION["views"])
         self.assertIn("02-故事板图片", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-Omni视频", create_table.TABLE_DEFINITION["views"])
+
+    def test_resolve_parent_reference_context_uses_linked_product_and_model(self):
+        context = storyboard_video.resolve_parent_reference_context(
+            "token",
+            parent_fields(),
+            get_record_fn=fake_parent_lookup,
+            product_table_id="tblProduct",
+            model_table_id="tblModel",
+        )
+
+        self.assertEqual(context["product_record_id"], "recProduct")
+        self.assertEqual(context["model_record_id"], "recModel")
+        self.assertEqual(context["product_name"], "宠物除臭喷雾")
+        self.assertEqual(context["target_audience"], "Thai pet owners")
+        self.assertEqual(context["product_tokens"], ["ft_product"])
+        self.assertEqual(context["character_tokens"], ["ft_character"])
+        self.assertEqual(context["environment_tokens"], ["ft_environment"])
+
+    def test_resolve_parent_reference_context_requires_single_product_and_model(self):
+        with self.assertRaisesRegex(ValueError, "必须选择 1 个产品"):
+            storyboard_video.resolve_parent_reference_context(
+                "token",
+                {"关联产品记录": [], "选择模特": [{"record_ids": ["recModel"]}]},
+                get_record_fn=fake_parent_lookup,
+                product_table_id="tblProduct",
+                model_table_id="tblModel",
+            )
+
+        with self.assertRaisesRegex(ValueError, "必须选择 1 个模特"):
+            storyboard_video.resolve_parent_reference_context(
+                "token",
+                {"关联产品记录": [{"record_ids": ["recProduct"]}], "选择模特": [{"record_ids": ["recA", "recB"]}]},
+                get_record_fn=fake_parent_lookup,
+                product_table_id="tblProduct",
+                model_table_id="tblModel",
+            )
+
+    def test_regeneration_reset_fields_clear_old_outputs(self):
+        image_reset = storyboard_video.image_regeneration_reset_fields()
+        self.assertEqual(image_reset["故事板图"], [])
+        self.assertEqual(image_reset["故事板图片任务ID"], "")
+        self.assertIsNone(image_reset["故事板图片生成时间"])
+        self.assertEqual(image_reset["分镜视频"], [])
+        self.assertEqual(image_reset["分镜视频URL"], "")
+        self.assertEqual(image_reset["视频任务ID"], "")
+        self.assertEqual(image_reset["视频生成状态"], "不触发")
+
+        video_reset = storyboard_video.video_regeneration_reset_fields()
+        self.assertEqual(video_reset["分镜视频"], [])
+        self.assertEqual(video_reset["分镜视频URL"], "")
+        self.assertEqual(video_reset["视频任务ID"], "")
+        self.assertIsNone(video_reset["视频生成时间"])
+
+    def test_dispatcher_claim_clear_values_supports_typed_resets(self):
+        claim_fields = {"视频生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(claim_fields, {
+            "claim_clear_values": {
+                "分镜视频": [],
+                "分镜视频URL": "",
+                "视频生成时间": None,
+            }
+        })
+
+        self.assertEqual(claim_fields["分镜视频"], [])
+        self.assertEqual(claim_fields["分镜视频URL"], "")
+        self.assertIsNone(claim_fields["视频生成时间"])
 
     def test_bootstrap_config_creates_only_missing_storyboard_stages(self):
         created = []

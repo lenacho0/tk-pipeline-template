@@ -25,9 +25,12 @@ from common import (  # noqa: E402
     APP_TOKEN,
     CONFIG_RECORDS,
     TABLE_CONFIG,
+    TABLE_MODEL,
+    TABLE_PRODUCT,
     TABLE_STORYBOARD_VIDEO,
     WORKSPACE,
     build_error_payload,
+    extract_linked_record_ids,
     extract_text,
     feishu_headers,
     get_feishu_token,
@@ -127,6 +130,98 @@ def _extract_attachment_tokens(value: Any) -> List[str]:
     return tokens
 
 
+def _extract_link_ids(value: Any) -> List[str]:
+    linked = extract_linked_record_ids(value)
+    if linked:
+        return linked
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def _require_single_link(fields: Dict[str, Any], field_name: str, label: str) -> str:
+    ids = _extract_link_ids(fields.get(field_name))
+    if len(ids) != 1:
+        raise ValueError(f"{field_name}必须选择 1 个{label}")
+    return ids[0]
+
+
+def _first_text(fields: Dict[str, Any], names: Iterable[str]) -> str:
+    for name in names:
+        value = extract_text(fields.get(name)).strip()
+        if value:
+            return value
+    return ""
+
+
+def resolve_parent_reference_context(
+    token: str,
+    parent_fields: Dict[str, Any],
+    *,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+    product_table_id: str = TABLE_PRODUCT,
+    model_table_id: str = TABLE_MODEL,
+) -> Dict[str, Any]:
+    product_record_id = _require_single_link(parent_fields, "关联产品记录", "产品")
+    model_record_id = _require_single_link(parent_fields, "选择模特", "模特")
+    product_fields = get_record_fn(token, product_table_id, product_record_id)
+    model_fields = get_record_fn(token, model_table_id, model_record_id)
+
+    product_tokens = _extract_attachment_tokens(product_fields.get("产品图片"))
+    if not product_tokens:
+        raise ValueError("产品记录缺少产品图片")
+    character_tokens = _extract_attachment_tokens(model_fields.get("模特照片"))
+    if not character_tokens:
+        raise ValueError("模特记录缺少模特照片")
+
+    product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
+    target_audience = _first_text(product_fields, ["目标用户", "目标人群"])
+    return {
+        "product_record_id": product_record_id,
+        "model_record_id": model_record_id,
+        "product_name": product_name,
+        "target_audience": target_audience,
+        "product_tokens": product_tokens,
+        "character_tokens": character_tokens,
+        "environment_tokens": _extract_attachment_tokens(parent_fields.get("环境图")),
+    }
+
+
+def apply_parent_reference_snapshots(fields: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(fields)
+    merged["产品名称"] = context.get("product_name", "")
+    merged["目标人群"] = context.get("target_audience", "")
+    return merged
+
+
+def parent_fields_with_reference_snapshots(token: str, parent_fields: Dict[str, Any]) -> Dict[str, Any]:
+    context = resolve_parent_reference_context(token, parent_fields)
+    return apply_parent_reference_snapshots(parent_fields, context)
+
+
+def video_regeneration_reset_fields() -> Dict[str, Any]:
+    return {
+        "分镜视频": [],
+        "分镜视频URL": "",
+        "视频任务ID": "",
+        "视频错误信息": "",
+        "视频生成时间": None,
+        "错误信息": "",
+    }
+
+
+def image_regeneration_reset_fields() -> Dict[str, Any]:
+    fields = {
+        "故事板图": [],
+        "故事板图片任务ID": "",
+        "故事板图片错误信息": "",
+        "故事板图片生成时间": None,
+    }
+    fields.update(video_regeneration_reset_fields())
+    fields["视频生成状态"] = "不触发"
+    return fields
+
+
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
@@ -221,15 +316,11 @@ def build_child_storyboard_records(
             "任务名称": f"{task_name}-Storyboard{no:02d}",
             "父任务记录ID": parent_record_id,
             "批次ID": batch_id,
-            "产品名称": extract_text(parent_fields.get("产品名称")).strip(),
-            "目标人群": extract_text(parent_fields.get("目标人群")).strip(),
             "Storyboard编号": no,
             "Time Range": item["time_range"],
             "故事板图片提示词": item["image_prompt"],
             "故事板图片生成状态": "待生成",
             "视频提示词": item.get("video_prompt", ""),
-            "视频通道": "OTU",
-            "视频生成模型": _prefixed_omni_model_value(),
             "视频生成状态": "不触发",
             "错误信息": "",
         }
@@ -293,10 +384,8 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
     script = extract_text(fields.get("脚本内容")).strip()
     if not script:
         raise ValueError("脚本内容为空")
-    if not _extract_attachment_tokens(fields.get("产品图")):
-        raise ValueError("母任务缺少产品图")
-    if not _extract_attachment_tokens(fields.get("角色图")):
-        raise ValueError("母任务缺少角色图")
+    context = resolve_parent_reference_context(token, fields)
+    fields = apply_parent_reference_snapshots(fields, context)
 
     prompt = build_storyboard_prompt_generation_request(fields)
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
@@ -369,16 +458,15 @@ def collect_parent_reference_images(
     task_dir: Path,
     *,
     download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
 ) -> List[Dict[str, str]]:
     refs: List[Dict[str, str]] = []
-    for field_name, role_prefix, required in (
-        ("产品图", "product", True),
-        ("角色图", "character", True),
-        ("环境图", "environment", False),
+    context = resolve_parent_reference_context(token, parent_fields, get_record_fn=get_record_fn)
+    for tokens, role_prefix in (
+        (context["product_tokens"], "product"),
+        (context["character_tokens"], "character"),
+        (context["environment_tokens"], "environment"),
     ):
-        tokens = _extract_attachment_tokens(parent_fields.get(field_name))
-        if required and not tokens:
-            raise ValueError(f"母任务缺少{field_name}")
         for idx, file_token in enumerate(tokens, start=1):
             local_path = task_dir / f"reference_{role_prefix}_{idx}.png"
             downloaded = download_fn(token, file_token, str(local_path))
@@ -393,6 +481,7 @@ def collect_omni_reference_images(
     task_dir: Path,
     *,
     download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
 ) -> List[Dict[str, str]]:
     task_dir.mkdir(parents=True, exist_ok=True)
     storyboard_token = _extract_attachment_token(child_fields.get("故事板图"))
@@ -402,7 +491,7 @@ def collect_omni_reference_images(
     storyboard_path = task_dir / "reference_storyboard.png"
     downloaded = download_fn(token, storyboard_token, str(storyboard_path))
     refs.append({"role": "storyboard", "path": _downloaded_path(downloaded, storyboard_path), "file_token": storyboard_token})
-    refs.extend(collect_parent_reference_images(token, parent_fields, task_dir, download_fn=download_fn))
+    refs.extend(collect_parent_reference_images(token, parent_fields, task_dir, download_fn=download_fn, get_record_fn=get_record_fn))
     return refs[:7]
 
 
@@ -448,6 +537,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+        **image_regeneration_reset_fields(),
         "故事板图片生成状态": "生成中",
         "故事板图片错误信息": "",
     }))
@@ -460,18 +550,21 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         metadata={"urls": reference_urls, "reference_roles": [ref["role"] for ref in refs], "aspectRatio": "16:9"},
         size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
     )
+    if submit_task_id:
+        safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+            "故事板图片任务ID": submit_task_id,
+            "故事板图片错误信息": f"已提交 OTU 故事板图片任务，正在轮询。task_id={submit_task_id}",
+        }))
     result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
     result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
     if not result_url:
         raise RuntimeError("OTU 故事板图片任务完成但未返回图片地址")
     download_otu_image_result(result_url, out_path)
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_storyboard.png"), max_attempts=3, label="upload storyboard image")
+    ensure_record_current_generation(token, record_id, "故事板图片生成状态", "生成中", "故事板图片任务ID", submit_task_id)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         "故事板图": [{"file_token": file_token}],
-        "故事板图file_token": file_token,
-        "故事板图本地路径": out_path,
         "故事板图片任务ID": submit_task_id,
-        "故事板图片原始响应JSON": compact_json({"submit": submit_body, "result": result}, 10000),
         "故事板图片生成状态": "成功",
         "故事板图片生成时间": int(time.time() * 1000),
         "故事板图片错误信息": "",
@@ -603,6 +696,24 @@ def extract_video_url(result: Dict[str, Any]) -> str:
     return ""
 
 
+def ensure_record_current_generation(
+    token: str,
+    record_id: str,
+    status_field: str,
+    expected: str,
+    task_field: str = "",
+    task_id: str = "",
+) -> None:
+    latest = safe_get_record(token, TABLE_STORYBOARD_VIDEO, record_id)
+    current = extract_text(latest.get(status_field)).strip()
+    if current != expected:
+        raise RuntimeError(f"记录状态已变更为 {current or '<empty>'}，停止写回，避免旧任务覆盖新结果")
+    if task_field and task_id:
+        current_task_id = extract_text(latest.get(task_field)).strip()
+        if current_task_id != task_id:
+            raise RuntimeError(f"{task_field} 已变更，停止写回，避免旧任务覆盖新结果")
+
+
 def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     ensure_storyboard_table()
     token = get_feishu_token()
@@ -611,11 +722,12 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     if not parent_record_id:
         raise ValueError("Storyboard分段缺少父任务记录ID")
     parent_fields = safe_get_record(token, TABLE_STORYBOARD_VIDEO, parent_record_id)
+    parent_fields = parent_fields_with_reference_snapshots(token, parent_fields)
     work_dir = ensure_work_dir(record_id)
     refs = collect_omni_reference_images(token, fields, parent_fields, work_dir)
     prompt = build_omni_video_prompt(fields, parent_fields)
     _, cfg = get_stage_config(OMNI_STAGE_NAME, default_model=DEFAULT_OMNI_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OMNI_SIZE)
-    cfg["model"] = extract_text(fields.get("视频生成模型")).split(" / ", 1)[-1].strip() or cfg.get("model") or DEFAULT_OMNI_MODEL
+    cfg["model"] = cfg.get("model") or DEFAULT_OMNI_MODEL
     size = cfg.get("size") or DEFAULT_OMNI_SIZE
     output_path = str(work_dir / f"{record_id}_omni.mp4")
     summary = {
@@ -633,15 +745,13 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
 
     field_types = get_table_field_types(token, TABLE_STORYBOARD_VIDEO)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
-        "视频通道": "OTU",
-        "视频生成模型": _prefixed_omni_model_value(cfg["model"]),
+        **video_regeneration_reset_fields(),
         "视频生成状态": "生成中",
         "视频错误信息": "",
     }))
     task_id, submit_body = submit_omni_video_task(cfg, prompt, refs, size=size)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         "视频任务ID": task_id,
-        "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
         "视频错误信息": f"已提交 Omni 图生视频任务，正在轮询。task_id={task_id}",
     }))
     result = poll_omni_video_task(cfg, task_id)
@@ -650,15 +760,11 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         raise RuntimeError(f"Omni 生成完成但未返回 video_url: {compact_json(result, 1200)}")
     download_video(video_url, output_path)
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_omni.mp4")
+    ensure_record_current_generation(token, record_id, "视频生成状态", "生成中", "视频任务ID", task_id)
     success_fields = {
-        "视频通道": "OTU",
-        "视频生成模型": _prefixed_omni_model_value(cfg["model"]),
         "视频生成状态": "成功",
         "分镜视频": [{"file_token": file_token, "name": Path(output_path).name}],
         "视频任务ID": task_id,
-        "本地视频路径": output_path,
-        "分镜视频file_token": file_token,
-        "视频生成原始响应JSON": compact_json(result, 10000),
         "视频错误信息": "",
         "视频生成时间": int(time.time() * 1000),
         "错误信息": "",

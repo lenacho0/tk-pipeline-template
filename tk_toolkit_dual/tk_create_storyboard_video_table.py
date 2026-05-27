@@ -18,14 +18,17 @@ from tk_create_script_doc_shots_table import (
     create_or_update_views,
     create_table,
     datetime_field,
+    link,
     list_tables,
     load_config,
     number,
     opt,
+    run_json,
     select,
     text,
     update_config,
 )
+from common import get_feishu_token, safe_list_records
 
 
 TABLE_NAME = "故事板图片视频生成表"
@@ -33,8 +36,22 @@ TABLE_NAME = "故事板图片视频生成表"
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 SPLIT_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待拆分"), opt("拆分中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("Storyboard分段", "Green")]
-VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
-VIDEO_MODEL_OPTIONS = [opt("OTU / omni_flash-10s", "Green")]
+OBSOLETE_FIELDS = [
+    "产品名称",
+    "目标人群",
+    "产品图",
+    "角色图",
+    "故事板图本地路径",
+    "故事板图file_token",
+    "故事板图片原始响应JSON",
+    "视频通道",
+    "视频生成模型",
+    "本地视频路径",
+    "分镜视频file_token",
+    "视频生成原始响应JSON",
+    "失败分类",
+    "生成时间",
+]
 
 STORYBOARD_VIDEO_FIELDS = [
     text("任务名称"),
@@ -42,12 +59,10 @@ STORYBOARD_VIDEO_FIELDS = [
     text("父任务记录ID"),
     text("批次ID"),
     text("脚本内容"),
-    text("产品名称"),
-    text("目标人群"),
+    link("关联产品记录", "__PRODUCT_TABLE_ID__"),
+    link("选择模特", "__MODEL_TABLE_ID__"),
     text("核心冲突场景"),
     text("黄金3秒/戏剧钩子"),
-    attachment("产品图"),
-    attachment("角色图"),
     attachment("环境图"),
     select("拆分状态", SPLIT_STATUS_OPTIONS),
     text("拆分结果JSON"),
@@ -57,27 +72,17 @@ STORYBOARD_VIDEO_FIELDS = [
     text("故事板图片提示词"),
     select("故事板图片生成状态", RUN_STATUS_OPTIONS),
     attachment("故事板图"),
-    text("故事板图本地路径"),
-    text("故事板图file_token"),
     text("故事板图片任务ID"),
-    text("故事板图片原始响应JSON"),
     text("故事板图片错误信息"),
     datetime_field("故事板图片生成时间"),
     text("视频提示词"),
-    select("视频通道", VIDEO_CHANNEL_OPTIONS),
-    select("视频生成模型", VIDEO_MODEL_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),
     attachment("分镜视频"),
     text("视频任务ID"),
-    text("本地视频路径"),
     text("分镜视频URL", url=True),
-    text("分镜视频file_token"),
-    text("视频生成原始响应JSON"),
     text("视频错误信息"),
     datetime_field("视频生成时间"),
     text("错误信息"),
-    text("失败分类"),
-    datetime_field("生成时间"),
 ]
 
 TABLE_DEFINITION = {
@@ -86,47 +91,120 @@ TABLE_DEFINITION = {
     "fields": STORYBOARD_VIDEO_FIELDS,
     "views": {
         "01-母任务入口": [
-            "记录类型", "任务名称", "脚本内容", "产品名称", "目标人群", "核心冲突场景", "黄金3秒/戏剧钩子",
-            "产品图", "角色图", "环境图", "拆分状态", "总故事板数", "错误信息",
+            "记录类型", "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图",
+            "核心冲突场景", "黄金3秒/戏剧钩子", "拆分状态", "总故事板数", "错误信息",
         ],
         "02-故事板图片": [
-            "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range", "故事板图片提示词",
-            "故事板图片生成状态", "故事板图", "故事板图片错误信息", "故事板图file_token",
+            "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range",
+            "故事板图片提示词", "故事板图片生成状态", "故事板图", "故事板图片错误信息",
         ],
         "03-Omni视频": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range", "故事板图",
-            "视频提示词", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL",
-            "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间",
+            "视频提示词", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频生成时间",
         ],
         "99-排错": [
-            "记录类型", "任务名称", "父任务记录ID", "批次ID", "拆分状态", "拆分结果JSON", "故事板图片提示词",
-            "故事板图片任务ID", "故事板图片原始响应JSON", "故事板图片错误信息", "视频任务ID",
-            "视频生成原始响应JSON", "视频错误信息", "错误信息", "失败分类", "故事板图本地路径", "本地视频路径",
+            "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
+            "拆分状态", "拆分结果JSON", "故事板图片提示词",
+            "故事板图片任务ID", "故事板图片错误信息", "故事板图片生成时间",
+            "视频任务ID", "视频错误信息", "视频生成时间", "错误信息",
         ],
     },
 }
+
+
+def resolved_storyboard_fields(config):
+    tables = (config.get("feishu") or {}).get("tables", {})
+    product_table = tables.get("product", "")
+    model_table = tables.get("model_appearance", "")
+    resolved = []
+    for field in STORYBOARD_VIDEO_FIELDS:
+        item = dict(field)
+        if item.get("link_table") == "__PRODUCT_TABLE_ID__":
+            if not product_table:
+                continue
+            item["link_table"] = product_table
+        if item.get("link_table") == "__MODEL_TABLE_ID__":
+            if not model_table:
+                continue
+            item["link_table"] = model_table
+        resolved.append(item)
+    return resolved
+
+
+def field_value_is_non_empty(value):
+    if value is None:
+        return False
+    if value == "" or value == []:
+        return False
+    if isinstance(value, str) and not value.strip():
+        return False
+    return True
+
+
+def prune_obsolete_fields(base_token, table_id, field_names=OBSOLETE_FIELDS):
+    token = get_feishu_token()
+    records = safe_list_records(token, table_id)
+    non_empty = sorted({
+        field_name
+        for rec in records
+        for field_name in field_names
+        if field_value_is_non_empty((rec.get("fields") or {}).get(field_name))
+    })
+    if non_empty:
+        raise RuntimeError(f"以下字段存在非空数据，已中止删除: {', '.join(non_empty)}")
+
+    raw_fields = run_json([
+        "lark-cli", "base", "+field-list",
+        "--base-token", base_token,
+        "--table-id", table_id,
+        "--limit", "200",
+    ]).get("data", {})
+    field_items = raw_fields.get("items") or raw_fields.get("fields") or []
+    existing_names = set()
+    for item in field_items:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("field_name")
+            if name:
+                existing_names.add(name)
+
+    deleted = []
+    for field_name in field_names:
+        if existing_names and field_name not in existing_names:
+            continue
+        run_json([
+            "lark-cli", "base", "+field-delete",
+            "--base-token", base_token,
+            "--table-id", table_id,
+            "--field-id", field_name,
+            "--yes",
+        ])
+        deleted.append(field_name)
+    return deleted
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create storyboard image/video table")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATHS[0]))
     parser.add_argument("--update-config", action="store_true")
+    parser.add_argument("--prune-obsolete-fields", action="store_true")
     args = parser.parse_args()
 
     config_path = Path(args.config)
     config = load_config(config_path)
     base_token = config["feishu"]["bitable_app_token"]
+    fields = resolved_storyboard_fields(config)
     tables = list_tables(base_token)
     table_id = tables.get(TABLE_NAME)
     created_table = False
     if not table_id:
-        table_id = create_table(base_token, TABLE_NAME, STORYBOARD_VIDEO_FIELDS)
+        table_id = create_table(base_token, TABLE_NAME, fields)
         created_table = True
     if not table_id:
         raise RuntimeError(f"创建表失败：{TABLE_NAME} 未返回 table_id")
 
-    created_fields = create_missing_fields(base_token, table_id, STORYBOARD_VIDEO_FIELDS)
+    created_fields = create_missing_fields(base_token, table_id, fields)
     view_result = create_or_update_views(base_token, table_id, TABLE_DEFINITION["views"])
+    pruned_fields = prune_obsolete_fields(base_token, table_id) if args.prune_obsolete_fields else []
 
     if args.update_config:
         for path in DEFAULT_CONFIG_PATHS:
@@ -138,6 +216,7 @@ def main() -> None:
         "table_id": table_id,
         "created_table": created_table,
         "created_fields": created_fields,
+        "pruned_fields": pruned_fields,
         "views": view_result,
         "config_updated": bool(args.update_config),
     }, ensure_ascii=False, indent=2))
