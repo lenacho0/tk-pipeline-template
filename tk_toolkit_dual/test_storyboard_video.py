@@ -140,8 +140,8 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(records[0]["fields"]["Time Range"], "0-10s")
         self.assertEqual(records[0]["fields"]["故事板图片生成状态"], "待生成")
         self.assertEqual(records[0]["fields"]["视频生成状态"], "不触发")
-        self.assertEqual(records[0]["fields"]["关联产品记录"], parent_fields()["关联产品记录"])
-        self.assertEqual(records[0]["fields"]["选择模特"], parent_fields()["选择模特"])
+        self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
+        self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
         self.assertEqual(records[1]["fields"]["故事板图片提示词"], "Prompt two")
 
     def test_collect_reference_images_uses_storyboard_then_product_character_environment_and_caps_at_7(self):
