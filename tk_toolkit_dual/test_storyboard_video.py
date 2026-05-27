@@ -24,6 +24,15 @@ def parent_fields():
     }
 
 
+def multi_model_parent_fields(model_ids=None, environment_tokens=None):
+    model_ids = model_ids or ["recHuman1", "recHuman2", "recPet1", "recPet2"]
+    return {
+        **parent_fields(),
+        "选择模特": [{"record_ids": model_ids, "text": "multi models"}],
+        "环境图": [{"file_token": token} for token in (environment_tokens or ["ft_environment"])],
+    }
+
+
 def fake_parent_lookup(token, table_id, record_id):
     if record_id == "recProduct":
         return {
@@ -37,6 +46,28 @@ def fake_parent_lookup(token, table_id, record_id):
             "模特名称": "Momo",
             "模特照片": [{"file_token": "ft_character"}],
         }
+    raise AssertionError((token, table_id, record_id))
+
+
+def fake_multi_model_lookup(token, table_id, record_id):
+    if record_id == "recProduct":
+        return {
+            "产品名称-zh": "宠物除臭喷雾",
+            "目标用户": "Thai pet owners",
+            "产品图片": [
+                {"file_token": "ft_product_1"},
+                {"file_token": "ft_product_2"},
+                {"file_token": "ft_product_3"},
+            ],
+        }
+    models = {
+        "recHuman1": {"模特名称": "Thai man 1", "模特类型": "人类", "外观描述": "blue shirt", "模特照片": [{"file_token": "ft_human_1a"}, {"file_token": "ft_human_1b"}]},
+        "recHuman2": {"模特名称": "Thai woman 1", "模特类型": "人类", "外观描述": "white dress", "模特照片": [{"file_token": "ft_human_2a"}, {"file_token": "ft_human_2b"}]},
+        "recPet1": {"模特名称": "Orange cat", "模特类型": "宠物", "外观描述": "orange tabby", "模特照片": [{"file_token": "ft_pet_1a"}, {"file_token": "ft_pet_1b"}]},
+        "recPet2": {"模特名称": "White dog", "模特类型": "宠物", "外观描述": "small white dog", "模特照片": [{"file_token": "ft_pet_2a"}, {"file_token": "ft_pet_2b"}]},
+    }
+    if record_id in models:
+        return models[record_id]
     raise AssertionError((token, table_id, record_id))
 
 
@@ -109,6 +140,8 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(records[0]["fields"]["Time Range"], "0-10s")
         self.assertEqual(records[0]["fields"]["故事板图片生成状态"], "待生成")
         self.assertEqual(records[0]["fields"]["视频生成状态"], "不触发")
+        self.assertEqual(records[0]["fields"]["关联产品记录"], parent_fields()["关联产品记录"])
+        self.assertEqual(records[0]["fields"]["选择模特"], parent_fields()["选择模特"])
         self.assertEqual(records[1]["fields"]["故事板图片提示词"], "Prompt two")
 
     def test_collect_reference_images_uses_storyboard_then_product_character_environment_and_caps_at_7(self):
@@ -144,6 +177,129 @@ class StoryboardVideoTests(unittest.TestCase):
 
         self.assertEqual([ref["role"] for ref in refs], ["storyboard", "product:1", "character:1", "environment:1"])
         self.assertEqual([call.args[1] for call in download.call_args_list], ["ft_story", "ft_product", "ft_character", "ft_environment"])
+
+    def test_resolve_parent_reference_context_allows_multiple_models_and_uses_first_photo_each(self):
+        context = storyboard_video.resolve_parent_reference_context(
+            "token",
+            multi_model_parent_fields(),
+            get_record_fn=fake_multi_model_lookup,
+            product_table_id="tblProduct",
+            model_table_id="tblModel",
+        )
+
+        self.assertEqual(context["model_record_ids"], ["recHuman1", "recHuman2", "recPet1", "recPet2"])
+        self.assertEqual(context["character_tokens"], ["ft_human_1a", "ft_human_2a", "ft_pet_1a", "ft_pet_2a"])
+        self.assertEqual([character["name"] for character in context["characters"]], ["Thai man 1", "Thai woman 1", "Orange cat", "White dog"])
+        self.assertEqual([character["type"] for character in context["characters"]], ["人类", "人类", "宠物", "宠物"])
+
+        prompt = storyboard_video.build_storyboard_prompt_generation_request(
+            storyboard_video.apply_parent_reference_snapshots(dict(multi_model_parent_fields()), context)
+        )
+        self.assertIn("Selected character references", prompt)
+        self.assertIn("Thai man 1", prompt)
+        self.assertIn("Orange cat", prompt)
+        self.assertIn("Keep every selected human/pet character consistent", prompt)
+
+    def test_resolve_parent_reference_context_supports_common_human_pet_combinations(self):
+        cases = [
+            ["recHuman1"],
+            ["recHuman1", "recPet1"],
+            ["recHuman1", "recHuman2", "recPet1"],
+            ["recHuman1", "recHuman2", "recPet1", "recPet2"],
+        ]
+
+        for model_ids in cases:
+            with self.subTest(model_ids=model_ids):
+                context = storyboard_video.resolve_parent_reference_context(
+                    "token",
+                    multi_model_parent_fields(model_ids=model_ids),
+                    get_record_fn=fake_multi_model_lookup,
+                    product_table_id="tblProduct",
+                    model_table_id="tblModel",
+                )
+
+                self.assertEqual(context["model_record_ids"], model_ids)
+                self.assertEqual(len(context["character_tokens"]), len(model_ids))
+
+    def test_parent_reference_priority_keeps_required_product_and_all_model_refs_before_extras(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for name in [
+                "product_1.png", "product_2.png", "product_3.png",
+                "human_1.png", "human_2.png", "pet_1.png", "pet_2.png",
+                "environment.png",
+            ]:
+                (tmp_path / name).write_bytes(b"x" * 2000)
+            download = Mock(side_effect=[
+                tmp_path / "product_1.png",
+                tmp_path / "human_1.png",
+                tmp_path / "human_2.png",
+                tmp_path / "pet_1.png",
+                tmp_path / "pet_2.png",
+                tmp_path / "product_2.png",
+                tmp_path / "product_3.png",
+            ])
+
+            refs = storyboard_video.collect_parent_reference_images(
+                "token",
+                multi_model_parent_fields(),
+                tmp_path,
+                download_fn=download,
+                get_record_fn=fake_multi_model_lookup,
+            )
+
+        self.assertEqual(
+            [ref["role"] for ref in refs],
+            ["product:1", "character:1", "character:2", "character:3", "character:4", "product:2", "product:3"],
+        )
+        self.assertEqual(
+            [call.args[1] for call in download.call_args_list],
+            ["ft_product_1", "ft_human_1a", "ft_human_2a", "ft_pet_1a", "ft_pet_2a", "ft_product_2", "ft_product_3"],
+        )
+
+    def test_omni_reference_images_reserve_one_slot_for_storyboard_and_cap_parent_refs_at_6(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for name in ["story.png", "product_1.png", "human_1.png", "human_2.png", "pet_1.png", "pet_2.png", "product_2.png"]:
+                (tmp_path / name).write_bytes(b"x" * 2000)
+            download = Mock(side_effect=[
+                tmp_path / "story.png",
+                tmp_path / "product_1.png",
+                tmp_path / "human_1.png",
+                tmp_path / "human_2.png",
+                tmp_path / "pet_1.png",
+                tmp_path / "pet_2.png",
+                tmp_path / "product_2.png",
+            ])
+
+            refs = storyboard_video.collect_omni_reference_images(
+                "token",
+                {"故事板图": [{"file_token": "ft_story"}]},
+                multi_model_parent_fields(),
+                tmp_path,
+                download_fn=download,
+                get_record_fn=fake_multi_model_lookup,
+            )
+
+        self.assertEqual(
+            [ref["role"] for ref in refs],
+            ["storyboard", "product:1", "character:1", "character:2", "character:3", "character:4", "product:2"],
+        )
+        self.assertEqual(len(refs), 7)
+
+    def test_parent_reference_images_fail_when_required_product_and_models_exceed_limit(self):
+        with self.assertRaisesRegex(ValueError, "参考图数量超过上限"):
+            storyboard_video.collect_parent_reference_images(
+                "token",
+                multi_model_parent_fields(model_ids=["recHuman1", "recHuman2", "recPet1", "recPet2", "recExtra1", "recExtra2", "recExtra3"]),
+                Path("/tmp"),
+                download_fn=Mock(),
+                get_record_fn=lambda token, table_id, record_id: (
+                    {"产品图片": [{"file_token": "ft_product_1"}]}
+                    if record_id == "recProduct"
+                    else {"模特名称": record_id, "模特照片": [{"file_token": f"ft_{record_id}"}]}
+                ),
+            )
 
     def test_build_omni_video_prompt_rejects_rendering_storyboard_board(self):
         prompt = storyboard_video.build_omni_video_prompt(
@@ -258,7 +414,7 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(context["character_tokens"], ["ft_character"])
         self.assertEqual(context["environment_tokens"], ["ft_environment"])
 
-    def test_resolve_parent_reference_context_requires_single_product_and_model(self):
+    def test_resolve_parent_reference_context_requires_single_product_and_at_least_one_model(self):
         with self.assertRaisesRegex(ValueError, "必须选择 1 个产品"):
             storyboard_video.resolve_parent_reference_context(
                 "token",
@@ -268,11 +424,24 @@ class StoryboardVideoTests(unittest.TestCase):
                 model_table_id="tblModel",
             )
 
-        with self.assertRaisesRegex(ValueError, "必须选择 1 个模特"):
+        with self.assertRaisesRegex(ValueError, "必须至少选择 1 个模特"):
             storyboard_video.resolve_parent_reference_context(
                 "token",
-                {"关联产品记录": [{"record_ids": ["recProduct"]}], "选择模特": [{"record_ids": ["recA", "recB"]}]},
+                {"关联产品记录": [{"record_ids": ["recProduct"]}], "选择模特": []},
                 get_record_fn=fake_parent_lookup,
+                product_table_id="tblProduct",
+                model_table_id="tblModel",
+            )
+
+        with self.assertRaisesRegex(ValueError, "recMissingPhoto.*缺少模特照片"):
+            storyboard_video.resolve_parent_reference_context(
+                "token",
+                {"关联产品记录": [{"record_ids": ["recProduct"]}], "选择模特": [{"record_ids": ["recMissingPhoto"]}]},
+                get_record_fn=lambda token, table_id, record_id: (
+                    {"产品图片": [{"file_token": "ft_product"}]}
+                    if record_id == "recProduct"
+                    else {"模特名称": "recMissingPhoto", "模特照片": []}
+                ),
                 product_table_id="tblProduct",
                 model_table_id="tblModel",
             )

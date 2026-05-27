@@ -63,6 +63,7 @@ IMAGE_STAGE_NAME = "故事板图片生成-OTU"
 OMNI_STAGE_NAME = "故事板视频生成-Omni"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
 DEFAULT_OMNI_SIZE = "1280x720"
+MAX_REFERENCE_IMAGES = 7
 BASE_WORK_DIR = Path(WORKSPACE) / "storyboard_video_work"
 POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
@@ -147,6 +148,13 @@ def _require_single_link(fields: Dict[str, Any], field_name: str, label: str) ->
     return ids[0]
 
 
+def _require_link_ids(fields: Dict[str, Any], field_name: str, label: str) -> List[str]:
+    ids = _extract_link_ids(fields.get(field_name))
+    if not ids:
+        raise ValueError(f"{field_name}必须至少选择 1 个{label}")
+    return ids
+
+
 def _first_text(fields: Dict[str, Any], names: Iterable[str]) -> str:
     for name in names:
         value = extract_text(fields.get(name)).strip()
@@ -164,34 +172,59 @@ def resolve_parent_reference_context(
     model_table_id: str = TABLE_MODEL,
 ) -> Dict[str, Any]:
     product_record_id = _require_single_link(parent_fields, "关联产品记录", "产品")
-    model_record_id = _require_single_link(parent_fields, "选择模特", "模特")
+    model_record_ids = _require_link_ids(parent_fields, "选择模特", "模特")
     product_fields = get_record_fn(token, product_table_id, product_record_id)
-    model_fields = get_record_fn(token, model_table_id, model_record_id)
 
     product_tokens = _extract_attachment_tokens(product_fields.get("产品图片"))
     if not product_tokens:
         raise ValueError("产品记录缺少产品图片")
-    character_tokens = _extract_attachment_tokens(model_fields.get("模特照片"))
-    if not character_tokens:
-        raise ValueError("模特记录缺少模特照片")
+
+    characters: List[Dict[str, str]] = []
+    for index, model_record_id in enumerate(model_record_ids, start=1):
+        model_fields = get_record_fn(token, model_table_id, model_record_id)
+        model_name = _first_text(model_fields, ["模特名称", "名称", "任务名称"]) or model_record_id
+        photo_tokens = _extract_attachment_tokens(model_fields.get("模特照片"))
+        if not photo_tokens:
+            raise ValueError(f"模特记录 {model_name or model_record_id} 缺少模特照片")
+        characters.append({
+            "record_id": model_record_id,
+            "name": model_name,
+            "type": _first_text(model_fields, ["模特类型", "类型"]),
+            "appearance": _first_text(model_fields, ["外观描述", "特殊标记", "品种", "毛色/肤色"]),
+            "photo_token": photo_tokens[0],
+            "index": str(index),
+        })
 
     product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
     target_audience = _first_text(product_fields, ["目标用户", "目标人群"])
     return {
         "product_record_id": product_record_id,
-        "model_record_id": model_record_id,
+        "model_record_id": model_record_ids[0],
+        "model_record_ids": model_record_ids,
         "product_name": product_name,
         "target_audience": target_audience,
         "product_tokens": product_tokens,
-        "character_tokens": character_tokens,
+        "characters": characters,
+        "character_tokens": [character["photo_token"] for character in characters],
         "environment_tokens": _extract_attachment_tokens(parent_fields.get("环境图")),
     }
+
+
+def build_character_reference_summary(characters: List[Dict[str, str]]) -> str:
+    lines = []
+    for index, character in enumerate(characters, start=1):
+        name = character.get("name") or character.get("record_id") or f"Character {index}"
+        model_type = character.get("type") or "unspecified"
+        appearance = character.get("appearance") or "no extra appearance notes"
+        lines.append(f"- Character {index}: name={name}; type={model_type}; appearance={appearance}")
+    return "\n".join(lines)
 
 
 def apply_parent_reference_snapshots(fields: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     merged = dict(fields)
     merged["产品名称"] = context.get("product_name", "")
     merged["目标人群"] = context.get("target_audience", "")
+    merged["角色参考摘要"] = build_character_reference_summary(context.get("characters") or [])
     return merged
 
 
@@ -237,6 +270,7 @@ def build_storyboard_prompt_generation_request(fields: Dict[str, Any]) -> str:
     script = extract_text(fields.get("脚本内容")).strip()
     product_name = extract_text(fields.get("产品名称")).strip()
     target_audience = extract_text(fields.get("目标人群")).strip()
+    character_summary = extract_text(fields.get("角色参考摘要")).strip()
     return f"""
 {STORYBOARD_PROMPT_RULES}
 
@@ -256,6 +290,11 @@ JSON schema:
 Global business fields:
 - Product name: {product_name}
 - Target audience: {target_audience}
+
+Selected character references:
+{character_summary or "- No character reference summary was provided."}
+
+Keep every selected human/pet character consistent across all storyboards. Do not merge, replace, omit, or casually change any selected character unless the script explicitly calls for a character to be off-screen.
 
 Full finalized script:
 {script}
@@ -313,6 +352,8 @@ def build_child_storyboard_records(
             "任务名称": f"{task_name}-Storyboard{no:02d}",
             "父任务记录ID": parent_record_id,
             "批次ID": batch_id,
+            "关联产品记录": parent_fields.get("关联产品记录", []),
+            "选择模特": parent_fields.get("选择模特", []),
             "Storyboard编号": no,
             "Time Range": item["time_range"],
             "故事板图片提示词": item["image_prompt"],
@@ -454,21 +495,42 @@ def collect_parent_reference_images(
     parent_fields: Dict[str, Any],
     task_dir: Path,
     *,
+    max_count: int = MAX_REFERENCE_IMAGES,
     download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
     get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
 ) -> List[Dict[str, str]]:
-    refs: List[Dict[str, str]] = []
     context = resolve_parent_reference_context(token, parent_fields, get_record_fn=get_record_fn)
-    for tokens, role_prefix in (
-        (context["product_tokens"], "product"),
-        (context["character_tokens"], "character"),
-        (context["environment_tokens"], "environment"),
-    ):
-        for idx, file_token in enumerate(tokens, start=1):
-            local_path = task_dir / f"reference_{role_prefix}_{idx}.png"
-            downloaded = download_fn(token, file_token, str(local_path))
-            refs.append({"role": f"{role_prefix}:{idx}", "path": _downloaded_path(downloaded, local_path), "file_token": file_token})
-    return refs[:7]
+    product_tokens = context["product_tokens"]
+    character_tokens = context["character_tokens"]
+    required = [{"role": "product:1", "file_token": product_tokens[0]}]
+    required.extend(
+        {"role": f"character:{idx}", "file_token": file_token}
+        for idx, file_token in enumerate(character_tokens, start=1)
+    )
+    if len(required) > max_count:
+        raise ValueError(
+            f"参考图数量超过上限：第一张产品图 + 已选模特图共 {len(required)} 张，"
+            f"当前最多可用 {max_count} 张；请减少模特数量"
+        )
+
+    optional: List[Dict[str, str]] = []
+    optional.extend(
+        {"role": f"product:{idx}", "file_token": file_token}
+        for idx, file_token in enumerate(product_tokens[1:], start=2)
+    )
+    optional.extend(
+        {"role": f"environment:{idx}", "file_token": file_token}
+        for idx, file_token in enumerate(context["environment_tokens"], start=1)
+    )
+    selected = required + optional[: max_count - len(required)]
+
+    refs: List[Dict[str, str]] = []
+    for item in selected:
+        safe_role = item["role"].replace(":", "_")
+        local_path = task_dir / f"reference_{safe_role}.png"
+        downloaded = download_fn(token, item["file_token"], str(local_path))
+        refs.append({"role": item["role"], "path": _downloaded_path(downloaded, local_path), "file_token": item["file_token"]})
+    return refs
 
 
 def collect_omni_reference_images(
@@ -488,8 +550,8 @@ def collect_omni_reference_images(
     storyboard_path = task_dir / "reference_storyboard.png"
     downloaded = download_fn(token, storyboard_token, str(storyboard_path))
     refs.append({"role": "storyboard", "path": _downloaded_path(downloaded, storyboard_path), "file_token": storyboard_token})
-    refs.extend(collect_parent_reference_images(token, parent_fields, task_dir, download_fn=download_fn, get_record_fn=get_record_fn))
-    return refs[:7]
+    refs.extend(collect_parent_reference_images(token, parent_fields, task_dir, max_count=MAX_REFERENCE_IMAGES - 1, download_fn=download_fn, get_record_fn=get_record_fn))
+    return refs
 
 
 def build_image_reference_note(refs: List[Dict[str, str]]) -> str:
