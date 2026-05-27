@@ -452,13 +452,13 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(image_reset["故事板图片任务ID"], "")
         self.assertIsNone(image_reset["故事板图片生成时间"])
         self.assertEqual(image_reset["分镜视频"], [])
-        self.assertEqual(image_reset["分镜视频URL"], "")
+        self.assertIsNone(image_reset["分镜视频URL"])
         self.assertEqual(image_reset["视频任务ID"], "")
         self.assertEqual(image_reset["视频生成状态"], "不触发")
 
         video_reset = storyboard_video.video_regeneration_reset_fields()
         self.assertEqual(video_reset["分镜视频"], [])
-        self.assertEqual(video_reset["分镜视频URL"], "")
+        self.assertIsNone(video_reset["分镜视频URL"])
         self.assertEqual(video_reset["视频任务ID"], "")
         self.assertIsNone(video_reset["视频生成时间"])
 
@@ -467,14 +467,24 @@ class StoryboardVideoTests(unittest.TestCase):
         dispatcher.apply_claim_clear_fields(claim_fields, {
             "claim_clear_values": {
                 "分镜视频": [],
-                "分镜视频URL": "",
+                "分镜视频URL": None,
                 "视频生成时间": None,
             }
         })
 
         self.assertEqual(claim_fields["分镜视频"], [])
-        self.assertEqual(claim_fields["分镜视频URL"], "")
+        self.assertIsNone(claim_fields["分镜视频URL"])
         self.assertIsNone(claim_fields["视频生成时间"])
+
+    def test_storyboard_dispatcher_clears_url_fields_with_null(self):
+        storyboard_watches = {
+            watch["name"]: watch
+            for watch in dispatcher.RAW_WATCH_LIST
+            if watch.get("name") in {"故事板图片生成", "故事板Omni视频生成"}
+        }
+
+        self.assertIsNone(storyboard_watches["故事板图片生成"]["claim_clear_values"]["分镜视频URL"])
+        self.assertIsNone(storyboard_watches["故事板Omni视频生成"]["claim_clear_values"]["分镜视频URL"])
 
     def test_bootstrap_config_creates_only_missing_storyboard_stages(self):
         created = []

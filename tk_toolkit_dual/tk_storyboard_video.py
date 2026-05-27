@@ -236,7 +236,7 @@ def parent_fields_with_reference_snapshots(token: str, parent_fields: Dict[str, 
 def video_regeneration_reset_fields() -> Dict[str, Any]:
     return {
         "分镜视频": [],
-        "分镜视频URL": "",
+        "分镜视频URL": None,
         "视频任务ID": "",
         "视频错误信息": "",
         "视频生成时间": None,
