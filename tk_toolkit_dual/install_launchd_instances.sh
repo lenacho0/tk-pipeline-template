@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$HOME/Library/LaunchAgents"
-for name in ryan colleague; do
+for name in ryan; do
   label="com.ryan.tk-dispatcher.${name}"
   src="/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/${label}.plist"
   dst="$HOME/Library/LaunchAgents/${label}.plist"

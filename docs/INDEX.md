@@ -1,8 +1,8 @@
 # Workspace TK 文档索引
 
-最后整理：2026-05-18
+最后整理：2026-05-28
 
-当前一线文档只服务旧 TK pipeline / dual dispatcher 多维表格项目。UGC / 内容-01~07、新 TikTok Bitable 表6、误建 Base、早期脚本副本和实验输出均已归档，不再作为当前主线依据。
+当前一线文档只服务 ryan 主线 TK pipeline 多维表格项目。UGC / 内容-01~07、新 TikTok Bitable 表6、colleague 实例、误建 Base、早期脚本副本和实验输出均已归档，不再作为当前主线依据。
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### `docs/tk-pipeline/`
 
-旧 TK pipeline、dual dispatcher、分镜一致性、上线状态、P0/P1 改造和经验复盘。
+旧 TK pipeline、分镜一致性、上线状态、P0/P1 改造和经验复盘。
 
 - `pipeline-migration-phase1.md`：不停产迁移第一阶段改造项。
 - `storyboard-consistency-phase2.md`：逐镜头一致性增强工程化记录。
@@ -25,11 +25,11 @@
 
 ### `tk_toolkit_dual/`
 
-当前核心代码目录，承载 ryan / colleague 两个 dual dispatcher 实例。
+当前核心代码目录，只承载 ryan dispatcher 实例。
 
-- `README_DUAL.md`：双实例隔离说明。
-- `OPS_QUICK_REFERENCE.md`：当前双实例运维速查。
-- `launchd_usage_dual.md`：双实例 launchd 常用命令。
+- `README_DUAL.md`：ryan-only 运行说明。
+- `OPS_QUICK_REFERENCE.md`：当前 ryan 主线运维速查。
+- `launchd_usage_dual.md`：ryan launchd 常用命令。
 
 ---
 
@@ -38,18 +38,15 @@
 ### 当前服务
 
 - `com.ryan.tk-dispatcher.ryan`
-- `com.ryan.tk-dispatcher.colleague`
 
 ### 常用命令
 
 ```bash
 launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.ryan | sed -n '1,120p'
-launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.colleague | sed -n '1,120p'
 ```
 
 ```bash
 TK_INSTANCE=ryan TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.ryan.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
-TK_INSTANCE=colleague TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.colleague.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
 ```
 
 注意：`tk_toolkit/` 暂时保留，因为当前 dual launchd 仍复用其中的 `.venv312` Python 运行时。不要在清理文档时删除它。
