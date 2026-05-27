@@ -71,6 +71,28 @@ def fake_multi_model_lookup(token, table_id, record_id):
     raise AssertionError((token, table_id, record_id))
 
 
+def complete_storyboard_prompt(storyboard_no=1, *, include_hook=True) -> str:
+    top_fields = "Storyboard 编号, Time Range, 产品名称, 目标人群"
+    if include_hook:
+        top_fields += ", 核心冲突场景, 黄金3秒/戏剧钩子"
+    start = (storyboard_no - 1) * 10
+    end = storyboard_no * 10
+    return f"""
+【强制垫图指令】：接下来的所有画面生成，必须100%严格参考我随附上传的【人物照片】、【宠物照片】和【产品照片】。绝对禁止 AI 自行发散捏造人物长相、宠物外观、服装和产品外观，产品绝不可变形脱相！
+
+第一区块（顶部表头，横向占满全宽）：短视频带货分镜制作。顶部表头字段：{top_fields}。
+Time Range: {start}-{end}s.
+
+第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度。
+
+第三区块（核心分镜区，横向占满全宽）：Storyboard {storyboard_no:02d}：微剧情分镜（{start}-{end}s）。下方根据脚本实际镜头数量划分镜头网格，不固定为5个镜头。
+每个镜头网格内部从上到下严格包含：
+顶部栏：镜头编号及名称。
+画面区：带货分镜配图，严格按照脚本剧情顺序排布，场景需符合目标国家/地区【泰国】的真实生活环境与家居风格。
+底部表格：时间轴、景别、运镜（强调快推和主观视角）、画面内容（强调动作交互，绝不可省略此项）、情绪（从抓狂到极度惊喜的巨大反转）、日常口语化对白。
+""".strip()
+
+
 class StoryboardVideoTests(unittest.TestCase):
     def test_prompt_instructions_keep_conflict_hook_only_on_storyboard_01(self):
         fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
@@ -82,11 +104,10 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("Storyboard 02", prompt)
         self.assertIn("从 Storyboard 02 开始", prompt)
         self.assertIn("不得再出现“核心冲突场景”", prompt)
-        self.assertIn("自动提取 Storyboard 01", prompt)
         self.assertNotIn("Core conflict scene:", prompt)
         self.assertNotIn("Golden 3-second / dramatic hook:", prompt)
-        self.assertIn("English", prompt)
-        self.assertIn("Thai", prompt)
+        self.assertIn("英文", prompt)
+        self.assertIn("泰文", prompt)
 
     def test_prompt_generation_request_uses_configured_system_prompt(self):
         fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
@@ -96,9 +117,12 @@ class StoryboardVideoTests(unittest.TestCase):
         )
 
         self.assertIn("CONFIGURED STORYBOARD SYSTEM PROMPT", prompt)
-        self.assertIn("image_prompt", prompt)
-        self.assertIn("Complete English prompt", prompt)
-        self.assertIn("Full finalized script", prompt)
+        self.assertNotIn("Return strict JSON only", prompt)
+        self.assertNotIn("JSON schema", prompt)
+        self.assertIn("自动化预检硬性要求", prompt)
+        self.assertIn("画面内容", prompt)
+        self.assertIn("日常口语化对白", prompt)
+        self.assertIn("【完整脚本内容】", prompt)
 
     def test_text_generation_config_uses_split_prompt_without_requiring_api_key(self):
         with patch.object(storyboard_video, "get_model_config", return_value={
@@ -137,18 +161,18 @@ class StoryboardVideoTests(unittest.TestCase):
                 {
                     "storyboard_no": 1,
                     "time_range": "0-10s",
-                    "image_prompt": "Storyboard 01 final prompt. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.",
+                    "image_prompt": complete_storyboard_prompt(1),
                     "video_prompt": "Animate the real scene from storyboard 01.",
                 },
                 {
                     "time_range": "10-20s",
-                    "image_prompt": "Storyboard 02 final prompt. 第二区块素材区 includes 人物参考区 and 产品参考区.",
+                    "image_prompt": complete_storyboard_prompt(2, include_hook=False),
                 },
             ]
         })
 
         self.assertEqual(payload["storyboards"][0]["storyboard_no"], 1)
-        self.assertIn("第二区块素材区", payload["storyboards"][0]["image_prompt"])
+        self.assertIn("中部素材区", payload["storyboards"][0]["image_prompt"])
         self.assertEqual(payload["storyboards"][1]["storyboard_no"], 2)
         self.assertEqual(payload["storyboards"][1]["video_prompt"], "")
 
@@ -158,7 +182,15 @@ class StoryboardVideoTests(unittest.TestCase):
                 "storyboards": [{
                     "storyboard_no": 1,
                     "time_range": "0-10s",
-                    "image_prompt": "核心冲突场景: conflict. 黄金3秒/戏剧钩子: hook.",
+                    "image_prompt": complete_storyboard_prompt(1)
+                    .replace(
+                        "第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度。",
+                        "第二区块：根据脚本角色放置素材。"
+                    )
+                    .replace("人物参考区", "人物素材")
+                    .replace("宠物参考区", "宠物素材")
+                    .replace("产品参考区", "产品素材")
+                    .replace("参考区", "素材"),
                 }]
             })
 
@@ -168,12 +200,12 @@ class StoryboardVideoTests(unittest.TestCase):
                     {
                         "storyboard_no": 1,
                         "time_range": "0-10s",
-                        "image_prompt": "第二区块素材区. 核心冲突场景: conflict. 黄金3秒/戏剧钩子: hook.",
+                        "image_prompt": complete_storyboard_prompt(1),
                     },
                     {
                         "storyboard_no": 2,
                         "time_range": "10-20s",
-                        "image_prompt": "第二区块素材区. 核心冲突场景: should not appear.",
+                        "image_prompt": complete_storyboard_prompt(2, include_hook=False) + "\n核心冲突场景: should not appear.",
                     },
                 ]
             })
@@ -185,20 +217,30 @@ class StoryboardVideoTests(unittest.TestCase):
                     "storyboard_no": 1,
                     "time_range": "0-10s",
                     "image_prompt": (
+                        "【强制垫图指令】：strictly use uploaded people, pet, and product photos. "
                         "Complete 16:9 storyboard production board. Top header table includes "
                         "Core conflict scene: pet odor disaster and Golden 3-second dramatic hook: "
                         "owner panic. Middle material/reference section includes one human character "
-                        "reference area, one pet reference area, and one product reference area."
+                        "reference area, one pet reference area, and one product reference area. "
+                        "Core storyboard section contains micro-drama storyboard grid cells. Each shot grid "
+                        "includes a top bar with shot number and name, an image area with commerce storyboard "
+                        "illustration in a realistic Thailand home, and a bottom table with Timeline, Shot size, "
+                        "Camera movement, Visual content, Emotion, and colloquial dialogue."
                     ),
                 },
                 {
                     "storyboard_no": 2,
                     "time_range": "10-20s",
                     "image_prompt": (
+                        "【强制垫图指令】：strictly use uploaded people, pet, and product photos. "
                         "Complete 16:9 storyboard production board. Top header table includes only "
                         "Storyboard number, Time Range, Product name, and Target audience. "
                         "Middle material/reference section includes character reference area and "
-                        "product reference area."
+                        "product reference area. Core storyboard section contains micro-drama storyboard "
+                        "grid cells. Each shot grid includes a top bar with shot number and name, an image "
+                        "area with commerce storyboard illustration in a realistic Thailand home, and a "
+                        "bottom table with Timeline, Shot size, Camera movement, Visual content, Emotion, "
+                        "and colloquial dialogue."
                     ),
                 },
             ]
@@ -214,21 +256,64 @@ class StoryboardVideoTests(unittest.TestCase):
                     {
                         "storyboard_no": 1,
                         "time_range": "0-10s",
-                        "image_prompt": (
-                            "Top header table includes Core conflict scene: pet odor disaster and "
-                            "Golden 3-second dramatic hook: owner panic. Middle material/reference "
-                            "section includes character reference area and product reference area."
-                        ),
+                        "image_prompt": complete_storyboard_prompt(1),
                     },
                     {
                         "storyboard_no": 2,
                         "time_range": "10-20s",
-                        "image_prompt": (
-                            "Top header table includes Core conflict scene: should not appear. "
-                            "Middle material/reference section includes product reference area."
-                        ),
+                        "image_prompt": complete_storyboard_prompt(2, include_hook=False) + "\nTop header table includes Core conflict scene: should not appear.",
                     },
                 ]
+            })
+
+    def test_normalize_storyboard_payload_parses_markdown_code_block_prompts(self):
+        raw = f"""```text
+Storyboard 01 Prompt:
+
+{complete_storyboard_prompt(1)}
+
+Storyboard 02 Prompt:
+
+{complete_storyboard_prompt(2, include_hook=False)}
+```"""
+
+        payload = storyboard_video.normalize_storyboard_payload(raw)
+
+        self.assertEqual([item["storyboard_no"] for item in payload["storyboards"]], [1, 2])
+        self.assertEqual(payload["storyboards"][0]["time_range"], "0-10s")
+        self.assertEqual(payload["storyboards"][1]["time_range"], "10-20s")
+        self.assertEqual(payload["storyboards"][0]["image_prompt"], complete_storyboard_prompt(1))
+        self.assertEqual(payload["storyboards"][1]["video_prompt"], "")
+
+    def test_normalize_storyboard_payload_requires_complete_core_grid_fields(self):
+        with self.assertRaisesRegex(ValueError, "强制垫图指令"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [{
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": complete_storyboard_prompt(1).replace("【强制垫图指令】", "【垫图】"),
+                }]
+            })
+
+        with self.assertRaisesRegex(ValueError, "核心分镜区"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [{
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": complete_storyboard_prompt(1)
+                    .replace("第三区块（核心分镜区，横向占满全宽）", "第三区块")
+                    .replace("微剧情分镜", "剧情分解")
+                    .replace("镜头网格", "镜头列表"),
+                }]
+            })
+
+        with self.assertRaisesRegex(ValueError, "画面内容"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [{
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": complete_storyboard_prompt(1).replace("画面内容", "动作说明"),
+                }]
             })
 
     def test_child_records_are_same_table_segments_and_trigger_image_only_first(self):
@@ -237,13 +322,13 @@ class StoryboardVideoTests(unittest.TestCase):
                 {
                     "storyboard_no": 1,
                     "time_range": "0-10s",
-                    "image_prompt": "Prompt one. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.",
+                    "image_prompt": complete_storyboard_prompt(1),
                     "video_prompt": "Video one",
                 },
                 {
                     "storyboard_no": 2,
                     "time_range": "10-20s",
-                    "image_prompt": "Prompt two. 第二区块素材区 includes 产品参考区.",
+                    "image_prompt": complete_storyboard_prompt(2, include_hook=False),
                     "video_prompt": "Video two",
                 },
             ]
@@ -265,8 +350,8 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(records[0]["fields"]["视频生成状态"], "不触发")
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
         self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
-        self.assertEqual(records[0]["fields"]["故事板图片提示词"], "Prompt one. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.")
-        self.assertEqual(records[1]["fields"]["故事板图片提示词"], "Prompt two. 第二区块素材区 includes 产品参考区.")
+        self.assertEqual(records[0]["fields"]["故事板图片提示词"], complete_storyboard_prompt(1))
+        self.assertEqual(records[1]["fields"]["故事板图片提示词"], complete_storyboard_prompt(2, include_hook=False))
 
     def test_collect_reference_images_uses_storyboard_then_product_character_environment_and_caps_at_7(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -319,7 +404,7 @@ class StoryboardVideoTests(unittest.TestCase):
         prompt = storyboard_video.build_storyboard_prompt_generation_request(
             storyboard_video.apply_parent_reference_snapshots(dict(multi_model_parent_fields()), context)
         )
-        self.assertIn("Selected character references", prompt)
+        self.assertIn("【已选择人物/宠物参考】", prompt)
         self.assertIn("Thai man 1", prompt)
         self.assertIn("Orange cat", prompt)
         self.assertIn("Keep every selected human/pet character consistent", prompt)
@@ -431,10 +516,32 @@ class StoryboardVideoTests(unittest.TestCase):
             dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"}),
         )
 
-        self.assertIn("Do not render the storyboard board", prompt)
-        self.assertIn("Do not show grid lines", prompt)
-        self.assertIn("product", prompt.lower())
-        self.assertIn("character", prompt.lower())
+        self.assertIn("智能识别并彻底抹除原图中的所有网格边框", prompt)
+        self.assertIn("最终只输出纯净、无边框、无文字的真实视频画面", prompt)
+        self.assertIn("保持人物面孔、服装和产品外观 100% 一致", prompt)
+        self.assertNotIn("Product: Pet odor spray", prompt)
+        self.assertNotIn("Storyboard image prompt / visual understanding:", prompt)
+        self.assertNotIn("Additional video direction:", prompt)
+        self.assertNotIn("【参考图顺序】", prompt)
+
+    def test_build_omni_video_prompt_uses_markdown_configured_prompt(self):
+        prompt = storyboard_video.build_omni_video_prompt(
+            {"故事板图片提示词": "board prompt", "视频提示词": "extra video direction"},
+            dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"}),
+            system_prompt="""```markdown
+Omni Video Prompt:
+
+根据上传图片的核心人物形象、服装、场景及核心产品细节。
+极度重要（排他指令）：去除所有 UI 元素。
+```""",
+        )
+
+        self.assertIn("根据上传图片的核心人物形象", prompt)
+        self.assertIn("去除所有 UI 元素", prompt)
+        self.assertNotIn("```", prompt)
+        self.assertNotIn("Omni Video Prompt:", prompt)
+        self.assertNotIn("extra video direction", prompt)
+        self.assertNotIn("board prompt", prompt)
 
     def test_submit_omni_video_task_uses_multipart_without_seconds(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as story, tempfile.NamedTemporaryFile(suffix=".png") as product:
@@ -626,10 +733,17 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("强制视觉网格排版", created[0]["提示词"])
         self.assertIn("第二区块", created[0]["提示词"])
         self.assertIn("素材区", created[0]["提示词"])
-        self.assertIn("image_prompt", created[0]["提示词"])
+        self.assertIn("每个镜头网格内部", created[0]["提示词"])
+        self.assertIn("底部表格", created[0]["提示词"])
+        self.assertIn("纯净代码块", created[0]["提示词"])
+        self.assertIn("Storyboard 01 Prompt:", created[0]["提示词"])
+        self.assertNotIn("JSON schema", created[0]["提示词"])
         self.assertNotIn("API Key", created[0])
         self.assertEqual(created[1]["模型名称"], "omni_flash-10s")
         self.assertEqual(created[1]["API 代理地址"], "https://otuapi.com")
+        self.assertIn("根据上传图片的核心人物形象", created[1]["提示词"])
+        self.assertIn("极度重要（排他指令）", created[1]["提示词"])
+        self.assertIn("纯净、无边框、无文字", created[1]["提示词"])
         printed = printer.call_args.args[0]
         self.assertIn("故事板视频生成-Omni", printed)
         self.assertNotIn("sk-test", printed)
@@ -648,7 +762,8 @@ class StoryboardVideoTests(unittest.TestCase):
 
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0]["环节"], "故事板图片提示词拆分")
-        self.assertIn("Return strict JSON only", created[0]["提示词"])
+        self.assertIn("纯净代码块", created[0]["提示词"])
+        self.assertIn("Storyboard 01 Prompt:", created[0]["提示词"])
         self.assertIn("第二区块", created[0]["提示词"])
 
 

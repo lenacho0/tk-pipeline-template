@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -55,6 +56,10 @@ from otu_image import (  # noqa: E402
 from tk_shot_script_gen import extract_json_object  # noqa: E402
 from tk_shot_storyboard import build_reference_urls, filter_existing_fields  # noqa: E402
 from tk_shot_video import download_video, format_url_field_value, get_table_field_types, upload_video_to_feishu  # noqa: E402
+from tk_storyboard_video_prompt import (  # noqa: E402
+    STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT,
+    STORYBOARD_OMNI_VIDEO_PROMPT,
+)
 from tk_storyboard import safe_download_attachment, upload_image_to_feishu  # noqa: E402
 
 
@@ -71,61 +76,8 @@ SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 
 
-STORYBOARD_PROMPT_RULES = """
-我已经确定了本次带货微短剧的镜头文本脚本。
-【已定稿脚本内容指令】
-我会上传或粘贴一段完整脚本。
-
-请你仔细读取我上传的脚本内容，并将其无缝嵌入到以下【强制视觉网格排版】规则中。
-
-要求：
-1. 根据脚本实际时长，按“每张故事板约10秒”的节奏拆分成多张故事板图片提示词。
-2. 多张故事板之间剧情必须连贯，镜头编号连续，人物、宠物、产品、场景、服装、道具必须保持一致。
-3. 每张故事板都需要是一张独立的 16:9 横版分镜制作板。
-4. 脚本中的画面内容仅嵌入英文内容。
-5. 脚本中的对白/口播仅嵌入泰文内容。
-6. 最终为我输出多段可直接用于生成剧情故事板图片的完整【英文】提示词。
-7. 从完整脚本中自动提取 Storyboard 01 的核心冲突场景和黄金3秒/戏剧钩子。
-8. 每个 image_prompt 都必须明确描述顶部表头区、中部素材/参考区、底部剧情分镜区；中部素材/参考区不得省略。
-
-【强制视觉网格排版与约束】
-整体画幅：16:9 横版，纯白背景。画面严格从上到下分为三个独立区块。
-
-第一区块（顶部表头，横向占满全宽）：
-最左侧大字加粗标题：“短视频带货分镜制作”。
-右侧紧跟一个横向表格，表格内容需要根据 Storyboard 编号区分展示。
-如果是 Storyboard 01，右侧横向表格必须包含：Storyboard 编号、Time Range、产品名称、目标人群、核心冲突场景、黄金3秒/戏剧钩子（文字使用红色高亮）。
-如果是 Storyboard 02、Storyboard 03 或后续故事板，右侧横向表格只需要包含：Storyboard 编号、Time Range、产品名称、目标人群。
-只有第一张故事板 Storyboard 01 需要出现“核心冲突场景”和“黄金3秒/戏剧钩子”。
-从 Storyboard 02 开始，顶部表头中不得再出现“核心冲突场景”和“黄金3秒/戏剧钩子”这两个字段。
-
-第二区块（中部素材区）：
-中部素材区的排版必须根据实际脚本中出场的角色来决定，不要固定为三栏。
-如果脚本中只有 1 个人物 + 宠物 + 产品：放置 1 个人物参考区、1 个宠物参考区、1 个产品参考区。
-如果脚本中有 2 个人物 + 宠物 + 产品：放置 角色A参考区、角色B参考区、宠物参考区、产品参考区。
-如果脚本中只有宠物 + 产品：放置 宠物参考区、产品参考区。
-每个参考区根据实际对象展示：正面、面部/局部特写、服装或外观特征、产品正面和其它角度。
-
-第三区块（底部剧情分镜区）：
-根据当前 Storyboard 的 Time Range 展示连续剧情分镜面板。
-剧情分镜中的画面描述、动作、场景、道具、视觉效果只允许使用英文。
-对白/口播只允许使用泰文，并放在对应分镜画面下方或底部对白区域。
-不要出现中文对白、中文剧情说明、英文对白翻译、无关字幕、UI、水印。
-
-Return strict JSON only. Do not wrap it in Markdown.
-Each storyboards[].image_prompt must be the complete final English prompt that can be sent directly to the image-generation API. Do not output partial structured fragments.
-JSON schema:
-{
-  "storyboards": [
-    {
-      "storyboard_no": 1,
-      "time_range": "0-10s",
-      "image_prompt": "Complete final English image-generation prompt. It must include the top header section, the middle material/reference section, and the bottom story/dialogue section.",
-      "video_prompt": "Prompt for generating a real video segment from this storyboard image and references"
-    }
-  ]
-}
-""".strip()
+STORYBOARD_PROMPT_RULES = STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT
+OMNI_VIDEO_PROMPT_RULES = STORYBOARD_OMNI_VIDEO_PROMPT
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -298,6 +250,67 @@ def _downloaded_path(downloaded: Any, fallback: Path) -> str:
     return str(fallback)
 
 
+def _strip_markdown_code_block(text: str) -> str:
+    stripped = text.strip()
+    blocks = re.findall(r"```[^\n`]*\n(.*?)```", stripped, flags=re.DOTALL)
+    for block in blocks:
+        if re.search(r"(?im)^\s*Storyboard\s+\d{1,2}\s+Prompt\s*:", block):
+            return block.strip()
+        if re.search(r"(?im)^\s*Omni\s+Video\s+Prompt\s*:", block):
+            return block.strip()
+    return stripped
+
+
+def parse_omni_video_prompt_template(raw_prompt: str) -> str:
+    prompt = _strip_markdown_code_block(raw_prompt or OMNI_VIDEO_PROMPT_RULES).strip()
+    prompt = re.sub(r"(?im)^\s*Omni\s+Video\s+Prompt\s*:\s*", "", prompt, count=1).strip()
+    return prompt or _strip_markdown_code_block(OMNI_VIDEO_PROMPT_RULES).strip()
+
+
+def _fallback_time_range(storyboard_no: int) -> str:
+    start = max(storyboard_no - 1, 0) * 10
+    return f"{start}-{start + 10}s"
+
+
+def _normalize_time_range(value: str) -> str:
+    return re.sub(r"\s+", "", value.strip())
+
+
+def extract_storyboard_time_range(storyboard_no: int, prompt: str) -> str:
+    patterns = [
+        r"(?i)\bTime\s*Range\s*[:：]\s*([0-9]+\s*-\s*[0-9]+\s*s)",
+        r"[（(]\s*([0-9]+\s*-\s*[0-9]+\s*s)\s*[）)]",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, prompt)
+        if match:
+            return _normalize_time_range(match.group(1))
+    return _fallback_time_range(storyboard_no)
+
+
+def parse_storyboard_markdown_payload(raw_text: str) -> List[Dict[str, Any]]:
+    text = _strip_markdown_code_block(raw_text)
+    heading_re = re.compile(r"(?im)^\s*Storyboard\s+(\d{1,2})\s+Prompt\s*:\s*$")
+    matches = list(heading_re.finditer(text))
+    if not matches:
+        return []
+    storyboards = []
+    for idx, match in enumerate(matches):
+        storyboard_no = int(match.group(1))
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        image_prompt = text[start:end].strip()
+        if not image_prompt:
+            raise ValueError(f"Storyboard {storyboard_no:02d} Prompt 内容为空")
+        storyboards.append({
+            "storyboard_no": storyboard_no,
+            "time_range": extract_storyboard_time_range(storyboard_no, image_prompt),
+            "image_prompt": image_prompt,
+            "video_prompt": "",
+        })
+    return storyboards
+
+
 def build_storyboard_prompt_generation_request(fields: Dict[str, Any], *, system_prompt: str = "") -> str:
     script = extract_text(fields.get("脚本内容")).strip()
     product_name = extract_text(fields.get("产品名称")).strip()
@@ -307,30 +320,36 @@ def build_storyboard_prompt_generation_request(fields: Dict[str, Any], *, system
     return f"""
 {rules}
 
-Return strict JSON only. Do not wrap it in Markdown.
-Return final image-generation prompts directly; do not output partial structured fragments.
-JSON schema:
-{{
-  "storyboards": [
-    {{
-      "storyboard_no": 1,
-      "time_range": "0-10s",
-      "image_prompt": "Complete English prompt for this 16:9 storyboard production board, including the top header section, middle material/reference section, and bottom story/dialogue section",
-      "video_prompt": "Prompt for generating a real video segment from this storyboard image and the uploaded product/character/environment references"
-    }}
-  ]
-}}
-
-Global business fields:
+【本次任务上下文】
 - Product name: {product_name}
 - Target audience: {target_audience}
 
-Selected character references:
+【已选择人物/宠物参考】
 {character_summary or "- No character reference summary was provided."}
 
 Keep every selected human/pet character consistent across all storyboards. Do not merge, replace, omit, or casually change any selected character unless the script explicitly calls for a character to be off-screen.
 
-Full finalized script:
+【自动化预检硬性要求】
+为确保下游图片生成不会遗漏版式，每段 Storyboard Prompt 必须原样包含以下文本：
+- 【强制垫图指令】
+- 顶部表头
+- 中部素材区
+- 核心分镜区
+- 微剧情分镜
+- 镜头网格
+- 顶部栏
+- 画面区
+- 底部表格
+- 时间轴
+- 景别
+- 运镜
+- 画面内容
+- 情绪
+- 日常口语化对白
+
+这些中文词是故事板图片中需要渲染的版式标签；画面描述仍使用英文，对白/口播仍使用泰文。
+
+【完整脚本内容】
 {script}
 """.strip()
 
@@ -338,7 +357,11 @@ Full finalized script:
 def normalize_storyboard_payload(payload: Any) -> Dict[str, Any]:
     data = payload
     if isinstance(payload, str):
-        data = extract_json_object(payload)
+        storyboards_from_markdown = parse_storyboard_markdown_payload(payload)
+        if storyboards_from_markdown:
+            data = {"storyboards": storyboards_from_markdown}
+        else:
+            data = extract_json_object(payload)
     if not isinstance(data, dict):
         raise ValueError("故事板拆分结果必须是 JSON 对象")
     storyboards = _as_list(data.get("storyboards"))
@@ -363,10 +386,14 @@ def normalize_storyboard_payload(payload: Any) -> Dict[str, Any]:
 
 
 def validate_storyboard_image_prompt(storyboard_no: int, image_prompt: str) -> None:
+    missing = []
+    if not _contains_any_marker(image_prompt, ("强制垫图指令",)):
+        missing.append("强制垫图指令")
+    if not _contains_any_marker(image_prompt, ("第一区块", "顶部表头", "top header", "section 1")):
+        missing.append("顶部表头")
     has_material_zone = _contains_any_marker(image_prompt, (
-        "第二区块",
+        "中部素材区",
         "素材区",
-        "参考区",
         "人物参考区",
         "宠物参考区",
         "产品参考区",
@@ -378,8 +405,30 @@ def validate_storyboard_image_prompt(storyboard_no: int, image_prompt: str) -> N
         "pet reference",
         "product reference",
     ))
+    if not has_material_zone:
+        missing.append("素材区")
+    if not _contains_any_marker(image_prompt, ("核心分镜区", "微剧情分镜", "core storyboard", "storyboard grid")):
+        missing.append("核心分镜区")
+    if not _contains_any_marker(image_prompt, ("镜头网格", "shot grid", "storyboard grid", "grid cells")):
+        missing.append("镜头网格")
+    if not _contains_any_marker(image_prompt, ("顶部栏", "top bar", "shot number and name")):
+        missing.append("顶部栏")
+    if not _contains_any_marker(image_prompt, ("画面区", "image area", "visual area", "storyboard illustration")):
+        missing.append("画面区")
+    if not _contains_any_marker(image_prompt, ("底部表格", "bottom table")):
+        missing.append("底部表格")
+    required_bottom_fields = (
+        ("时间轴", ("时间轴", "timeline", "time axis")),
+        ("景别", ("景别", "shot size", "shot scale", "shot type")),
+        ("运镜", ("运镜", "camera movement", "camera motion")),
+        ("画面内容", ("画面内容", "visual content", "scene content", "picture content")),
+        ("情绪", ("情绪", "emotion", "emotional arc")),
+        ("日常口语化对白", ("日常口语化对白", "colloquial dialogue", "everyday spoken dialogue", "daily colloquial dialogue")),
+    )
+    for field_name, markers in required_bottom_fields:
+        if not _contains_any_marker(image_prompt, markers):
+            missing.append(field_name)
     if storyboard_no == 1:
-        missing = []
         if not _contains_any_marker(image_prompt, ("核心冲突场景", "core conflict", "conflict scene")):
             missing.append("核心冲突场景")
         if not _contains_any_marker(image_prompt, (
@@ -392,11 +441,11 @@ def validate_storyboard_image_prompt(storyboard_no: int, image_prompt: str) -> N
             "dramatic hook",
         )):
             missing.append("黄金3秒/戏剧钩子")
-        if not has_material_zone:
-            missing.append("素材区")
         if missing:
             raise ValueError(f"Storyboard 01 image_prompt 缺少: {', '.join(missing)}")
         return
+    if missing:
+        raise ValueError(f"Storyboard {storyboard_no:02d} image_prompt 缺少: {', '.join(missing)}")
     forbidden = []
     for labels in (
         ("核心冲突场景", "Core conflict scene", "Core conflict"),
@@ -748,33 +797,8 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     return summary
 
 
-def build_omni_video_prompt(child_fields: Dict[str, Any], parent_fields: Dict[str, Any]) -> str:
-    explicit = extract_text(child_fields.get("视频提示词")).strip()
-    image_prompt = extract_text(child_fields.get("故事板图片提示词")).strip()
-    product = extract_text(parent_fields.get("产品名称")).strip()
-    target = extract_text(parent_fields.get("目标人群")).strip()
-    time_range = extract_text(child_fields.get("Time Range")).strip()
-    return f"""
-Generate one real 16:9 horizontal short commerce drama video segment from the uploaded references.
-
-Reference order:
-1. Storyboard production board: use only to understand scene sequence, composition, characters, product placement, Thai dialogue, and timing.
-2. Product image(s): hard product identity anchors.
-3. Character image(s): hard character identity anchors.
-4. Environment image(s): optional scene identity anchors.
-
-Do not render the storyboard board itself. Do not show grid lines, white board background, header tables, Chinese layout labels, red highlight text, panel numbers, captions, subtitles, stickers, watermarks, or UI. The final output must be the real full-screen story world, not a storyboard sheet.
-
-Product: {product}
-Target audience: {target}
-Time range: {time_range}
-
-Storyboard image prompt / visual understanding:
-{image_prompt}
-
-Video direction:
-{explicit or "Animate the continuous story moments shown in the storyboard as one coherent 10-second segment. Preserve product, character, environment, outfit, prop, and lighting continuity. Use only Thai dialogue/voiceover if spoken lines appear; never speak Chinese or English prompt notes."}
-""".strip()
+def build_omni_video_prompt(child_fields: Dict[str, Any], parent_fields: Dict[str, Any], *, system_prompt: str = "") -> str:
+    return parse_omni_video_prompt_template(system_prompt or OMNI_VIDEO_PROMPT_RULES)
 
 
 def videos_url(api_base: str) -> str:
@@ -898,8 +922,8 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     parent_fields = parent_fields_with_reference_snapshots(token, parent_fields)
     work_dir = ensure_work_dir(record_id)
     refs = collect_omni_reference_images(token, fields, parent_fields, work_dir)
-    prompt = build_omni_video_prompt(fields, parent_fields)
     _, cfg = get_stage_config(OMNI_STAGE_NAME, default_model=DEFAULT_OMNI_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OMNI_SIZE)
+    prompt = build_omni_video_prompt(fields, parent_fields, system_prompt=cfg.get("prompt") or OMNI_VIDEO_PROMPT_RULES)
     cfg["model"] = cfg.get("model") or DEFAULT_OMNI_MODEL
     size = cfg.get("size") or DEFAULT_OMNI_SIZE
     output_path = str(work_dir / f"{record_id}_omni.mp4")
