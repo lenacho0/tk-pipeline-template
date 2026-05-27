@@ -32,6 +32,41 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(safe_request.call_args_list[0].kwargs["params"], {"file_tokens": "ft_pet"})
         self.assertEqual(safe_request.call_args_list[1].kwargs["params"], {"file_tokens": "ft_human"})
 
+    def test_build_reference_urls_preserves_multiple_product_refs(self):
+        refs = [
+            {"role": "product:1", "file_token": "ft_product_1"},
+            {"role": "product:2", "file_token": "ft_product_2"},
+            {"role": "product:3", "file_token": "ft_product_3"},
+        ]
+        responses = [
+            {"code": 0, "data": {"tmp_download_urls": [{"file_token": "ft_product_1", "tmp_download_url": "https://x.test/product-1.png"}]}},
+            {"code": 0, "data": {"tmp_download_urls": [{"file_token": "ft_product_2", "tmp_download_url": "https://x.test/product-2.png"}]}},
+            {"code": 0, "data": {"tmp_download_urls": [{"file_token": "ft_product_3", "tmp_download_url": "https://x.test/product-3.png"}]}},
+        ]
+        with patch("tk_shot_storyboard.safe_request", side_effect=responses):
+            urls = storyboard.build_reference_urls("token", refs)
+
+        self.assertEqual(urls, [
+            "https://x.test/product-1.png",
+            "https://x.test/product-2.png",
+            "https://x.test/product-3.png",
+        ])
+
+    def test_build_shot_reference_prompt_note_treats_numbered_product_refs_as_product(self):
+        prompt = storyboard.build_shot_reference_prompt_note([
+            {"role": "product:1"},
+            {"role": "product:2"},
+            {"role": "pet:dog_character"},
+        ])
+
+        self.assertIn("Reference image 1 = product reference", prompt)
+        self.assertIn("Reference image 2 = product reference", prompt)
+        self.assertIn("packaging", prompt.lower())
+        self.assertIn("label", prompt.lower())
+        self.assertIn("color", prompt.lower())
+        self.assertIn("specification", prompt.lower())
+        self.assertIn("Reference image 3 = selected pet model reference (dog_character)", prompt)
+
     def test_get_tmp_download_url_for_attachment_uses_single_file_token(self):
         response = {
             "code": 0,

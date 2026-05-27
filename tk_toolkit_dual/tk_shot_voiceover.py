@@ -3,7 +3,7 @@
 逐镜头口播音频生成
 
 用法:
-  python3 tk_shot_voiceover.py <shot_storyboard_record_id>
+  python3 tk_shot_voiceover.py <script_doc_shot_record_id>
 
 读取 003-3「口播文本」→ 调用 MiniMax 同步语音合成 → 上传音频附件 → 写回音频状态/时长。
 """
@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *  # noqa: F401,F403
 
 
-VOICEOVER_STAGE_NAME = 'MiniMax语音合成'
+VOICEOVER_STAGE_NAME = '语音合成-MiniMax'
 DEFAULT_API_BASE = 'https://api.aitgenne.com'
 DEFAULT_MODEL = 'speech-2.8-turbo'
 DEFAULT_VOICE_ID = 'moss_audio_ce44fc67-7ce3-11f0-8de5-96e35d26fb85'
@@ -194,7 +194,7 @@ def decode_audio_response(data):
 
 def synthesize_voiceover(text, config):
     if not config.get('api_key'):
-        raise Exception('MiniMax语音合成配置缺少 API Key')
+        raise Exception('语音合成-MiniMax 配置缺少 API Key')
     url = build_t2a_url(config.get('api_base'))
     payload = build_minimax_payload(text, config)
     headers = {
@@ -240,17 +240,15 @@ def upload_audio_to_feishu(token, file_path, file_name):
     return data['data']['file_token']
 
 
-def resolve_voiceover_table(table='shot_storyboard'):
+def resolve_voiceover_table(table='script_doc'):
     if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
         if not TABLE_SCRIPT_DOC_SHOTS:
             raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
         return TABLE_SCRIPT_DOC_SHOTS
-    if not TABLE_SHOT_STORYBOARD:
-        raise Exception('config.json 尚未配置 shot_storyboard 表 ID')
-    return TABLE_SHOT_STORYBOARD
+    raise Exception('不再支持旧 shot_storyboard 表，请使用 script_doc')
 
 
-def generate_voiceover(token, record_id, table='shot_storyboard'):
+def generate_voiceover(token, record_id, table='script_doc'):
     table_id = resolve_voiceover_table(table)
     fields = safe_get_record(token, table_id, record_id)
     voiceover_text = extract_text(fields.get('口播文本', '')).strip()
@@ -331,7 +329,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='逐镜头口播音频生成')
     parser.add_argument('record_id')
-    parser.add_argument('--table', default='shot_storyboard', choices=['shot_storyboard', 'script_doc'])
+    parser.add_argument('--table', default='script_doc', choices=['script_doc'])
     args = parser.parse_args()
     record_id = args.record_id
     token = get_feishu_token()
@@ -349,7 +347,8 @@ def main():
                 '口播音频错误信息': err,
                 '失败分类': classify_voiceover_error(e),
             }
-            safe_update_record(token, table_id or TABLE_SHOT_STORYBOARD, record_id, filter_existing_fields(token, table_id or TABLE_SHOT_STORYBOARD, fail_fields))
+            target_table = table_id or TABLE_SCRIPT_DOC_SHOTS
+            safe_update_record(token, target_table, record_id, filter_existing_fields(token, target_table, fail_fields))
         except Exception:
             pass
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")

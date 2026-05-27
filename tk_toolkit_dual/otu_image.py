@@ -84,6 +84,10 @@ def extract_otu_result_url(data: Dict[str, Any]) -> str:
     ]
     nested = data.get("data") if isinstance(data.get("data"), dict) else {}
     candidates.extend([nested.get("video_url"), nested.get("result_url"), nested.get("url"), nested.get("download_url")])
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    result_items = result.get("data") if isinstance(result.get("data"), list) else []
+    if result_items and isinstance(result_items[0], dict):
+        candidates.append(result_items[0].get("url"))
     for key in ("result_urls", "urls"):
         value = data.get(key) or nested.get(key)
         if isinstance(value, list) and value:

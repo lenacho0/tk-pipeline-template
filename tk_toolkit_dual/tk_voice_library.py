@@ -100,7 +100,7 @@ def build_upload_clone_endpoints(api_base):
 
 def upload_clone_audio(file_path, config):
     if not config.get('api_key'):
-        raise Exception('MiniMax语音合成配置缺少 API Key')
+        raise Exception('语音合成-MiniMax 配置缺少 API Key')
     mime_type = mimetypes.guess_type(file_path)[0] or 'audio/mpeg'
     last_error = None
     for url in build_upload_clone_endpoints(config.get('api_base')):
@@ -129,7 +129,7 @@ def upload_clone_audio(file_path, config):
 
 def clone_voice(file_id, voice_id, preview_text, config):
     if not config.get('api_key'):
-        raise Exception('MiniMax语音合成配置缺少 API Key')
+        raise Exception('语音合成-MiniMax 配置缺少 API Key')
     url = build_minimax_endpoint(config.get('api_base'), 'voice_clone')
     options = config.get('options') or {}
     payload = {
@@ -159,7 +159,7 @@ def clone_voice(file_id, voice_id, preview_text, config):
 
 def design_voice(prompt, preview_text, config):
     if not config.get('api_key'):
-        raise Exception('MiniMax语音合成配置缺少 API Key')
+        raise Exception('语音合成-MiniMax 配置缺少 API Key')
     if not prompt:
         raise Exception('音色描述为空')
     if not preview_text:

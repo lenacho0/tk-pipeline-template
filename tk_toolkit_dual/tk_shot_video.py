@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-003-3 单镜头分镜视频生成。
+003-3 脚本文档单镜头分镜视频生成。
 
 用法:
-  python3 tk_shot_video.py <shot_storyboard_record_id>
-  python3 tk_shot_video.py <shot_storyboard_record_id> --dry-run
+  python3 tk_shot_video.py <script_doc_shot_record_id>
+  python3 tk_shot_video.py <script_doc_shot_record_id> --dry-run
 """
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
     TABLE_SCRIPT_DOC_SHOTS,
-    TABLE_SHOT_STORYBOARD,
     WORKSPACE,
     build_error_payload,
     extract_text,
@@ -61,9 +60,8 @@ from otu_image import (  # noqa: E402
 )
 
 
-STAGE_NAME = "逐镜头分镜视频生成"
-SEEDDANCE_STAGE_NAME = "九宫格生成视频-seeddance2.0"
-OTU_STAGE_NAME = "逐镜头分镜视频生成-OTU"
+STAGE_NAME = "分镜视频生成-Veo"
+OTU_STAGE_NAME = "分镜视频生成-OTU"
 BASE_WORK_DIR = Path(WORKSPACE) / "shot_video_work"
 DEFAULT_MODEL = "veo-3.1-fast-generate-preview"
 DEFAULT_OTU_MODEL = "veo_3_1-fast-fl"
@@ -89,14 +87,12 @@ ReferenceDownloader = Callable[[str, str, Path], Path]
 NativeClientFactory = Callable[[Dict[str, str]], Any]
 
 
-def resolve_video_table(table: str = "shot_storyboard") -> str:
+def resolve_video_table(table: str = "script_doc") -> str:
     if table in ("script_doc", "script_doc_shots", TABLE_SCRIPT_DOC_SHOTS):
         if not TABLE_SCRIPT_DOC_SHOTS:
             raise ValueError("config.json 尚未配置 script_doc_shots 表 ID")
         return TABLE_SCRIPT_DOC_SHOTS
-    if not TABLE_SHOT_STORYBOARD:
-        raise ValueError("config.json 尚未配置 shot_storyboard 表 ID")
-    return TABLE_SHOT_STORYBOARD
+    raise ValueError("不再支持旧 shot_storyboard 表，请使用 script_doc")
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -231,7 +227,7 @@ def resolve_model_config_stage(channel: str, provider: str) -> str:
     if normalize_video_channel(channel) == "OTU":
         return OTU_STAGE_NAME
     if provider == "seeddance2.0":
-        return SEEDDANCE_STAGE_NAME
+        return STAGE_NAME
     return STAGE_NAME
 
 
@@ -948,7 +944,7 @@ def run_shot_video_generation(
     record_id: str,
     *,
     dry_run: bool = False,
-    table: str = "shot_storyboard",
+    table: str = "script_doc",
     token: Optional[str] = None,
     get_record_fn: RecordGetter = safe_get_record,
     update_record_fn: RecordUpdater = safe_update_record,
@@ -1165,8 +1161,8 @@ def run_shot_video_generation(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="003-3 单镜头 AIHubMix/Veo 分镜视频生成")
-    parser.add_argument("record_id", help="003-3 shot_storyboard record_id")
-    parser.add_argument("--table", default="shot_storyboard", choices=["shot_storyboard", "script_doc"], help="选择来源表")
+    parser.add_argument("record_id", help="003-3 script_doc_shots record_id")
+    parser.add_argument("--table", default="script_doc", choices=["script_doc"], help="选择来源表")
     parser.add_argument("--dry-run", action="store_true", help="只验证输入和配置，不提交视频任务")
     parser.add_argument("--output-file", help="保存运行摘要 JSON")
     args = parser.parse_args()

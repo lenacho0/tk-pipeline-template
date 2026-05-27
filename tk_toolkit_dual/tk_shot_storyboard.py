@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
-独立流程：逐镜头分镜图生成
+脚本文档逐镜头分镜图生成
 用法:
-1) python3 tk_shot_storyboard.py split <shot_script_record_id>
-   - 将逐镜头脚本生成表中的 shots_json 拆分写入逐镜头分镜图表
-2) python3 tk_shot_storyboard.py render <shot_storyboard_record_id>
+1) python3 tk_shot_storyboard.py render <script_doc_shot_record_id>
    - 对单条 shot 记录生成 1 张分镜图
 """
 import json, os, sys, time, base64
@@ -24,7 +22,6 @@ from otu_image import (
     poll_otu_image_task,
     submit_otu_image_task,
 )
-from tk_storyboard import ensure_task_dir, safe_download_attachment, upload_image_to_feishu
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
 
 
@@ -90,28 +87,6 @@ def normalize_video_model_choice(value):
     if raw in {'veo', 'veo3', 'veo3.1', 'veo-3.1'} or raw.startswith('veo-3.1') or raw.startswith('veo3.1'):
         return 'veo3.1'
     return 'veo3.1'
-
-
-def cleanup_shots_by_source(token, source_record_id):
-    items = safe_list_records(token, TABLE_SHOT_STORYBOARD)
-    to_delete = []
-    for rec in items:
-        fields = rec.get('fields', {})
-        if extract_text(fields.get('源逐镜头脚本记录ID', '')) == source_record_id:
-            to_delete.append(rec['record_id'])
-
-    deleted = 0
-    for rid in to_delete:
-        safe_request(
-            'delete',
-            f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_SHOT_STORYBOARD}/records/{rid}',
-            headers=feishu_headers(token),
-            timeout=30,
-            max_attempts=3,
-            acceptable_codes=(0,)
-        )
-        deleted += 1
-    return deleted
 
 
 def build_shot_record_fields(source_fields, shot, *, source_record_id, idx, total_shots, product_name, source_video_id, voice_id):
@@ -315,48 +290,6 @@ def load_shots_payload(fields, payload=None):
     return data, shots
 
 
-def split_shots(token, source_record_id, payload=None):
-    if not TABLE_SHOT_SCRIPT_GEN or not TABLE_SHOT_STORYBOARD:
-        raise Exception('config.json 尚未配置 shot_script_gen / shot_storyboard 表 ID')
-
-    fields = safe_get_record(token, TABLE_SHOT_SCRIPT_GEN, source_record_id)
-    data, shots = load_shots_payload(fields, payload)
-
-    product_name = extract_text(get_task_product_value(fields))
-    source_video_id = extract_text(fields.get('源视频ID', ''))
-    voice_id = extract_text(fields.get('口播音色ID', '')).strip()
-    records = []
-    for idx, shot in enumerate(shots, start=1):
-        shot_fields = build_shot_record_fields(
-            fields,
-            shot,
-            source_record_id=source_record_id,
-            idx=idx,
-            total_shots=len(shots),
-            product_name=product_name,
-            source_video_id=source_video_id,
-            voice_id=voice_id,
-        )
-        records.append({'fields': filter_existing_fields(token, TABLE_SHOT_STORYBOARD, shot_fields)})
-
-    created = 0
-    for i in range(0, len(records), 10):
-        batch = records[i:i+10]
-        safe_request(
-            'post',
-            f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_SHOT_STORYBOARD}/records/batch_create',
-            headers=feishu_headers(token),
-            json={'records': batch},
-            timeout=30,
-            max_attempts=3,
-            acceptable_codes=(0,)
-        )
-        created += len(batch)
-    safe_update_record(token, TABLE_SHOT_SCRIPT_GEN, source_record_id, {'生成状态': '已拆分'})
-    log_event('INFO', 'shot storyboard split success', record_id=source_record_id, created=created)
-    print(f'✅ 已拆分 {created} 条 shot 记录')
-
-
 def _resolve_linked_record_id(link_val):
     if isinstance(link_val, list):
         for item in link_val:
@@ -365,54 +298,6 @@ def _resolve_linked_record_id(link_val):
                 if record_ids:
                     return record_ids[0]
     return None
-
-
-def _download_product_and_model(token, source_fields, task_dir):
-    product_value = get_task_product_value(source_fields)
-    product_record_id = get_product_record_id(token, product_value)
-    product_path = os.path.join(task_dir, 'product.png')
-    if product_record_id:
-        prod_fields = safe_get_record(token, TABLE_PRODUCT, product_record_id)
-        attachments = prod_fields.get('产品图片', [])
-        if attachments and isinstance(attachments, list):
-            file_token = attachments[0].get('file_token', '')
-            if file_token:
-                safe_download_attachment(token, file_token, product_path)
-
-    model_path = os.path.join(task_dir, 'model.png')
-    model_record_id = _resolve_linked_record_id(source_fields.get('选择模特'))
-    if model_record_id:
-        model_fields = safe_get_record(token, TABLE_MODEL, model_record_id)
-        attachments = model_fields.get('模特照片', [])
-        if attachments and isinstance(attachments, list):
-            file_token = attachments[0].get('file_token', '')
-            if file_token:
-                safe_download_attachment(token, file_token, model_path)
-
-    return product_path, model_path
-
-
-def _find_group_anchor_image(token, source_record_id, current_record_id):
-    items = safe_list_records(token, TABLE_SHOT_STORYBOARD)
-    candidates = []
-    for rec in items:
-        if rec['record_id'] == current_record_id:
-            continue
-        f = rec.get('fields', {})
-        if extract_text(f.get('源逐镜头脚本记录ID', '')) != source_record_id:
-            continue
-        if extract_text(f.get('生成状态', '')) != '成功':
-            continue
-        shot_no = int(float(extract_text(f.get('分镜序号', '0')) or 0))
-        attachments = f.get('分镜图', [])
-        if attachments and isinstance(attachments, list):
-            file_token = attachments[0].get('file_token', '')
-            if file_token:
-                candidates.append((shot_no, file_token))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: x[0])
-    return candidates[0][1]
 
 
 SHOT_REVISION_NOTE_FIELDS = (
@@ -592,8 +477,8 @@ def build_shot_reference_prompt_note(refs):
     lines = []
     for idx, ref in enumerate(refs, start=1):
         role = ref.get("role", "reference")
-        if role == "product":
-            lines.append(f"Reference image {idx} = product reference. Keep the product shape, label, color, and logo unchanged.")
+        if role == "product" or role.startswith("product:"):
+            lines.append(f"Reference image {idx} = product reference. Keep the product packaging, shape, label, color, specification, and logo unchanged.")
         elif role.startswith("pet:"):
             lines.append(f"Reference image {idx} = selected pet model reference ({role.split(':', 1)[1]}). Keep the same pet identity, breed, face, coat pattern, fur length, ear shape, and body proportions.")
         elif role.startswith("human:"):
@@ -697,7 +582,7 @@ def render_script_doc_shot(token, record_id):
     style = extract_text(parent_fields.get('分镜风格', '混合（产品写实+角色动画）'))
     visual_bible = extract_text(parent_fields.get('解析结果JSON', ''))
 
-    config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
+    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
     config_prompt = config.get('prompt', '') or (
         "你是TikTok电商分镜图片生成专家。请根据以下信息生成一张高质量单图分镜图。\n\n"
         "## 输出要求\n"
@@ -863,7 +748,7 @@ def render_script_doc_last_frame(token, record_id):
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
     first_frame_tmp_url = get_tmp_download_url_for_attachment(token, first_frame_token)
-    config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
+    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
     model_name = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = config['api_key']
     api_base = config['api_base'] or DEFAULT_OTU_API_BASE
@@ -908,107 +793,26 @@ def render_script_doc_last_frame(token, record_id):
     print(f'✅ 脚本文档尾帧图生成完成: {record_id}')
 
 
-def render_shot(token, record_id, table='shot_storyboard'):
+def render_shot(token, record_id, table='script_doc'):
     if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
         return render_script_doc_shot(token, record_id)
 
-    if not TABLE_SHOT_SCRIPT_GEN or not TABLE_SHOT_STORYBOARD:
-        raise Exception('config.json 尚未配置 shot_script_gen / shot_storyboard 表 ID')
-
-    shot_fields = safe_get_record(token, TABLE_SHOT_STORYBOARD, record_id)
-    source_record_id = extract_text(shot_fields.get('源逐镜头脚本记录ID', ''))
-    if not source_record_id:
-        raise Exception('缺少源逐镜头脚本记录ID')
-
-    source_fields = safe_get_record(token, TABLE_SHOT_SCRIPT_GEN, source_record_id)
-    style = extract_text(source_fields.get('分镜风格', '混合（产品写实+角色动画）'))
-    visual_bible = extract_text(source_fields.get('全局视觉锚点', ''))
-
-    config = get_model_config(token, CONFIG_RECORDS['shot_storyboard'])
-    config_prompt = config.get('prompt', '') or (
-        "你是TikTok电商分镜图片生成专家。请根据以下信息生成一张高质量单图分镜图。\n\n"
-        "## 风格规则\n"
-        "产品必须始终严格写实锚定。角色与环境可与产品风格匹配或独立。\n"
-        "## 产品一致性（最高优先级）\n"
-        "产品在任何情况下都必须保持严格写实外观：颜色/形状/logo/材质/大小必须与参考图完全一致，"
-        "不允许将产品动画化、卡通化、插画化。\n"
-        "## 输出要求\n"
-        "- 只生成1张图片，不是九宫格，不是panel layout\n"
-        "- 画面比例9:16竖图\n"
-        "- 不要文字/字幕/贴纸/水印\n"
-        "- 必须保持产品写实锚定\n"
-        "- 必须保持角色身份一致性\n"
-        "- 如果提供了组参考图，必须在人物/产品/风格/色调上与组参考图对齐\n"
-    )
-
-    safe_update_record(token, TABLE_SHOT_STORYBOARD, record_id, {'生成状态': '生成中'})
-
-    task_dir = ensure_task_dir(record_id)
-    product_path, model_path = _download_product_and_model(token, source_fields, task_dir)
-    if not os.path.exists(product_path) or os.path.getsize(product_path) < 1000:
-        raise Exception('产品图片缺失')
-    model_name = config['model'] or DEFAULT_OTU_IMAGE_MODEL
-    api_key = config['api_key']
-    api_base = config['api_base'] or 'https://otuapi.com'
-    if not api_key:
-        raise Exception('飞书配置表缺少 API Key')
-
-    prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
-    prompt = f"{build_shot_reference_prompt_note([{'role': 'product'}])}\n\n{prompt}".strip()
-    out_path = os.path.join(task_dir, f'{record_id}_shot.png')
-    submit_task_id, submit_body = submit_otu_image_task(
-        {'api_key': api_key, 'api_base': api_base, 'model': model_name},
-        prompt,
-        input_mode='image-to-image',
-        image_path=product_path,
-        metadata={'urls': [product_path], 'aspectRatio': '9:16'},
-        size=DEFAULT_OTU_IMAGE_SIZE,
-    )
-    result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise Exception('OTU 图像任务完成但未返回图片地址')
-    download_otu_image_result(result_url, out_path)
-
-    file_token = with_retry(
-        lambda: upload_image_to_feishu(token, out_path, f'{record_id}_shot.png'),
-        max_attempts=3,
-        label='upload single shot image to feishu'
-    )
-
-    success_fields = {
-        '分镜图': [{'file_token': file_token}],
-        '提示词': prompt[:10000],
-        '生成状态': '成功',
-        '生成时间': int(time.time() * 1000),
-        '错误信息': '',
-        '失败分类': '',
-    }
-    safe_update_record(
-        token,
-        TABLE_SHOT_STORYBOARD,
-        record_id,
-        filter_existing_fields(token, TABLE_SHOT_STORYBOARD, success_fields)
-    )
-    log_event('INFO', 'shot storyboard render success', record_id=record_id)
-    print(f'✅ 单张分镜图生成完成: {record_id}')
+    raise Exception('不再支持旧 shot_storyboard 表，请使用 script_doc')
 
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='逐镜头分镜图生成')
-    parser.add_argument('action', choices=['split', 'render', 'last-frame'])
+    parser.add_argument('action', choices=['render', 'last-frame'])
     parser.add_argument('record_id')
-    parser.add_argument('--table', default='shot_storyboard', choices=['shot_storyboard', 'script_doc'])
+    parser.add_argument('--table', default='script_doc', choices=['script_doc'])
     args = parser.parse_args()
     action = args.action
     record_id = args.record_id
     token = get_feishu_token()
 
     try:
-        if action == 'split':
-            split_shots(token, record_id)
-        elif action == 'render':
+        if action == 'render':
             render_shot(token, record_id, table=args.table)
         elif action == 'last-frame':
             if args.table != 'script_doc':
@@ -1052,16 +856,16 @@ def main():
                 pass
         elif action == 'render':
             fail_fields = {
-                '生成状态': '失败',
-                '错误信息': err,
+                '分镜图生成状态': '失败',
+                '分镜图错误信息': err,
                 '失败分类': classify_render_error(e),
             }
             try:
                 safe_update_record(
                     token,
-                    TABLE_SHOT_STORYBOARD,
+                    TABLE_SCRIPT_DOC_SHOTS,
                     record_id,
-                    filter_existing_fields(token, TABLE_SHOT_STORYBOARD, fail_fields)
+                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
                 )
             except Exception:
                 pass
