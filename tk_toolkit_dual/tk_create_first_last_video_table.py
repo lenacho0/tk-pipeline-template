@@ -20,12 +20,14 @@ from tk_create_script_doc_shots_table import (
     datetime_field,
     list_tables,
     load_config,
+    link,
     number,
     opt,
     run_json,
     select,
     text,
     update_config,
+    resolved_fields,
 )
 
 
@@ -57,6 +59,9 @@ FIRST_LAST_VIDEO_FIELDS = [
     text("当前批次ID"),
     number("场景编号"),
     text("场景标题"),
+    link("关联产品记录", "__PRODUCT_TABLE_ID__"),
+    text("产品名称"),
+    text("产品参考图file_tokenJSON"),
     text("首尾帧文档"),
     attachment("首尾帧文档附件"),
     number("目标时长秒"),
@@ -120,6 +125,7 @@ TABLE_DEFINITION = {
     "views": {
         "01-用户入口": [
             "任务名称",
+            "关联产品记录",
             "首尾帧文档",
             "首尾帧文档附件",
             "目标时长秒",
@@ -134,6 +140,8 @@ TABLE_DEFINITION = {
             "批次ID",
             "场景编号",
             "场景标题",
+            "关联产品记录",
+            "产品名称",
             "首帧生图提示词",
             "尾帧生图提示词",
             "首尾帧生视频提示词",
@@ -189,6 +197,9 @@ TABLE_DEFINITION = {
             "父任务记录ID",
             "批次ID",
             "当前批次ID",
+            "关联产品记录",
+            "产品名称",
+            "产品参考图file_tokenJSON",
             "场景拆分操作",
             "拆分状态",
             "文档拆分状态",
@@ -267,15 +278,16 @@ def main() -> None:
     base_token = config["feishu"]["bitable_app_token"]
     tables = list_tables(base_token)
     table_id = tables.get(TABLE_NAME)
+    fields = resolved_fields(config, FIRST_LAST_VIDEO_FIELDS)
     created_table = False
     if not table_id:
-        table_id = create_table(base_token, TABLE_NAME, FIRST_LAST_VIDEO_FIELDS)
+        table_id = create_table(base_token, TABLE_NAME, fields)
         created_table = True
     if not table_id:
         raise RuntimeError(f"创建表失败：{TABLE_NAME} 未返回 table_id")
 
     renamed_fields = [] if created_table else migrate_renamed_fields(base_token, table_id)
-    created_fields = create_missing_fields(base_token, table_id, FIRST_LAST_VIDEO_FIELDS)
+    created_fields = create_missing_fields(base_token, table_id, fields)
     view_result = create_or_update_views(base_token, table_id, TABLE_DEFINITION["views"])
 
     if args.update_config:

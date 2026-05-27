@@ -35,6 +35,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "当前批次ID",
             "场景编号",
             "场景标题",
+            "关联产品记录",
+            "产品名称",
+            "产品参考图file_tokenJSON",
             "首尾帧文档",
             "首尾帧文档附件",
             "目标时长秒",
@@ -80,6 +83,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
 
         self.assertEqual(entry_fields, [
             "任务名称",
+            "关联产品记录",
             "首尾帧文档",
             "首尾帧文档附件",
             "目标时长秒",
@@ -171,8 +175,8 @@ class FirstLastVideoTableTests(unittest.TestCase):
 
     def test_healthcheck_validates_first_last_video_table_and_configs(self):
         config_records = [
-            {"fields": {"环节": "分镜头图片生成", "模型名称": "gpt-image-2", "API Key": "sk-img", "API 代理地址": "https://otuapi.com"}},
-            {"fields": {"环节": "逐镜头分镜视频生成-OTU", "模型名称": "veo_3_1-fast-fl", "API Key": "sk-video", "API 代理地址": "https://otuapi.com"}},
+            {"fields": {"环节": "图片生成-OTU", "模型名称": "gpt-image-2", "API Key": "sk-img", "API 代理地址": "https://otuapi.com"}},
+            {"fields": {"环节": "分镜视频生成-OTU", "模型名称": "veo_3_1-fast-fl", "API Key": "sk-video", "API 代理地址": "https://otuapi.com"}},
         ]
         with patch.object(healthcheck, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
              patch.object(healthcheck, "get_feishu_token", return_value="token"), \
@@ -183,6 +187,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
                  "批次ID",
                  "当前批次ID",
                  "场景编号",
+                 "关联产品记录",
+                 "产品名称",
+                 "产品参考图file_tokenJSON",
                  "首尾帧文档附件",
                  "拆分状态",
                  "场景拆分操作",
@@ -198,8 +205,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
             ok, msg = healthcheck.check_first_last_video_config()
 
         self.assertTrue(ok, msg)
-        self.assertIn("分镜头图片生成", msg)
-        self.assertIn("逐镜头分镜视频生成-OTU", msg)
+        self.assertNotIn("文本拆分", msg)
+        self.assertIn("图片生成-OTU", msg)
+        self.assertIn("分镜视频生成-OTU", msg)
 
 
 class FirstLastVideoWorkerTests(unittest.TestCase):
@@ -304,6 +312,26 @@ video prompt 2
         self.assertEqual(payload["scenes"][1]["last_frame_prompt"], "last prompt 2")
         self.assertEqual(payload["scenes"][1]["video_prompt"], "video prompt 2")
 
+    def test_require_structured_markdown_scenes_reports_missing_section(self):
+        doc = """
+## S01 浅瓷砖地板
+
+### S01-1 首帧生图提示词
+
+```text
+first prompt
+```
+
+### S01-3 首尾帧图生视频提示词
+
+```text
+video prompt
+```
+""".strip()
+
+        with self.assertRaisesRegex(ValueError, "S01.*S01-2.*尾帧"):
+            first_last.require_structured_markdown_scenes(doc)
+
     def test_read_source_document_text_uses_raw_attachment_download(self):
         with tempfile.TemporaryDirectory() as tmp:
             doc_path = Path(tmp) / "source.txt"
@@ -329,6 +357,7 @@ video prompt 2
             "当前批次ID": "old_batch",
             "拆分版本": 1,
             "目标时长秒": 6,
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
         }
         existing_records = [
             {"record_id": "old1", "fields": {"记录类型": "场景子任务", "记录状态": "有效", "父任务记录ID": "parent", "批次ID": "old_batch"}},
@@ -348,7 +377,10 @@ video prompt 2
 
         with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
              patch.object(first_last, "get_feishu_token", return_value="token"), \
-             patch.object(first_last, "safe_get_record", return_value=parent_fields), \
+             patch.object(first_last, "safe_get_record", side_effect=[
+                 parent_fields,
+                 {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
+             ]), \
              patch.object(first_last, "safe_list_records", return_value=existing_records), \
              patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
@@ -370,15 +402,98 @@ video prompt 2
         self.assertEqual(created[0]["fields"]["记录状态"], "有效")
         self.assertEqual(created[0]["fields"]["父任务记录ID"], "parent")
         self.assertEqual(created[0]["fields"]["批次ID"], "batch_new")
+        self.assertEqual(created[0]["fields"]["关联产品记录"], ["recProduct"])
+        self.assertEqual(created[0]["fields"]["产品名称"], "Pet Odor Spray")
+        self.assertIn("ft_product", created[0]["fields"]["产品参考图file_tokenJSON"])
         self.assertEqual(created[0]["fields"]["场景编号"], 1)
         self.assertEqual(created[0]["fields"]["首帧图生成状态"], "待生成")
         self.assertEqual(created[0]["fields"]["尾帧图生成状态"], "不触发")
         self.assertEqual(created[0]["fields"]["视频生成状态"], "不触发")
         parent_final = updates[-1][1]
         self.assertEqual(parent_final["当前批次ID"], "batch_new")
+        self.assertEqual(parent_final["产品名称"], "Pet Odor Spray")
+        self.assertIn("ft_product", parent_final["产品参考图file_tokenJSON"])
         self.assertEqual(parent_final["总场景数"], 2)
         self.assertEqual(parent_final["拆分版本"], 2)
         self.assertEqual(parent_final["场景拆分操作"], "不触发")
+
+    def test_batch_parse_uses_markdown_directly_without_text_model(self):
+        updates = []
+        created_batches = []
+        parent_fields = {
+            "记录类型": "母任务",
+            "记录状态": "有效",
+            "任务名称": "尿味分解",
+            "首尾帧文档": """
+## S01 浅瓷砖地板
+
+### S01-1 首帧生图提示词
+
+```text
+first prompt exactly
+```
+
+### S01-2 尾帧生图 / 编辑提示词
+
+```text
+last prompt exactly
+```
+
+### S01-3 首尾帧图生视频提示词
+
+```text
+video prompt exactly
+```
+""".strip(),
+            "拆分版本": 1,
+            "目标时长秒": 6,
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+        }
+
+        def capture_create(token, table, records):
+            created_batches.append(records)
+            return len(records)
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", side_effect=[
+                 parent_fields,
+                 {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
+             ]), \
+             patch.object(first_last, "safe_list_records", return_value=[]), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(first_last, "create_records", side_effect=capture_create), \
+             patch.object(first_last, "make_batch_id", return_value="batch_new"):
+            result = first_last.batch_parse_document("parent")
+
+        self.assertEqual(result["parser"], "structured_markdown")
+        created = created_batches[0]
+        self.assertEqual(created[0]["fields"]["首帧生图提示词"], "first prompt exactly")
+        self.assertEqual(created[0]["fields"]["尾帧生图提示词"], "last prompt exactly")
+        self.assertEqual(created[0]["fields"]["首尾帧生视频提示词"], "video prompt exactly")
+
+    def test_batch_parse_rejects_unstructured_markdown_without_model_fallback(self):
+        parent_fields = {
+            "记录类型": "母任务",
+            "记录状态": "有效",
+            "任务名称": "尿味分解",
+            "首尾帧文档": "自由文本，不是固定 Markdown 模板",
+            "拆分版本": 1,
+            "目标时长秒": 6,
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+        }
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", side_effect=[
+                 parent_fields,
+                 {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
+             ]), \
+             patch.object(first_last, "safe_update_record"), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            with self.assertRaisesRegex(ValueError, "Markdown 格式不符合要求.*## S01"):
+                first_last.batch_parse_document("parent")
 
     def test_first_frame_regeneration_clears_dependent_outputs_and_bumps_version(self):
         updates = []
@@ -519,18 +634,43 @@ video prompt 2
         self.assertEqual(updates[-1]["尾帧图版本"], 1)
         self.assertEqual(updates[-1]["视频版本"], 1)
 
-    def test_render_first_frame_uses_text_to_image_and_writes_review_gate(self):
+    def test_resolve_product_reference_context_prefers_frozen_snapshot(self):
+        fields = {
+            "记录类型": "场景子任务",
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+            "产品名称": "Frozen Pet Spray",
+            "产品参考图file_tokenJSON": json.dumps({
+                "product_record_id": "recProduct",
+                "product_name": "Frozen Pet Spray",
+                "file_tokens": ["ft_frozen"],
+            }),
+        }
+
+        with patch.object(first_last, "safe_get_record", side_effect=AssertionError("should not reload latest product record")):
+            context = first_last.resolve_product_reference_context("token", fields, "rec1")
+
+        self.assertEqual(context["product_record_id"], "recProduct")
+        self.assertEqual(context["product_name"], "Frozen Pet Spray")
+        self.assertEqual(context["product_tokens"], ["ft_frozen"])
+        self.assertTrue(context["snapshot_used"])
+
+    def test_render_first_frame_uses_product_reference_image_and_writes_review_gate(self):
         updates = []
         with tempfile.TemporaryDirectory() as tmp:
+            product_path = Path(tmp) / "product.png"
+            product_path.write_bytes(b"x" * 2000)
             with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
                  patch.object(first_last, "get_feishu_token", return_value="token"), \
                  patch.object(first_last, "safe_get_record", side_effect=[
-                     {"记录类型": "场景子任务", "记录状态": "有效", "首帧生图提示词": "first prompt", "首帧图版本": 2},
+                     {"记录类型": "场景子任务", "记录状态": "有效", "首帧生图提示词": "first prompt", "首帧图版本": 2, "关联产品记录": [{"record_ids": ["recProduct"]}]},
+                     {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
                      {"记录状态": "有效", "首帧图生成状态": "生成中", "首帧图版本": 2, "首帧图任务ID": "img_task_1"},
                  ]), \
                  patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
                  patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
                  patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "download_feishu_media", return_value=product_path) as media_downloader, \
+                 patch.object(first_last, "get_tmp_download_url_for_attachment", return_value="https://x.test/product.png"), \
                  patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
                  patch.object(first_last, "submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
                  patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/first.png"}), \
@@ -539,15 +679,61 @@ video prompt 2
                 result = first_last.render_first_frame("rec1")
 
         self.assertEqual(result["status"], "success")
+        media_downloader.assert_called_once()
+        self.assertEqual(media_downloader.call_args.args[1], "ft_product")
+        args = submitter.call_args.args
         kwargs = submitter.call_args.kwargs
-        self.assertEqual(kwargs["input_mode"], "text-to-image")
+        self.assertEqual(args[1], "first prompt")
+        self.assertNotIn("Reference image 1 = product reference", args[1])
+        self.assertNotIn("Product identity anchor", args[1])
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], str(product_path))
         self.assertEqual(kwargs["metadata"]["aspectRatio"], "9:16")
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["product:1"])
+        self.assertEqual(kwargs["metadata"]["product_record_id"], "recProduct")
+        self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/product.png"])
+        self.assertNotIn("pawradise", args[1])
+        self.assertNotIn("Pet Lily", args[1])
+        self.assertNotIn("Pet Care", args[1])
         downloader.assert_called_once()
         self.assertEqual(updates[-1]["首帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["关联产品记录"], ["recProduct"])
+        self.assertEqual(updates[-1]["产品名称"], "Pet Odor Spray")
+        self.assertIn("ft_product", updates[-1]["产品参考图file_tokenJSON"])
         self.assertEqual(updates[-1]["首帧审核状态"], "待确认")
         self.assertEqual(updates[-1]["首帧图file_token"], "ft_first")
         self.assertEqual(updates[-1]["首帧图版本"], 2)
         self.assertIn("first_frame_v2", updates[-1]["首帧图本地路径"])
+
+    def test_collect_product_reference_images_uses_uploaded_product_attachment_without_cropping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            product_path = work_dir / "product_reference.png"
+            product_path.write_bytes(b"product-reference")
+
+            with patch.object(first_last, "download_feishu_media", return_value=product_path):
+                refs = first_last.collect_product_reference_images(
+                    "token",
+                    {"product_tokens": ["ft_product"]},
+                    work_dir,
+                )
+
+            self.assertEqual(len(refs), 1)
+            self.assertEqual(refs[0]["path"], str(product_path))
+            self.assertNotIn("submit_path", refs[0])
+            self.assertFalse((work_dir / "reference_product_1_identity.png").exists())
+
+    def test_main_does_not_overwrite_record_when_stale_guard_blocks_old_task(self):
+        with patch.object(sys, "argv", ["tk_first_last_video.py", "first-frame", "rec1"]), \
+             patch.object(first_last, "render_first_frame", side_effect=RuntimeError("首帧图版本 已变更，停止写回，避免旧任务覆盖新结果")), \
+             patch.object(first_last, "log_event"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(first_last, "safe_update_record") as updater:
+            exit_code = first_last.main()
+
+        self.assertEqual(exit_code, 1)
+        updater.assert_not_called()
 
     def test_advance_first_review_is_idempotent(self):
         updates = []
@@ -576,17 +762,20 @@ video prompt 2
         with tempfile.TemporaryDirectory() as tmp:
             first_path = Path(tmp) / "first.png"
             first_path.write_bytes(b"x" * 2000)
+            product_path = Path(tmp) / "product.png"
+            product_path.write_bytes(b"x" * 2000)
             with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
                  patch.object(first_last, "get_feishu_token", return_value="token"), \
                  patch.object(first_last, "safe_get_record", side_effect=[
-                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "old_attachment"}], "首帧图file_token": "ft_first", "尾帧图版本": 3},
+                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "old_attachment"}], "首帧图file_token": "ft_first", "尾帧图版本": 3, "关联产品记录": [{"record_ids": ["recProduct"]}]},
+                     {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
                      {"记录状态": "有效", "尾帧图生成状态": "生成中", "尾帧图版本": 3, "尾帧图任务ID": "img_task_2"},
                  ]), \
                  patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
                  patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
                  patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
-                 patch.object(first_last, "download_feishu_media", return_value=first_path) as media_downloader, \
-                 patch.object(first_last, "get_tmp_download_url_for_attachment", return_value="https://x.test/first.png"), \
+                 patch.object(first_last, "download_feishu_media", side_effect=[first_path, product_path]) as media_downloader, \
+                 patch.object(first_last, "get_tmp_download_url_for_attachment", side_effect=["https://x.test/first.png", "https://x.test/product.png"]), \
                  patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
                  patch.object(first_last, "submit_otu_image_task", return_value=("img_task_2", {"id": "img_task_2"})) as submitter, \
                  patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
@@ -595,14 +784,35 @@ video prompt 2
                 result = first_last.render_last_frame("rec1")
 
         self.assertEqual(result["status"], "success")
-        media_downloader.assert_called_once()
-        self.assertEqual(media_downloader.call_args.args[1], "ft_first")
+        self.assertEqual(media_downloader.call_count, 2)
+        self.assertEqual(media_downloader.call_args_list[0].args[1], "ft_first")
+        self.assertEqual(media_downloader.call_args_list[1].args[1], "ft_product")
+        args = submitter.call_args.args
         kwargs = submitter.call_args.kwargs
+        self.assertEqual(args[1], "last prompt")
+        self.assertNotIn("Vertical 9:16 portrait frame", args[1])
+        self.assertNotIn("Reference image 1 = starting frame editing base", args[1])
+        self.assertNotIn("Reference image 2 = product identity reference", args[1])
+        self.assertNotIn("Product identity anchor", args[1])
+        self.assertNotIn("pawradise", args[1])
+        self.assertNotIn("Pet Lily", args[1])
+        self.assertNotIn("Pet Care", args[1])
         self.assertEqual(kwargs["input_mode"], "image-to-image")
         self.assertEqual(kwargs["image_path"], str(first_path))
-        self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/first.png"])
-        self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame"])
+        self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/first.png", "https://x.test/product.png"])
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame", "product:1"])
+        self.assertEqual(kwargs["metadata"]["product_record_id"], "recProduct")
         self.assertEqual(updates[-1]["尾帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["关联产品记录"], ["recProduct"])
+        self.assertEqual(updates[-1]["产品名称"], "Pet Odor Spray")
+        self.assertIn("ft_product", updates[-1]["产品参考图file_tokenJSON"])
+        raw_response = json.loads(updates[-1]["尾帧图原始响应JSON"])
+        self.assertEqual(raw_response["references"]["reference_roles"], ["first_frame", "product:1"])
+        self.assertEqual(raw_response["references"]["reference_file_tokens"], ["ft_first", "ft_product"])
+        self.assertEqual(raw_response["references"]["reference_urls"], ["https://x.test/first.png", "https://x.test/product.png"])
+        self.assertTrue(raw_response["references"]["remote_reference_urls"])
+        self.assertEqual(raw_response["references"]["aspect_ratio"], "9:16")
+        self.assertEqual(raw_response["references"]["size"], "1024x1024")
         self.assertEqual(updates[-1]["尾帧审核状态"], "待确认")
         self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
         self.assertEqual(updates[-1]["尾帧图版本"], 3)

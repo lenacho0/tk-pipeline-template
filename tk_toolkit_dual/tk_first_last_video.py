@@ -22,25 +22,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from google import genai
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     APP_TOKEN,
-    CONFIG_RECORDS,
     TABLE_CONFIG,
     TABLE_FIRST_LAST_VIDEO,
+    TABLE_PRODUCT,
     WORKSPACE,
     build_error_payload,
+    extract_linked_record_ids,
     extract_text,
     feishu_headers,
     get_feishu_token,
-    get_model_config as get_config_record,
     log_event,
     safe_get_record,
     safe_list_records,
     safe_request,
     safe_update_record,
+    upload_image_to_feishu,
     with_retry,
 )
 from otu_image import (  # noqa: E402
@@ -74,17 +74,17 @@ from tk_shot_video import (  # noqa: E402
     video_item_url,
     videos_url,
 )
-from tk_storyboard import upload_image_to_feishu  # noqa: E402
 
 
-PARSE_STAGE_NAME = "分镜头脚本生成"
-IMAGE_STAGE_NAME = "分镜头图片生成"
-VIDEO_STAGE_NAME = "逐镜头分镜视频生成-OTU"
+IMAGE_STAGE_NAME = "图片生成-OTU"
+VIDEO_STAGE_NAME = "分镜视频生成-OTU"
 BASE_WORK_DIR = Path(WORKSPACE) / "first_last_video_work"
 SUBMIT_TIMEOUT = 180
 PARENT_RECORD_TYPE = "母任务"
 CHILD_RECORD_TYPE = "场景子任务"
 ACTIVE_RECORD_STATES = {"", "有效"}
+STALE_WRITEBACK_MARKER = "停止写回，避免旧任务覆盖新结果"
+MAX_PRODUCT_REFERENCES = 4
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -259,6 +259,147 @@ def ensure_current_generation(
             raise RuntimeError(f"{task_field} 已变更，停止写回，避免旧任务覆盖新结果")
 
 
+def is_stale_writeback_error(exc: Exception) -> bool:
+    return STALE_WRITEBACK_MARKER in str(exc)
+
+
+def extract_link_ids(value: Any) -> List[str]:
+    linked_ids = extract_linked_record_ids(value)
+    if linked_ids:
+        return linked_ids
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def extract_attachment_tokens(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    tokens: List[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        file_token = str(item.get("file_token") or "").strip()
+        if file_token:
+            tokens.append(file_token)
+    return tokens
+
+
+def first_text(fields: Dict[str, Any], names: List[str]) -> str:
+    for name in names:
+        text = extract_text(fields.get(name)).strip()
+        if text:
+            return text
+    return ""
+
+
+def parse_product_reference_snapshot(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        data = value
+    else:
+        raw = extract_text(value).strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except Exception:
+            try:
+                data = extract_json_object(raw)
+            except Exception:
+                return {}
+    if not isinstance(data, dict):
+        return {}
+
+    product_record_id = extract_text(data.get("product_record_id")).strip()
+    product_name = extract_text(data.get("product_name")).strip()
+    raw_tokens = data.get("file_tokens") or data.get("product_tokens") or data.get("reference_file_tokens") or []
+    product_tokens = [extract_text(token).strip() for token in raw_tokens if extract_text(token).strip()] if isinstance(raw_tokens, list) else []
+    if not product_record_id or not product_tokens:
+        return {}
+    return {
+        "product_record_id": product_record_id,
+        "product_name": product_name,
+        "product_tokens": product_tokens[:MAX_PRODUCT_REFERENCES],
+        "snapshot_used": True,
+    }
+
+
+def resolve_product_reference_context(token: str, fields: Dict[str, Any], record_id: str = "") -> Dict[str, Any]:
+    snapshot = parse_product_reference_snapshot(fields.get("产品参考图file_tokenJSON"))
+    if snapshot:
+        snapshot["source_record_id"] = record_id
+        return snapshot
+
+    product_ids = extract_link_ids(fields.get("关联产品记录"))
+    if not product_ids and record_type(fields) == CHILD_RECORD_TYPE:
+        parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
+        if parent_record_id:
+            parent_fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, parent_record_id)
+            snapshot = parse_product_reference_snapshot(parent_fields.get("产品参考图file_tokenJSON"))
+            if snapshot:
+                snapshot["source_record_id"] = record_id
+                return snapshot
+            product_ids = extract_link_ids(parent_fields.get("关联产品记录"))
+    if len(product_ids) != 1:
+        raise ValueError("关联产品记录必须选择 1 个产品")
+
+    product_record_id = product_ids[0]
+    product_fields = safe_get_record(token, TABLE_PRODUCT, product_record_id)
+    product_tokens = extract_attachment_tokens(product_fields.get("产品图片"))
+    if not product_tokens:
+        raise ValueError("产品记录缺少产品图片")
+    product_name = first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
+    return {
+        "product_record_id": product_record_id,
+        "product_name": product_name,
+        "product_tokens": product_tokens[:MAX_PRODUCT_REFERENCES],
+        "source_record_id": record_id,
+        "snapshot_used": False,
+    }
+
+
+def product_reference_snapshot(context: Dict[str, Any]) -> str:
+    return compact_json({
+        "product_record_id": context.get("product_record_id", ""),
+        "product_name": context.get("product_name", ""),
+        "file_tokens": context.get("product_tokens") or [],
+        "snapshot_used": bool(context.get("snapshot_used")),
+    }, 4000)
+
+
+def product_reference_record_fields(context: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "关联产品记录": [context["product_record_id"]],
+        "产品名称": context.get("product_name", ""),
+        "产品参考图file_tokenJSON": product_reference_snapshot(context),
+    }
+
+
+def collect_product_reference_images(token: str, context: Dict[str, Any], work_dir: Path) -> List[Dict[str, str]]:
+    refs: List[Dict[str, str]] = []
+    for idx, file_token in enumerate(context.get("product_tokens") or [], start=1):
+        local_path = work_dir / f"reference_product_{idx}.png"
+        downloaded = download_feishu_media(token, file_token, local_path)
+        refs.append({
+            "role": f"product:{idx}",
+            "path": str(downloaded),
+            "file_token": file_token,
+        })
+    return refs
+
+
+def reference_urls_for_refs(token: str, refs: List[Dict[str, str]]) -> List[str]:
+    urls: List[str] = []
+    for ref in refs:
+        file_token = ref.get("file_token", "")
+        if not file_token:
+            continue
+        url = get_tmp_download_url_for_attachment(token, file_token)
+        if url:
+            urls.append(url)
+    return urls
+
+
 def normalize_parse_payload(payload: Any) -> Dict[str, str]:
     data = payload
     if isinstance(payload, str):
@@ -327,11 +468,20 @@ def extract_markdown_prompt_block(section: str) -> str:
     return body
 
 
-def parse_structured_markdown_scenes(raw_doc: str) -> Dict[str, List[Dict[str, Any]]]:
+def _required_markdown_message(detail: str) -> str:
+    return (
+        "Markdown 格式不符合要求："
+        f"{detail}。请使用 `## S01 场景标题`，并为每个场景填写 "
+        "`### S01-1 首帧生图提示词`、`### S01-2 尾帧生图 / 编辑提示词`、"
+        "`### S01-3 首尾帧图生视频提示词`，提示词建议放在 Markdown 代码块中。"
+    )
+
+
+def require_structured_markdown_scenes(raw_doc: str) -> Dict[str, List[Dict[str, Any]]]:
     text = raw_doc or ""
     scene_matches = list(re.finditer(r"(?m)^##\s*S(\d{1,3})\s+(.+?)\s*$", text))
     if not scene_matches:
-        return {}
+        raise ValueError(_required_markdown_message("缺少场景标题 `## S01 场景标题`"))
 
     scenes: List[Dict[str, Any]] = []
     for idx, match in enumerate(scene_matches):
@@ -342,7 +492,7 @@ def parse_structured_markdown_scenes(raw_doc: str) -> Dict[str, List[Dict[str, A
         scene_block = text[scene_start:scene_end]
         sub_matches = list(re.finditer(r"(?m)^###\s*S\d{1,3}-(\d+)\s+(.+?)\s*$", scene_block))
         if not sub_matches:
-            return {}
+            raise ValueError(_required_markdown_message(f"S{scene_no:02d} 缺少 `### S{scene_no:02d}-1/2/3` 提示词小节"))
 
         prompts: Dict[str, str] = {}
         for sub_idx, sub_match in enumerate(sub_matches):
@@ -360,37 +510,40 @@ def parse_structured_markdown_scenes(raw_doc: str) -> Dict[str, List[Dict[str, A
             elif part_no == 3 and "视频" in heading:
                 prompts["video_prompt"] = prompt
 
-        if not all(prompts.get(key) for key in ("first_frame_prompt", "last_frame_prompt", "video_prompt")):
-            return {}
+        required_parts = [
+            ("first_frame_prompt", f"`### S{scene_no:02d}-1 首帧生图提示词`"),
+            ("last_frame_prompt", f"`### S{scene_no:02d}-2 尾帧生图 / 编辑提示词`"),
+            ("video_prompt", f"`### S{scene_no:02d}-3 首尾帧图生视频提示词`"),
+        ]
+        missing = [label for key, label in required_parts if not prompts.get(key)]
+        if missing:
+            raise ValueError(_required_markdown_message(f"S{scene_no:02d} 缺少 {', '.join(missing)} 或对应提示词内容"))
         scenes.append({
             "scene_no": scene_no,
             "title": title,
             **prompts,
         })
 
-    return {"scenes": scenes} if scenes else {}
+    return {"scenes": scenes}
 
 
-def build_parse_prompt(fields: Dict[str, Any]) -> str:
-    raw_doc = extract_text(fields.get("首尾帧文档")).strip()
-    seconds = extract_text(fields.get("目标时长秒")).strip() or "8"
-    return f"""
-你是首尾帧视频制作流程的文档拆分器。用户会给你一份自然语言文档，里面描述首帧、尾帧，以及用首尾帧生成视频时的动作/镜头/一致性要求。
+def parse_structured_markdown_scenes(raw_doc: str) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        return require_structured_markdown_scenes(raw_doc)
+    except ValueError:
+        return {}
 
-请只抽取信息，不要改写创意，不要补充不存在的设定。输出严格 JSON，不要 markdown。
 
-JSON schema:
-{{
-  "first_frame_prompt": "用于 OTU/gpt-image-2 直接生成首帧图的完整英文提示词，9:16 vertical",
-  "last_frame_prompt": "用于以上传首帧图为参考生成尾帧图的完整英文提示词，9:16 vertical",
-  "video_prompt": "用于以上传首帧图和尾帧图为参考生成首尾帧视频的完整英文提示词"
-}}
-
-目标时长秒：{seconds}
-
-首尾帧文档：
-{raw_doc}
-""".strip()
+def require_single_markdown_scene(raw_doc: str) -> Dict[str, str]:
+    payload = require_structured_markdown_scenes(raw_doc)
+    scenes = payload["scenes"]
+    if len(scenes) != 1:
+        raise ValueError(_required_markdown_message(f"单条文档拆分只允许 1 个场景，当前为 {len(scenes)} 个；多场景请使用批量拆分"))
+    return {
+        "first_frame_prompt": scenes[0]["first_frame_prompt"],
+        "last_frame_prompt": scenes[0]["last_frame_prompt"],
+        "video_prompt": scenes[0]["video_prompt"],
+    }
 
 
 def read_source_document_text(token: str, record_id: str, fields: Dict[str, Any]) -> str:
@@ -409,34 +562,6 @@ def read_source_document_text(token: str, record_id: str, fields: Dict[str, Any]
     return ""
 
 
-def build_batch_parse_prompt(fields: Dict[str, Any], raw_doc: str) -> str:
-    seconds = extract_text(fields.get("目标时长秒")).strip() or "8"
-    return f"""
-你是首尾帧视频制作流程的批量场景拆分器。用户会提供一份包含多个场景的首尾帧文档。
-
-请把文档拆成多个独立场景。一条场景记录最终产出一条首尾帧视频。
-只抽取原文里的创意与镜头要求，不要补充不存在的设定。输出严格 JSON，不要 markdown。
-
-JSON schema:
-{{
-  "scenes": [
-    {{
-      "scene_no": 1,
-      "title": "场景短标题",
-      "first_frame_prompt": "用于 OTU/gpt-image-2 直接生成首帧图的完整英文提示词，9:16 vertical",
-      "last_frame_prompt": "用于以上传首帧图为参考生成尾帧图的完整英文提示词，9:16 vertical",
-      "video_prompt": "用于以上传首帧图和尾帧图为参考生成首尾帧视频的完整英文提示词"
-    }}
-  ]
-}}
-
-目标时长秒：{seconds}
-
-首尾帧文档：
-{raw_doc}
-""".strip()
-
-
 def build_child_scene_records(
     parent_record_id: str,
     parent_fields: Dict[str, Any],
@@ -444,6 +569,7 @@ def build_child_scene_records(
     *,
     batch_id: str,
     split_version: int,
+    product_context: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Dict[str, Any]]]:
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"首尾帧任务-{parent_record_id[-6:]}"
     target_seconds = normalize_int(parent_fields.get("目标时长秒"), 8)
@@ -481,6 +607,8 @@ def build_child_scene_records(
             "视频生成状态": "不触发",
             "错误信息": "",
         }
+        if product_context:
+            fields.update(product_reference_record_fields(product_context))
         records.append({"fields": fields})
     return records
 
@@ -509,27 +637,6 @@ def deprecate_existing_children(token: str, parent_record_id: str) -> int:
     return deprecated
 
 
-def get_text_generation_config(token: str) -> Dict[str, str]:
-    record_id = CONFIG_RECORDS.get("shot_script_gen")
-    if not record_id:
-        raise ValueError("config_records 缺少 shot_script_gen")
-    cfg = get_config_record(token, record_id)
-    if not cfg.get("api_key"):
-        raise ValueError("首尾帧文档拆分配置缺少 API Key")
-    return cfg
-
-
-def run_text_split_model(prompt: str, token: str) -> Any:
-    cfg = get_text_generation_config(token)
-    client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
-    response = with_retry(
-        lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),
-        max_attempts=3,
-        label="first/last frame prompt split",
-    )
-    return getattr(response, "text", "") or ""
-
-
 def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_output: Any = None, force: bool = False) -> Dict[str, Any]:
     ensure_first_last_table()
     token = get_feishu_token()
@@ -537,11 +644,11 @@ def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_out
     raw_doc = read_source_document_text(token, record_id, fields)
     if not raw_doc:
         raise ValueError("首尾帧文档为空；长文档请上传到“首尾帧文档附件”")
+    product_context = resolve_product_reference_context(token, fields, record_id)
     raw_split_version = normalize_int(fields.get("拆分版本"), 0)
     split_version = raw_split_version + 1 if raw_split_version > 0 else 1
     batch_id = make_batch_id(record_id)
-    prompt = build_batch_parse_prompt(fields, raw_doc)
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "split_version": split_version, "batch_id": batch_id}
+    summary = {"record_id": record_id, "dry_run": dry_run, "raw_doc_chars": len(raw_doc), "split_version": split_version, "batch_id": batch_id}
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -553,19 +660,16 @@ def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_out
         "文档拆分状态": "拆分中",
         "拆分版本": split_version,
         "错误信息": "",
+        **product_reference_record_fields(product_context),
     }))
 
     if raw_model_output is None:
-        raw_model_output = parse_structured_markdown_scenes(raw_doc)
-        if raw_model_output:
-            summary["parser"] = "structured_markdown"
-        else:
-            raw_model_output = run_text_split_model(prompt, token)
-            summary["parser"] = "model"
+        raw_model_output = require_structured_markdown_scenes(raw_doc)
+        summary["parser"] = "structured_markdown"
     payload = normalize_batch_parse_payload(raw_model_output)
     scenes = payload["scenes"]
     deprecated = deprecate_existing_children(token, record_id)
-    child_records = build_child_scene_records(record_id, fields, scenes, batch_id=batch_id, split_version=split_version)
+    child_records = build_child_scene_records(record_id, fields, scenes, batch_id=batch_id, split_version=split_version, product_context=product_context)
     created = create_records(token, TABLE_FIRST_LAST_VIDEO, child_records)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
         "记录类型": PARENT_RECORD_TYPE,
@@ -579,6 +683,7 @@ def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_out
         "拆分版本": split_version,
         "总场景数": len(scenes),
         "错误信息": "",
+        **product_reference_record_fields(product_context),
     }))
     summary.update({"status": "success", "created_records": created, "deprecated_records": deprecated, "scene_count": len(scenes)})
     return summary
@@ -670,10 +775,7 @@ def parse_document(record_id: str, *, dry_run: bool = False, raw_model_output: A
     raw_doc = read_source_document_text(token, record_id, fields)
     if not raw_doc:
         raise ValueError("首尾帧文档为空")
-    prompt_fields = dict(fields)
-    prompt_fields["首尾帧文档"] = raw_doc
-    prompt = build_parse_prompt(prompt_fields)
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
+    summary = {"record_id": record_id, "dry_run": dry_run, "raw_doc_chars": len(raw_doc)}
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -684,7 +786,7 @@ def parse_document(record_id: str, *, dry_run: bool = False, raw_model_output: A
     }))
 
     if raw_model_output is None:
-        raw_model_output = run_text_split_model(prompt, token)
+        raw_model_output = require_single_markdown_scene(raw_doc)
 
     payload = normalize_parse_payload(raw_model_output)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
@@ -728,7 +830,14 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         raise ValueError("首帧生图提示词为空")
     version = current_version(fields, "首帧图版本")
     work_dir = ensure_stage_work_dir(record_id, "first_frame", version)
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
+    product_context = resolve_product_reference_context(token, fields, record_id)
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "prompt_chars": len(prompt),
+        "product_record_id": product_context["product_record_id"],
+        "product_reference_count": len(product_context["product_tokens"]),
+    }
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -745,20 +854,40 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         "首帧图版本": version,
         "首帧图生成状态": "生成中",
         "首帧图错误信息": "",
+        **product_reference_record_fields(product_context),
     })
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
     out_path = str(work_dir / f"{record_id}_first_frame_v{version}.png")
+    product_refs = collect_product_reference_images(token, product_context, work_dir)
+    reference_urls = reference_urls_for_refs(token, product_refs)
+    reference_summary = {
+        "product_record_id": product_context["product_record_id"],
+        "product_name": product_context.get("product_name", ""),
+        "reference_roles": [ref["role"] for ref in product_refs],
+        "reference_file_tokens": [ref["file_token"] for ref in product_refs],
+        "reference_paths": [ref.get("path", "") for ref in product_refs],
+        "reference_urls": reference_urls,
+        "input_mode": "image-to-image",
+        "remote_reference_urls": bool(reference_urls),
+    }
     submit_task_id, submit_body = submit_otu_image_task(
         {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
         prompt,
-        input_mode="text-to-image",
-        metadata={"aspectRatio": "9:16"},
+        input_mode="image-to-image",
+        image_path=product_refs[0]["path"],
+        metadata={
+            "reference_roles": [ref["role"] for ref in product_refs],
+            "product_record_id": product_context["product_record_id"],
+            "product_reference_file_tokens": [ref["file_token"] for ref in product_refs],
+            "urls": reference_urls,
+            "aspectRatio": "9:16",
+        },
         size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
     )
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
         "首帧图任务ID": submit_task_id,
         "首帧图版本": version,
-        "首帧图原始响应JSON": compact_json({"submit": submit_body}, 10000),
+        "首帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
         "首帧图错误信息": f"已提交 OTU 首帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
     }))
     result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
@@ -774,12 +903,13 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         "首帧图本地路径": out_path,
         "首帧图任务ID": submit_task_id,
         "首帧图版本": version,
-        "首帧图原始响应JSON": compact_json({"submit": submit_body, "result": result}, 10000),
+        "首帧图原始响应JSON": compact_json({"submit": submit_body, "result": result, "references": reference_summary}, 10000),
         "首帧图生成状态": "成功",
         "首帧图生成时间": int(time.time() * 1000),
         "首帧图错误信息": "",
         "首帧审核状态": "待确认",
         "错误信息": "",
+        **product_reference_record_fields(product_context),
     }))
     summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
     return summary
@@ -817,8 +947,15 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     version = current_version(fields, "尾帧图版本")
     work_dir = ensure_stage_work_dir(record_id, "last_frame", version)
     first_frame_path = download_feishu_media(token, first_frame_token, work_dir / f"{record_id}_first_frame_ref_v{version}.png")
-    first_frame_url = get_tmp_download_url_for_attachment(token, first_frame_token)
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "first_frame_path": str(first_frame_path)}
+    product_context = resolve_product_reference_context(token, fields, record_id)
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "prompt_chars": len(prompt),
+        "first_frame_path": str(first_frame_path),
+        "product_record_id": product_context["product_record_id"],
+        "product_reference_count": len(product_context["product_tokens"]),
+    }
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -835,21 +972,48 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "尾帧图版本": version,
         "尾帧图生成状态": "生成中",
         "尾帧图错误信息": "",
+        **product_reference_record_fields(product_context),
     })
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
     out_path = str(work_dir / f"{record_id}_last_frame_v{version}.png")
+    product_refs = collect_product_reference_images(token, product_context, work_dir)
+    first_frame_url = get_tmp_download_url_for_attachment(token, first_frame_token)
+    product_reference_urls = reference_urls_for_refs(token, product_refs)
+    reference_urls = ([first_frame_url] if first_frame_url else []) + product_reference_urls
+    reference_roles = ["first_frame"] + [ref["role"] for ref in product_refs]
+    reference_file_tokens = [first_frame_token] + [ref["file_token"] for ref in product_refs]
+    image_size = cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE
+    reference_summary = {
+        "product_record_id": product_context["product_record_id"],
+        "product_name": product_context.get("product_name", ""),
+        "reference_roles": reference_roles,
+        "reference_file_tokens": reference_file_tokens,
+        "product_reference_file_tokens": product_context.get("product_tokens") or [],
+        "reference_paths": [str(first_frame_path)] + [ref.get("path", "") for ref in product_refs],
+        "reference_urls": reference_urls,
+        "input_mode": "image-to-image",
+        "remote_reference_urls": bool(reference_urls),
+        "aspect_ratio": "9:16",
+        "size": image_size,
+    }
     submit_task_id, submit_body = submit_otu_image_task(
         {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
         prompt,
         input_mode="image-to-image",
         image_path=str(first_frame_path),
-        metadata={"urls": [first_frame_url] if first_frame_url else [], "reference_roles": ["first_frame"], "aspectRatio": "9:16"},
-        size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+        metadata={
+            "reference_roles": reference_roles,
+            "product_record_id": product_context["product_record_id"],
+            "product_reference_file_tokens": product_context.get("product_tokens") or [],
+            "urls": reference_urls,
+            "aspectRatio": "9:16",
+        },
+        size=image_size,
     )
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
         "尾帧图任务ID": submit_task_id,
         "尾帧图版本": version,
-        "尾帧图原始响应JSON": compact_json({"submit": submit_body}, 10000),
+        "尾帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
         "尾帧图错误信息": f"已提交 OTU 尾帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
     }))
     result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
@@ -865,12 +1029,13 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "尾帧图本地路径": out_path,
         "尾帧图任务ID": submit_task_id,
         "尾帧图版本": version,
-        "尾帧图原始响应JSON": compact_json({"submit": submit_body, "result": result}, 10000),
+        "尾帧图原始响应JSON": compact_json({"submit": submit_body, "result": result, "references": reference_summary}, 10000),
         "尾帧图生成状态": "成功",
         "尾帧图生成时间": int(time.time() * 1000),
         "尾帧图错误信息": "",
         "尾帧审核状态": "待确认",
         "错误信息": "",
+        **product_reference_record_fields(product_context),
     }))
     summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
     return summary
@@ -1094,12 +1259,13 @@ def main() -> int:
     except Exception as exc:
         payload = build_error_payload(exc, stage=f"first_last_video_{args.action}")
         log_event("ERROR", "first/last video task failed", action=args.action, record_id=args.record_id, error=payload["message"], error_code=payload["error_code"])
-        try:
-            token = get_feishu_token()
-            if TABLE_FIRST_LAST_VIDEO:
-                safe_update_record(token, TABLE_FIRST_LAST_VIDEO, args.record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, _failure_update_for_action(args.action, payload["message"])))
-        except Exception:
-            pass
+        if not is_stale_writeback_error(exc):
+            try:
+                token = get_feishu_token()
+                if TABLE_FIRST_LAST_VIDEO:
+                    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, args.record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, _failure_update_for_action(args.action, payload["message"])))
+            except Exception:
+                pass
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={payload['message']}")
         return 1
 

@@ -15,31 +15,11 @@ from common import *
 from tk_shot_storyboard import get_table_field_names
 
 
-def check_fastmoss():
-    try:
-        token = get_feishu_token()
-        api_cfg = get_fetch_api_config(token)
-        now = int(time.time())
-        headers = {'Authorization': f"Bearer {api_cfg['api_key']}", 'Content-Type': 'application/json'}
-        body = {
-            'keywords': 'pet',
-            'filter': {'publish_time_range': {'min': now - 7*86400, 'max': now}},
-            'page': 1, 'pagesize': 1,
-        }
-        resp = requests.post(f"{api_cfg['api_base']}/video/v1/search", json=body, headers=headers, timeout=15)
-        data = resp.json()
-        if data.get('code') == 0:
-            return True, f"正常 (api_base={api_cfg['api_base']})"
-        return False, f"异常 code={data.get('code')}, msg={data.get('message') or data.get('msg')}"
-    except Exception as e:
-        return False, f"请求失败: {e}"
-
-
 def check_feishu_token():
     try:
         token = get_feishu_token()
         resp = requests.get(
-            f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_DATA}/records?page_size=1',
+            f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_CONFIG}/records?page_size=1',
             headers=feishu_headers(token), timeout=15)
         payload = resp.json()
         if payload.get('code') == 0:
@@ -47,143 +27,6 @@ def check_feishu_token():
         return False, f"code={payload.get('code')}, msg={payload.get('msg')}"
     except Exception as e:
         return False, f"失败: {e}"
-
-
-def check_gemini():
-    try:
-        token = get_feishu_token()
-        cfg = get_model_config(token, CONFIG_RECORDS['analysis'])
-        if not cfg.get('api_key') or not cfg.get('api_base'):
-            return False, '飞书配置表缺少 API Key 或 Base URL'
-        client = get_gemini_client(cfg['api_key'], cfg['api_base'])
-        response = client.models.generate_content(
-            model=cfg['model'] or 'gemini-2.0-flash',
-            contents='回复"OK"两个字即可')
-        if response and response.text:
-            return True, f"正常 (模型: {cfg['model']})"
-        return False, '无响应'
-    except Exception as e:
-        return False, f"失败: {e}"
-
-
-def check_sora():
-    try:
-        token = get_feishu_token()
-        records = safe_list_records(token, TABLE_CONFIG)
-        sora_cfg = None
-        for rec in records:
-            fields = rec.get('fields', {})
-            stage_name = extract_text(fields.get('环节', '')).strip()
-            if stage_name == '九宫格生成视频-sora':
-                sora_cfg = {
-                    'api_key': extract_text(fields.get('API Key', '')).strip(),
-                    'api_base': extract_text(fields.get('API 代理地址', '')).strip(),
-                }
-                break
-
-        if not sora_cfg:
-            return False, '缺少配置环节: 九宫格生成视频-sora'
-        if not sora_cfg.get('api_key') or not sora_cfg.get('api_base'):
-            return False, '九宫格生成视频-sora 缺少 API Key 或 API 代理地址'
-
-        api_base = sora_cfg['api_base'].rstrip('/')
-        resp = requests.get(f'{api_base}/videos/test_nonexistent_id', headers={'Authorization': sora_cfg['api_key']}, timeout=15)
-        if resp.status_code < 500:
-            return True, f"正常 (环节=九宫格生成视频-sora, 代理: {api_base})"
-        return False, f"HTTP {resp.status_code}"
-    except Exception as e:
-        return False, f"失败: {e}"
-
-
-def check_nine_grid_video():
-    try:
-        token = get_feishu_token()
-        stage_names = [
-            '九宫格生成视频-grok',
-            '九宫格生成视频-sora',
-            '九宫格生成视频-seeddance2.0',
-        ]
-        records = safe_list_records(token, TABLE_CONFIG)
-        stage_map = {}
-        legacy_stages = []
-
-        for rec in records:
-            fields = rec.get('fields', {})
-            stage_name = extract_text(fields.get('环节', '')).strip()
-            if not stage_name:
-                continue
-            if stage_name in stage_names:
-                stage_map[stage_name] = {
-                    'model': extract_text(fields.get('模型名称', '')).strip(),
-                    'api_key': extract_text(fields.get('API Key', '')).strip(),
-                    'api_base': extract_text(fields.get('API 代理地址', '')).strip(),
-                    'prompt': extract_text(fields.get('提示词', '')).strip(),
-                    'record_id': rec.get('record_id', ''),
-                }
-            if '视频生成' in stage_name and '九宫格生成视频-' not in stage_name:
-                legacy_stages.append(stage_name)
-
-        missing = [name for name in stage_names if name not in stage_map]
-        if missing:
-            return False, f"缺少配置环节: {', '.join(missing)}"
-
-        bad = []
-        summaries = []
-        for name in stage_names:
-            cfg = stage_map[name]
-            missing_fields = []
-            if not cfg['model']:
-                missing_fields.append('模型名称')
-            if not cfg['api_key']:
-                missing_fields.append('API Key')
-            if not cfg['api_base']:
-                missing_fields.append('API 代理地址')
-            if not cfg['prompt']:
-                missing_fields.append('提示词')
-            if missing_fields:
-                bad.append(f"{name} 缺少 {', '.join(missing_fields)}")
-            else:
-                summaries.append(f"{name.split('-', 1)[1]}✓")
-
-        if bad:
-            return False, '；'.join(bad)
-
-        if legacy_stages:
-            return False, f"发现残留旧环节: {', '.join(sorted(set(legacy_stages)))}"
-
-        return True, f"正常 ({', '.join(summaries)})"
-    except Exception as e:
-        return False, f"失败: {e}"
-
-
-def check_pet_reference_analysis_config():
-    try:
-        token = get_feishu_token()
-        records = safe_list_records(token, TABLE_CONFIG)
-        target = None
-        for rec in records:
-            fields = rec.get('fields', {})
-            if extract_text(fields.get('环节', '')).strip() == '宠物拟人参考视频深拆':
-                target = fields
-                break
-        if not target:
-            return False, '缺少配置环节: 宠物拟人参考视频深拆'
-        missing = []
-        if not extract_text(target.get('模型名称', '')).strip():
-            missing.append('模型名称')
-        if not extract_text(target.get('API Key', '')).strip():
-            missing.append('API Key')
-        if not extract_text(target.get('API 代理地址', '')).strip():
-            missing.append('API 代理地址')
-        if not extract_text(target.get('提示词', '')).strip():
-            missing.append('提示词')
-        if not extract_text(target.get('调用方式', '')).strip():
-            missing.append('调用方式')
-        if missing:
-            return False, f"宠物拟人参考视频深拆缺少 {', '.join(missing)}"
-        return True, '正常'
-    except Exception as e:
-        return False, f'失败: {e}'
 
 
 def check_first_last_video_config():
@@ -198,6 +41,9 @@ def check_first_last_video_config():
             '批次ID',
             '当前批次ID',
             '场景编号',
+            '关联产品记录',
+            '产品名称',
+            '产品参考图file_tokenJSON',
             '首尾帧文档附件',
             '拆分状态',
             '场景拆分操作',
@@ -215,8 +61,8 @@ def check_first_last_video_config():
             return False, f"首尾帧表缺少字段: {', '.join(missing_table_fields)}"
 
         required = {
-            '分镜头图片生成': ('模型名称', 'API Key', 'API 代理地址'),
-            '逐镜头分镜视频生成-OTU': ('模型名称', 'API Key', 'API 代理地址'),
+            '图片生成-OTU': ('模型名称', 'API Key', 'API 代理地址'),
+            '分镜视频生成-OTU': ('模型名称', 'API Key', 'API 代理地址'),
         }
         records = safe_list_records(token, TABLE_CONFIG)
         stage_map = {}
@@ -242,7 +88,7 @@ def check_first_last_video_config():
                 bad.append(f"{stage_name} 缺少 {', '.join(missing_fields)}")
         if bad:
             return False, '；'.join(bad)
-        return True, f"正常 (表={TABLE_FIRST_LAST_VIDEO}, 分镜头图片生成✓, 逐镜头分镜视频生成-OTU✓)"
+        return True, f"正常 (表={TABLE_FIRST_LAST_VIDEO}, Markdown直拆✓, 图片生成-OTU✓, 分镜视频生成-OTU✓)"
     except Exception as e:
         return False, f'失败: {e}'
 
@@ -338,11 +184,7 @@ def send_feishu_report(results):
         all_ok = all(ok for ok, _ in results.values())
         lines = [f'🔍 TK Pipeline 巡检 — {now}', f'实例: {INSTANCE}', '']
         status_map = {
-            'FastMoss API': '📺 环节① 爆款抓取',
             'feishu_token': '📋 飞书多维表格',
-            'gemini': '🤖 Gemini (环节②③④)',
-            'sora': '🎬 Sora 连通性',
-            'nine_grid_video': '🎞️ 九宫格生成视频',
             'first_last_video': '🎬 首尾帧视频',
             'dispatcher': '⚡ 调度器',
         }
@@ -378,11 +220,6 @@ def main():
     results = {}
     checks = [
         ('feishu_token', '飞书 Token', check_feishu_token),
-        ('FastMoss API', 'FastMoss API', check_fastmoss),
-        ('gemini', 'Gemini API', check_gemini),
-        ('sora', 'Sora API', check_sora),
-        ('nine_grid_video', '九宫格生成视频配置', check_nine_grid_video),
-        ('pet_reference_analysis', '宠物拟人参考视频深拆配置', check_pet_reference_analysis_config),
         ('first_last_video', '首尾帧视频配置', check_first_last_video_config),
         ('dispatcher', '调度器', check_dispatcher),
     ]
