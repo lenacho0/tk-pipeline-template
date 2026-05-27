@@ -82,6 +82,7 @@ Requirements:
 4. Visual content from the script must be embedded only in English.
 5. Dialogue / voiceover from the script must be embedded only in Thai.
 6. Output complete English prompts that can be used directly to generate narrative storyboard images.
+7. Read the full script and derive the Storyboard 01 core conflict scene and golden 3-second / dramatic hook from the script itself. Do not ask for or rely on separate user-entered conflict/hook fields.
 
 Mandatory visual grid layout:
 - Overall canvas: 16:9 horizontal, pure white background.
@@ -236,8 +237,6 @@ def build_storyboard_prompt_generation_request(fields: Dict[str, Any]) -> str:
     script = extract_text(fields.get("脚本内容")).strip()
     product_name = extract_text(fields.get("产品名称")).strip()
     target_audience = extract_text(fields.get("目标人群")).strip()
-    conflict = extract_text(fields.get("核心冲突场景")).strip()
-    hook = extract_text(fields.get("黄金3秒/戏剧钩子")).strip()
     return f"""
 {STORYBOARD_PROMPT_RULES}
 
@@ -257,8 +256,6 @@ JSON schema:
 Global business fields:
 - Product name: {product_name}
 - Target audience: {target_audience}
-- Core conflict scene: {conflict}
-- Golden 3-second / dramatic hook: {hook}
 
 Full finalized script:
 {script}

@@ -39,6 +39,8 @@ RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("Storyboard分段", "Green"
 OBSOLETE_FIELDS = [
     "产品名称",
     "目标人群",
+    "核心冲突场景",
+    "黄金3秒/戏剧钩子",
     "产品图",
     "角色图",
     "故事板图本地路径",
@@ -61,8 +63,6 @@ STORYBOARD_VIDEO_FIELDS = [
     text("脚本内容"),
     link("关联产品记录", "__PRODUCT_TABLE_ID__"),
     link("选择模特", "__MODEL_TABLE_ID__"),
-    text("核心冲突场景"),
-    text("黄金3秒/戏剧钩子"),
     attachment("环境图"),
     select("拆分状态", SPLIT_STATUS_OPTIONS),
     text("拆分结果JSON"),
@@ -91,8 +91,7 @@ TABLE_DEFINITION = {
     "fields": STORYBOARD_VIDEO_FIELDS,
     "views": {
         "01-母任务入口": [
-            "记录类型", "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图",
-            "核心冲突场景", "黄金3秒/戏剧钩子", "拆分状态", "总故事板数", "错误信息",
+            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分状态", "错误信息",
         ],
         "02-故事板图片": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range",
@@ -161,21 +160,26 @@ def prune_obsolete_fields(base_token, table_id, field_names=OBSOLETE_FIELDS):
     ]).get("data", {})
     field_items = raw_fields.get("items") or raw_fields.get("fields") or []
     existing_names = set()
+    field_ids_by_name = {}
     for item in field_items:
         if isinstance(item, dict):
             name = item.get("name") or item.get("field_name")
             if name:
                 existing_names.add(name)
+                field_id = item.get("id") or item.get("field_id")
+                if field_id:
+                    field_ids_by_name[name] = field_id
 
     deleted = []
     for field_name in field_names:
         if existing_names and field_name not in existing_names:
             continue
+        field_id = field_ids_by_name.get(field_name) or field_name
         run_json([
             "lark-cli", "base", "+field-delete",
             "--base-token", base_token,
             "--table-id", table_id,
-            "--field-id", field_name,
+            "--field-id", field_id,
             "--yes",
         ])
         deleted.append(field_name)

@@ -20,8 +20,6 @@ def parent_fields():
         "脚本内容": "0-10s hook\n10-20s product demo",
         "关联产品记录": [{"record_ids": ["recProduct"], "text": "Pet odor spray"}],
         "选择模特": [{"record_ids": ["recModel"], "text": "Momo"}],
-        "核心冲突场景": "cat urine smell in the house",
-        "黄金3秒/戏剧钩子": "The cat confesses the smell problem",
         "环境图": [{"file_token": "ft_environment"}],
     }
 
@@ -53,6 +51,9 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("Storyboard 02", prompt)
         self.assertIn("from Storyboard 02 onward", prompt)
         self.assertIn("must not include 核心冲突场景", prompt)
+        self.assertIn("derive the Storyboard 01 core conflict scene", prompt)
+        self.assertNotIn("Core conflict scene:", prompt)
+        self.assertNotIn("Golden 3-second / dramatic hook:", prompt)
         self.assertIn("English", prompt)
         self.assertIn("Thai", prompt)
 
@@ -194,6 +195,8 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("选择模特", field_names)
         self.assertNotIn("产品名称", field_names)
         self.assertNotIn("目标人群", field_names)
+        self.assertNotIn("核心冲突场景", field_names)
+        self.assertNotIn("黄金3秒/戏剧钩子", field_names)
         self.assertNotIn("产品图", field_names)
         self.assertNotIn("角色图", field_names)
         self.assertNotIn("故事板图本地路径", field_names)
@@ -212,9 +215,31 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("视频生成状态", field_names)
         self.assertIn("分镜视频", field_names)
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "storyboard_video")
-        self.assertIn("01-母任务入口", create_table.TABLE_DEFINITION["views"])
+        self.assertEqual(create_table.TABLE_DEFINITION["views"]["01-母任务入口"], [
+            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分状态", "错误信息",
+        ])
         self.assertIn("02-故事板图片", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-Omni视频", create_table.TABLE_DEFINITION["views"])
+
+    def test_prune_obsolete_fields_deletes_by_field_id_for_special_names(self):
+        calls = []
+
+        def fake_run_json(args):
+            calls.append(args)
+            if "+field-list" in args:
+                return {"data": {"fields": [{"name": "黄金3秒/戏剧钩子", "id": "fldHook"}]}}
+            if "+field-delete" in args:
+                return {"ok": True}
+            raise AssertionError(args)
+
+        with patch.object(create_table, "get_feishu_token", return_value="token"), \
+             patch.object(create_table, "safe_list_records", return_value=[{"fields": {"黄金3秒/戏剧钩子": ""}}]), \
+             patch.object(create_table, "run_json", side_effect=fake_run_json):
+            deleted = create_table.prune_obsolete_fields("base", "tbl", field_names=["黄金3秒/戏剧钩子"])
+
+        delete_call = [call for call in calls if "+field-delete" in call][0]
+        self.assertEqual(deleted, ["黄金3秒/戏剧钩子"])
+        self.assertEqual(delete_call[delete_call.index("--field-id") + 1], "fldHook")
 
     def test_resolve_parent_reference_context_uses_linked_product_and_model(self):
         context = storyboard_video.resolve_parent_reference_context(
