@@ -72,27 +72,59 @@ POLL_TIMEOUT = 45
 
 
 STORYBOARD_PROMPT_RULES = """
-I have finalized the shot-by-shot text script for this short commerce micro-drama.
+我已经确定了本次带货微短剧的镜头文本脚本。
+【已定稿脚本内容指令】
+我会上传或粘贴一段完整脚本。
 
-Read the full script content and embed it into the mandatory visual grid layout rules below.
+请你仔细读取我上传的脚本内容，并将其无缝嵌入到以下【强制视觉网格排版】规则中。
 
-Requirements:
-1. Split the script into multiple storyboard image prompts at roughly one storyboard image per 10 seconds.
-2. The plot must stay continuous across storyboard images. Shot numbers must be consecutive, and characters, pets, products, scenes, outfits, and props must remain consistent.
-3. Each storyboard must be an independent 16:9 horizontal storyboard production board.
-4. Visual content from the script must be embedded only in English.
-5. Dialogue / voiceover from the script must be embedded only in Thai.
-6. Output complete English prompts that can be used directly to generate narrative storyboard images.
-7. Read the full script and derive the Storyboard 01 core conflict scene and golden 3-second / dramatic hook from the script itself. Do not ask for or rely on separate user-entered conflict/hook fields.
+要求：
+1. 根据脚本实际时长，按“每张故事板约10秒”的节奏拆分成多张故事板图片提示词。
+2. 多张故事板之间剧情必须连贯，镜头编号连续，人物、宠物、产品、场景、服装、道具必须保持一致。
+3. 每张故事板都需要是一张独立的 16:9 横版分镜制作板。
+4. 脚本中的画面内容仅嵌入英文内容。
+5. 脚本中的对白/口播仅嵌入泰文内容。
+6. 最终为我输出多段可直接用于生成剧情故事板图片的完整【英文】提示词。
+7. 从完整脚本中自动提取 Storyboard 01 的核心冲突场景和黄金3秒/戏剧钩子。
+8. 每个 image_prompt 都必须明确描述顶部表头区、中部素材/参考区、底部剧情分镜区；中部素材/参考区不得省略。
 
-Mandatory visual grid layout:
-- Overall canvas: 16:9 horizontal, pure white background.
-- The image is strictly divided from top to bottom into three independent sections.
-- Top section: full-width header. The far-left bold title is "短视频带货分镜制作".
-- To the right of the title is a horizontal table whose fields differ by storyboard number.
-- For Storyboard 01 only, the right-side table must include: Storyboard 编号, Time Range, 产品名称, 目标人群, 核心冲突场景, 黄金3秒/戏剧钩子. The 黄金3秒/戏剧钩子 text must be highlighted in red.
-- For Storyboard 02 onward, the top header table must include only: Storyboard 编号, Time Range, 产品名称, 目标人群.
-- Important: from Storyboard 02 onward, the prompt must not include 核心冲突场景 or 黄金3秒/戏剧钩子 in the top header table.
+【强制视觉网格排版与约束】
+整体画幅：16:9 横版，纯白背景。画面严格从上到下分为三个独立区块。
+
+第一区块（顶部表头，横向占满全宽）：
+最左侧大字加粗标题：“短视频带货分镜制作”。
+右侧紧跟一个横向表格，表格内容需要根据 Storyboard 编号区分展示。
+如果是 Storyboard 01，右侧横向表格必须包含：Storyboard 编号、Time Range、产品名称、目标人群、核心冲突场景、黄金3秒/戏剧钩子（文字使用红色高亮）。
+如果是 Storyboard 02、Storyboard 03 或后续故事板，右侧横向表格只需要包含：Storyboard 编号、Time Range、产品名称、目标人群。
+只有第一张故事板 Storyboard 01 需要出现“核心冲突场景”和“黄金3秒/戏剧钩子”。
+从 Storyboard 02 开始，顶部表头中不得再出现“核心冲突场景”和“黄金3秒/戏剧钩子”这两个字段。
+
+第二区块（中部素材区）：
+中部素材区的排版必须根据实际脚本中出场的角色来决定，不要固定为三栏。
+如果脚本中只有 1 个人物 + 宠物 + 产品：放置 1 个人物参考区、1 个宠物参考区、1 个产品参考区。
+如果脚本中有 2 个人物 + 宠物 + 产品：放置 角色A参考区、角色B参考区、宠物参考区、产品参考区。
+如果脚本中只有宠物 + 产品：放置 宠物参考区、产品参考区。
+每个参考区根据实际对象展示：正面、面部/局部特写、服装或外观特征、产品正面和其它角度。
+
+第三区块（底部剧情分镜区）：
+根据当前 Storyboard 的 Time Range 展示连续剧情分镜面板。
+剧情分镜中的画面描述、动作、场景、道具、视觉效果只允许使用英文。
+对白/口播只允许使用泰文，并放在对应分镜画面下方或底部对白区域。
+不要出现中文对白、中文剧情说明、英文对白翻译、无关字幕、UI、水印。
+
+Return strict JSON only. Do not wrap it in Markdown.
+Each storyboards[].image_prompt must be the complete final English prompt that can be sent directly to the image-generation API. Do not output partial structured fragments.
+JSON schema:
+{
+  "storyboards": [
+    {
+      "storyboard_no": 1,
+      "time_range": "0-10s",
+      "image_prompt": "Complete final English image-generation prompt. It must include the top header section, the middle material/reference section, and the bottom story/dialogue section.",
+      "video_prompt": "Prompt for generating a real video segment from this storyboard image and references"
+    }
+  ]
+}
 """.strip()
 
 
@@ -266,22 +298,24 @@ def _downloaded_path(downloaded: Any, fallback: Path) -> str:
     return str(fallback)
 
 
-def build_storyboard_prompt_generation_request(fields: Dict[str, Any]) -> str:
+def build_storyboard_prompt_generation_request(fields: Dict[str, Any], *, system_prompt: str = "") -> str:
     script = extract_text(fields.get("脚本内容")).strip()
     product_name = extract_text(fields.get("产品名称")).strip()
     target_audience = extract_text(fields.get("目标人群")).strip()
     character_summary = extract_text(fields.get("角色参考摘要")).strip()
+    rules = extract_text(system_prompt).strip() or STORYBOARD_PROMPT_RULES
     return f"""
-{STORYBOARD_PROMPT_RULES}
+{rules}
 
 Return strict JSON only. Do not wrap it in Markdown.
+Return final image-generation prompts directly; do not output partial structured fragments.
 JSON schema:
 {{
   "storyboards": [
     {{
       "storyboard_no": 1,
       "time_range": "0-10s",
-      "image_prompt": "Complete English prompt for this 16:9 storyboard production board",
+      "image_prompt": "Complete English prompt for this 16:9 storyboard production board, including the top header section, middle material/reference section, and bottom story/dialogue section",
       "video_prompt": "Prompt for generating a real video segment from this storyboard image and the uploaded product/character/environment references"
     }}
   ]
@@ -314,10 +348,11 @@ def normalize_storyboard_payload(payload: Any) -> Dict[str, Any]:
     for idx, item in enumerate(storyboards, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"storyboards[{idx}] 必须是对象")
+        storyboard_no = int(item.get("storyboard_no") or idx)
         image_prompt = extract_text(item.get("image_prompt")).strip()
         if not image_prompt:
             raise ValueError(f"storyboards[{idx}] 缺少 image_prompt")
-        storyboard_no = int(item.get("storyboard_no") or idx)
+        validate_storyboard_image_prompt(storyboard_no, image_prompt)
         normalized.append({
             "storyboard_no": storyboard_no,
             "time_range": extract_text(item.get("time_range")).strip() or f"Storyboard {storyboard_no:02d}",
@@ -325,6 +360,74 @@ def normalize_storyboard_payload(payload: Any) -> Dict[str, Any]:
             "video_prompt": extract_text(item.get("video_prompt")).strip(),
         })
     return {"storyboards": normalized}
+
+
+def validate_storyboard_image_prompt(storyboard_no: int, image_prompt: str) -> None:
+    has_material_zone = _contains_any_marker(image_prompt, (
+        "第二区块",
+        "素材区",
+        "参考区",
+        "人物参考区",
+        "宠物参考区",
+        "产品参考区",
+        "middle material",
+        "material/reference",
+        "reference section",
+        "reference area",
+        "character reference",
+        "pet reference",
+        "product reference",
+    ))
+    if storyboard_no == 1:
+        missing = []
+        if not _contains_any_marker(image_prompt, ("核心冲突场景", "core conflict", "conflict scene")):
+            missing.append("核心冲突场景")
+        if not _contains_any_marker(image_prompt, (
+            "黄金3秒/戏剧钩子",
+            "黄金3秒",
+            "golden 3",
+            "golden three",
+            "3-second hook",
+            "3s hook",
+            "dramatic hook",
+        )):
+            missing.append("黄金3秒/戏剧钩子")
+        if not has_material_zone:
+            missing.append("素材区")
+        if missing:
+            raise ValueError(f"Storyboard 01 image_prompt 缺少: {', '.join(missing)}")
+        return
+    forbidden = []
+    for labels in (
+        ("核心冲突场景", "Core conflict scene", "Core conflict"),
+        (
+            "黄金3秒/戏剧钩子",
+            "Golden 3-second / dramatic hook",
+            "Golden 3-second dramatic hook",
+            "Golden 3-second hook",
+            "Golden 3s hook",
+            "Dramatic hook",
+        ),
+    ):
+        matched = _find_field_label(image_prompt, labels)
+        if matched:
+            forbidden.append(matched)
+    if forbidden:
+        raise ValueError(f"Storyboard {storyboard_no:02d} image_prompt 不应包含: {', '.join(forbidden)}")
+
+
+def _contains_any_marker(text: str, markers: Iterable[str]) -> bool:
+    text_lower = text.lower()
+    return any(marker.lower() in text_lower for marker in markers)
+
+
+def _find_field_label(text: str, labels: Iterable[str]) -> str:
+    text_lower = text.lower()
+    for label in labels:
+        label_lower = label.lower()
+        if f"{label_lower}:" in text_lower or f"{label_lower}：" in text_lower:
+            return label
+    return ""
 
 
 def _prefixed_omni_model_value(model: str = DEFAULT_OMNI_MODEL) -> str:
@@ -406,12 +509,23 @@ def cleanup_child_storyboards(token: str, parent_record_id: str) -> int:
 
 
 def get_text_generation_config(token: str) -> Dict[str, str]:
-    record_id = CONFIG_RECORDS.get("storyboard_video_prompt") or CONFIG_RECORDS.get("shot_script_gen")
+    record_id = CONFIG_RECORDS.get("shot_script_gen")
     if not record_id:
-        raise ValueError("config_records 缺少 storyboard_video_prompt 或 shot_script_gen")
+        raise ValueError("config_records 缺少 shot_script_gen")
     cfg = get_model_config(token, record_id)
     if not cfg.get("api_key"):
         raise ValueError("故事板提示词拆分配置缺少 API Key")
+    cfg["prompt"] = STORYBOARD_PROMPT_RULES
+    cfg["prompt_record_id"] = ""
+    for rec in safe_list_records(token, TABLE_CONFIG):
+        fields = rec.get("fields", {})
+        if extract_text(fields.get("环节")).strip() != SPLIT_STAGE_NAME:
+            continue
+        prompt = extract_text(fields.get("提示词")).strip()
+        if prompt:
+            cfg["prompt"] = prompt
+            cfg["prompt_record_id"] = rec.get("record_id") or rec.get("id") or ""
+        break
     return cfg
 
 
@@ -425,7 +539,8 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
     context = resolve_parent_reference_context(token, fields)
     fields = apply_parent_reference_snapshots(fields, context)
 
-    prompt = build_storyboard_prompt_generation_request(fields)
+    cfg = get_text_generation_config(token)
+    prompt = build_storyboard_prompt_generation_request(fields, system_prompt=cfg.get("prompt") or STORYBOARD_PROMPT_RULES)
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if dry_run:
         summary["status"] = "dry_run_ready"
@@ -437,7 +552,6 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
     }))
 
     if raw_model_output is None:
-        cfg = get_text_generation_config(token)
         client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
         response = with_retry(
             lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),

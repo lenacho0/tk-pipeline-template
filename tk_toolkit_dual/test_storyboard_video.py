@@ -80,33 +80,156 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("核心冲突场景", prompt)
         self.assertIn("黄金3秒/戏剧钩子", prompt)
         self.assertIn("Storyboard 02", prompt)
-        self.assertIn("from Storyboard 02 onward", prompt)
-        self.assertIn("must not include 核心冲突场景", prompt)
-        self.assertIn("derive the Storyboard 01 core conflict scene", prompt)
+        self.assertIn("从 Storyboard 02 开始", prompt)
+        self.assertIn("不得再出现“核心冲突场景”", prompt)
+        self.assertIn("自动提取 Storyboard 01", prompt)
         self.assertNotIn("Core conflict scene:", prompt)
         self.assertNotIn("Golden 3-second / dramatic hook:", prompt)
         self.assertIn("English", prompt)
         self.assertIn("Thai", prompt)
 
-    def test_normalize_storyboard_payload_requires_prompt_and_adds_numbers(self):
+    def test_prompt_generation_request_uses_configured_system_prompt(self):
+        fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
+        prompt = storyboard_video.build_storyboard_prompt_generation_request(
+            fields,
+            system_prompt="CONFIGURED STORYBOARD SYSTEM PROMPT",
+        )
+
+        self.assertIn("CONFIGURED STORYBOARD SYSTEM PROMPT", prompt)
+        self.assertIn("image_prompt", prompt)
+        self.assertIn("Complete English prompt", prompt)
+        self.assertIn("Full finalized script", prompt)
+
+    def test_text_generation_config_uses_split_prompt_without_requiring_api_key(self):
+        with patch.object(storyboard_video, "get_model_config", return_value={
+            "model": "gemini-3.1-pro-preview",
+            "api_key": "sk-text",
+            "api_base": "https://aihubmix.com/gemini",
+            "prompt": "base prompt",
+        }), patch.object(storyboard_video, "safe_list_records", return_value=[
+            {"record_id": "recPrompt", "fields": {"环节": "故事板图片提示词拆分", "提示词": "configured split prompt"}}
+        ]):
+            cfg = storyboard_video.get_text_generation_config("token")
+
+        self.assertEqual(cfg["model"], "gemini-3.1-pro-preview")
+        self.assertEqual(cfg["api_key"], "sk-text")
+        self.assertEqual(cfg["api_base"], "https://aihubmix.com/gemini")
+        self.assertEqual(cfg["prompt"], "configured split prompt")
+        self.assertEqual(cfg["prompt_record_id"], "recPrompt")
+
+    def test_text_generation_config_falls_back_when_split_prompt_empty(self):
+        with patch.object(storyboard_video, "get_model_config", return_value={
+            "model": "gemini-3.1-pro-preview",
+            "api_key": "sk-text",
+            "api_base": "https://aihubmix.com/gemini",
+            "prompt": "base prompt",
+        }), patch.object(storyboard_video, "safe_list_records", return_value=[
+            {"record_id": "recPrompt", "fields": {"环节": "故事板图片提示词拆分", "提示词": ""}}
+        ]):
+            cfg = storyboard_video.get_text_generation_config("token")
+
+        self.assertEqual(cfg["prompt"], storyboard_video.STORYBOARD_PROMPT_RULES)
+        self.assertEqual(cfg["prompt_record_id"], "")
+
+    def test_normalize_storyboard_payload_requires_final_image_prompt_and_adds_numbers(self):
         payload = storyboard_video.normalize_storyboard_payload({
             "storyboards": [
                 {
                     "storyboard_no": 1,
                     "time_range": "0-10s",
-                    "image_prompt": "Create a 16:9 storyboard board for hook.",
+                    "image_prompt": "Storyboard 01 final prompt. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.",
                     "video_prompt": "Animate the real scene from storyboard 01.",
                 },
                 {
                     "time_range": "10-20s",
-                    "image_prompt": "Create a 16:9 storyboard board for demo.",
+                    "image_prompt": "Storyboard 02 final prompt. 第二区块素材区 includes 人物参考区 and 产品参考区.",
                 },
             ]
         })
 
         self.assertEqual(payload["storyboards"][0]["storyboard_no"], 1)
+        self.assertIn("第二区块素材区", payload["storyboards"][0]["image_prompt"])
         self.assertEqual(payload["storyboards"][1]["storyboard_no"], 2)
         self.assertEqual(payload["storyboards"][1]["video_prompt"], "")
+
+    def test_normalize_storyboard_payload_validates_material_zone_and_storyboard_02_header_fields(self):
+        with self.assertRaisesRegex(ValueError, "Storyboard 01.*素材区"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [{
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": "核心冲突场景: conflict. 黄金3秒/戏剧钩子: hook.",
+                }]
+            })
+
+        with self.assertRaisesRegex(ValueError, "Storyboard 02.*核心冲突场景"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [
+                    {
+                        "storyboard_no": 1,
+                        "time_range": "0-10s",
+                        "image_prompt": "第二区块素材区. 核心冲突场景: conflict. 黄金3秒/戏剧钩子: hook.",
+                    },
+                    {
+                        "storyboard_no": 2,
+                        "time_range": "10-20s",
+                        "image_prompt": "第二区块素材区. 核心冲突场景: should not appear.",
+                    },
+                ]
+            })
+
+    def test_normalize_storyboard_payload_accepts_english_final_prompt_markers(self):
+        payload = storyboard_video.normalize_storyboard_payload({
+            "storyboards": [
+                {
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": (
+                        "Complete 16:9 storyboard production board. Top header table includes "
+                        "Core conflict scene: pet odor disaster and Golden 3-second dramatic hook: "
+                        "owner panic. Middle material/reference section includes one human character "
+                        "reference area, one pet reference area, and one product reference area."
+                    ),
+                },
+                {
+                    "storyboard_no": 2,
+                    "time_range": "10-20s",
+                    "image_prompt": (
+                        "Complete 16:9 storyboard production board. Top header table includes only "
+                        "Storyboard number, Time Range, Product name, and Target audience. "
+                        "Middle material/reference section includes character reference area and "
+                        "product reference area."
+                    ),
+                },
+            ]
+        })
+
+        self.assertEqual(payload["storyboards"][0]["storyboard_no"], 1)
+        self.assertIn("Core conflict scene", payload["storyboards"][0]["image_prompt"])
+
+    def test_normalize_storyboard_payload_rejects_storyboard_02_english_header_fields(self):
+        with self.assertRaisesRegex(ValueError, "Storyboard 02.*Core conflict scene"):
+            storyboard_video.normalize_storyboard_payload({
+                "storyboards": [
+                    {
+                        "storyboard_no": 1,
+                        "time_range": "0-10s",
+                        "image_prompt": (
+                            "Top header table includes Core conflict scene: pet odor disaster and "
+                            "Golden 3-second dramatic hook: owner panic. Middle material/reference "
+                            "section includes character reference area and product reference area."
+                        ),
+                    },
+                    {
+                        "storyboard_no": 2,
+                        "time_range": "10-20s",
+                        "image_prompt": (
+                            "Top header table includes Core conflict scene: should not appear. "
+                            "Middle material/reference section includes product reference area."
+                        ),
+                    },
+                ]
+            })
 
     def test_child_records_are_same_table_segments_and_trigger_image_only_first(self):
         payload = storyboard_video.normalize_storyboard_payload({
@@ -114,13 +237,13 @@ class StoryboardVideoTests(unittest.TestCase):
                 {
                     "storyboard_no": 1,
                     "time_range": "0-10s",
-                    "image_prompt": "Prompt one",
+                    "image_prompt": "Prompt one. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.",
                     "video_prompt": "Video one",
                 },
                 {
                     "storyboard_no": 2,
                     "time_range": "10-20s",
-                    "image_prompt": "Prompt two",
+                    "image_prompt": "Prompt two. 第二区块素材区 includes 产品参考区.",
                     "video_prompt": "Video two",
                 },
             ]
@@ -142,7 +265,8 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertEqual(records[0]["fields"]["视频生成状态"], "不触发")
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
         self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
-        self.assertEqual(records[1]["fields"]["故事板图片提示词"], "Prompt two")
+        self.assertEqual(records[0]["fields"]["故事板图片提示词"], "Prompt one. 第二区块素材区 includes 人物参考区, 宠物参考区, 产品参考区. 核心冲突场景: Pet urine disaster. 黄金3秒/戏剧钩子: Owner breaks down.")
+        self.assertEqual(records[1]["fields"]["故事板图片提示词"], "Prompt two. 第二区块素材区 includes 产品参考区.")
 
     def test_collect_reference_images_uses_storyboard_then_product_character_environment_and_caps_at_7(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -492,19 +616,40 @@ class StoryboardVideoTests(unittest.TestCase):
              patch.object(bootstrap_config, "safe_list_records", return_value=[
                  {"record_id": "rec_image", "fields": {"环节": "故事板图片生成-OTU"}}
              ]), \
-             patch.object(bootstrap_config, "config_field_names", return_value={"环节", "模型名称", "API Key", "API 代理地址", "调用方式", "状态", "备注"}), \
+             patch.object(bootstrap_config, "config_field_names", return_value={"环节", "模型名称", "API Key", "API 代理地址", "调用方式", "状态", "备注", "提示词"}), \
              patch.dict(os.environ, {"STORYBOARD_VIDEO_OTU_API_KEY": "sk-test"}, clear=False), \
              patch.object(bootstrap_config, "create_config_record", side_effect=lambda token, fields, existing_fields: created.append(fields) or "rec_new"), \
              patch("tk_bootstrap_storyboard_video_config.print") as printer:
             bootstrap_config.main()
 
-        self.assertEqual(len(created), 1)
-        self.assertEqual(created[0]["环节"], "故事板视频生成-Omni")
-        self.assertEqual(created[0]["模型名称"], "omni_flash-10s")
-        self.assertEqual(created[0]["API 代理地址"], "https://otuapi.com")
+        self.assertEqual([item["环节"] for item in created], ["故事板图片提示词拆分", "故事板视频生成-Omni"])
+        self.assertIn("强制视觉网格排版", created[0]["提示词"])
+        self.assertIn("第二区块", created[0]["提示词"])
+        self.assertIn("素材区", created[0]["提示词"])
+        self.assertIn("image_prompt", created[0]["提示词"])
+        self.assertNotIn("API Key", created[0])
+        self.assertEqual(created[1]["模型名称"], "omni_flash-10s")
+        self.assertEqual(created[1]["API 代理地址"], "https://otuapi.com")
         printed = printer.call_args.args[0]
         self.assertIn("故事板视频生成-Omni", printed)
         self.assertNotIn("sk-test", printed)
+
+    def test_bootstrap_split_prompt_does_not_require_otu_api_key(self):
+        created = []
+        with patch.object(bootstrap_config, "get_feishu_token", return_value="token"), \
+             patch.object(bootstrap_config, "safe_list_records", return_value=[
+                 {"record_id": "rec_image", "fields": {"环节": "故事板图片生成-OTU"}},
+                 {"record_id": "rec_video", "fields": {"环节": "故事板视频生成-Omni"}},
+             ]), \
+             patch.object(bootstrap_config, "config_field_names", return_value={"环节", "调用方式", "状态", "备注", "提示词"}), \
+             patch.dict(os.environ, {}, clear=True), \
+             patch.object(bootstrap_config, "create_config_record", side_effect=lambda token, fields, existing_fields: created.append(fields) or "rec_new"):
+            bootstrap_config.main()
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["环节"], "故事板图片提示词拆分")
+        self.assertIn("Return strict JSON only", created[0]["提示词"])
+        self.assertIn("第二区块", created[0]["提示词"])
 
 
 if __name__ == "__main__":
