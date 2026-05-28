@@ -78,17 +78,17 @@ def complete_storyboard_prompt(storyboard_no=1, *, include_hook=True) -> str:
     start = (storyboard_no - 1) * 10
     end = storyboard_no * 10
     return f"""
-【强制垫图指令】：接下来的所有画面生成，必须100%严格参考我随附上传的【人物照片】、【宠物照片】和【产品照片】。绝对禁止 AI 自行发散捏造人物长相、宠物外观、服装和产品外观，产品绝不可变形脱相！
+【强制垫图指令】：接下来的所有画面生成，必须100%严格参考我随附上传的【人物照片】、【宠物照片】、【产品照片】和【环境参考】。绝对禁止 AI 自行发散捏造人物长相、宠物外观、服装、产品外观和场景环境，产品绝不可变形脱相，场景绝不可随镜头更换！
 
 第一区块（顶部表头，横向占满全宽）：短视频带货分镜制作。顶部表头字段：{top_fields}。
 Time Range: {start}-{end}s.
 
-第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度。
+第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区、固定环境参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度；固定环境参考区展示同一个主要场景、主要家具、背景锚点、问题发生位置和光线氛围。
 
 第三区块（核心分镜区，横向占满全宽）：Storyboard {storyboard_no:02d}：微剧情分镜（{start}-{end}s）。下方根据脚本实际镜头数量划分镜头网格，不固定为5个镜头。
 每个镜头网格内部从上到下严格包含：
 顶部栏：镜头编号及名称。
-画面区：带货分镜配图，严格按照脚本剧情顺序排布，场景需符合目标国家/地区【泰国】的真实生活环境与家居风格。
+画面区：带货分镜配图，严格按照脚本剧情顺序排布，场景需符合目标国家/地区【泰国】的真实生活环境与家居风格，所有镜头必须发生在同一个固定场景中，并保留固定环境参考区的背景锚点。
 底部表格：时间轴、景别、运镜（强调快推和主观视角）、画面内容（强调动作交互，绝不可省略此项）、情绪（从抓狂到极度惊喜的巨大反转）、日常口语化对白。
 """.strip()
 
@@ -108,6 +108,9 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertNotIn("Golden 3-second / dramatic hook:", prompt)
         self.assertIn("英文", prompt)
         self.assertIn("泰文", prompt)
+        self.assertIn("固定环境参考区", prompt)
+        self.assertIn("环境参考", prompt)
+        self.assertIn("所有镜头必须发生在同一个固定场景中", prompt)
 
     def test_prompt_generation_request_uses_configured_system_prompt(self):
         fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
@@ -183,7 +186,7 @@ class StoryboardVideoTests(unittest.TestCase):
                     "time_range": "0-10s",
                     "image_prompt": complete_storyboard_prompt(1)
                     .replace(
-                        "第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度。",
+                        "第二区块（中部素材区）：根据脚本角色放置人物参考区、宠物参考区、产品参考区、固定环境参考区。每个参考区展示正面、面部/局部特写、服装或外观特征、产品正面和其它角度；固定环境参考区展示同一个主要场景、主要家具、背景锚点、问题发生位置和光线氛围。",
                         "第二区块：根据脚本角色放置素材。"
                     )
                     .replace("人物参考区", "人物素材")
@@ -216,14 +219,14 @@ class StoryboardVideoTests(unittest.TestCase):
                     "storyboard_no": 1,
                     "time_range": "0-10s",
                     "image_prompt": (
-                        "【强制垫图指令】：strictly use uploaded people, pet, and product photos. "
+                        "【强制垫图指令】：strictly use uploaded people, pet, product photos, and environment reference. "
                         "Complete 16:9 storyboard production board. Top header table includes "
                         "Core conflict scene: pet odor disaster and Golden 3-second dramatic hook: "
                         "owner panic. Middle material/reference section includes one human character "
-                        "reference area, one pet reference area, and one product reference area. "
+                        "reference area, one pet reference area, one product reference area, and one fixed environment reference area. "
                         "Core storyboard section contains micro-drama storyboard grid cells. Each shot grid "
                         "includes a top bar with shot number and name, an image area with commerce storyboard "
-                        "illustration in a realistic Thailand home, and a bottom table with Timeline, Shot size, "
+                        "illustration in a realistic Thailand home with the same fixed scene and background anchors, and a bottom table with Timeline, Shot size, "
                         "Camera movement, Visual content, Emotion, and colloquial dialogue."
                     ),
                 },
@@ -231,13 +234,13 @@ class StoryboardVideoTests(unittest.TestCase):
                     "storyboard_no": 2,
                     "time_range": "10-20s",
                     "image_prompt": (
-                        "【强制垫图指令】：strictly use uploaded people, pet, and product photos. "
+                        "【强制垫图指令】：strictly use uploaded people, pet, product photos, and environment reference. "
                         "Complete 16:9 storyboard production board. Top header table includes only "
                         "Storyboard number, Time Range, Product name, and Target audience. "
                         "Middle material/reference section includes character reference area and "
-                        "product reference area. Core storyboard section contains micro-drama storyboard "
+                        "product reference area plus fixed environment reference area. Core storyboard section contains micro-drama storyboard "
                         "grid cells. Each shot grid includes a top bar with shot number and name, an image "
-                        "area with commerce storyboard illustration in a realistic Thailand home, and a "
+                        "area with commerce storyboard illustration in a realistic Thailand home with the same fixed scene and background anchors, and a "
                         "bottom table with Timeline, Shot size, Camera movement, Visual content, Emotion, "
                         "and colloquial dialogue."
                     ),
@@ -352,6 +355,18 @@ Storyboard 02 Prompt:
         self.assertEqual(records[0]["fields"]["故事板图片提示词"], complete_storyboard_prompt(1))
         self.assertEqual(records[1]["fields"]["故事板图片提示词"], complete_storyboard_prompt(2, include_hook=False))
 
+    def test_split_storyboards_requires_environment_image_before_calling_model(self):
+        fields = dict(parent_fields())
+        fields["环境图"] = []
+
+        with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+             patch.object(storyboard_video, "safe_get_record", return_value=fields), \
+             patch.object(storyboard_video, "get_text_generation_config") as get_config:
+            with self.assertRaisesRegex(ValueError, "环境图必须上传"):
+                storyboard_video.split_storyboards("recParent")
+
+        get_config.assert_not_called()
+
     def test_collect_reference_images_uses_storyboard_then_product_character_environment_and_caps_at_7(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -399,6 +414,7 @@ Storyboard 02 Prompt:
         self.assertEqual(context["character_tokens"], ["ft_human_1a", "ft_human_2a", "ft_pet_1a", "ft_pet_2a"])
         self.assertEqual([character["name"] for character in context["characters"]], ["Thai man 1", "Thai woman 1", "Orange cat", "White dog"])
         self.assertEqual([character["type"] for character in context["characters"]], ["人类", "人类", "宠物", "宠物"])
+        self.assertEqual(context["environment_tokens"], ["ft_environment"])
 
         prompt = storyboard_video.build_storyboard_prompt_generation_request(
             storyboard_video.apply_parent_reference_snapshots(dict(multi_model_parent_fields()), context)
@@ -444,8 +460,8 @@ Storyboard 02 Prompt:
                 tmp_path / "human_2.png",
                 tmp_path / "pet_1.png",
                 tmp_path / "pet_2.png",
+                tmp_path / "environment.png",
                 tmp_path / "product_2.png",
-                tmp_path / "product_3.png",
             ])
 
             refs = storyboard_video.collect_parent_reference_images(
@@ -458,11 +474,11 @@ Storyboard 02 Prompt:
 
         self.assertEqual(
             [ref["role"] for ref in refs],
-            ["product:1", "character:1", "character:2", "character:3", "character:4", "product:2", "product:3"],
+            ["product:1", "character:1", "character:2", "character:3", "character:4", "environment:1", "product:2"],
         )
         self.assertEqual(
             [call.args[1] for call in download.call_args_list],
-            ["ft_product_1", "ft_human_1a", "ft_human_2a", "ft_pet_1a", "ft_pet_2a", "ft_product_2", "ft_product_3"],
+            ["ft_product_1", "ft_human_1a", "ft_human_2a", "ft_pet_1a", "ft_pet_2a", "ft_environment", "ft_product_2"],
         )
 
     def test_omni_reference_images_reserve_one_slot_for_storyboard_and_cap_parent_refs_at_6(self):
@@ -491,7 +507,7 @@ Storyboard 02 Prompt:
 
         self.assertEqual(
             [ref["role"] for ref in refs],
-            ["storyboard", "product:1", "character:1", "character:2", "character:3", "character:4", "product:2"],
+            ["storyboard", "product:1", "character:1", "character:2", "character:3", "character:4", "environment:1"],
         )
         self.assertEqual(len(refs), 7)
 
@@ -508,6 +524,55 @@ Storyboard 02 Prompt:
                     else {"模特名称": record_id, "模特照片": [{"file_token": f"ft_{record_id}"}]}
                 ),
             )
+
+    def test_parent_reference_images_require_environment_image(self):
+        fields = dict(parent_fields())
+        fields["环境图"] = []
+
+        with self.assertRaisesRegex(ValueError, "环境图必须上传"):
+            storyboard_video.collect_parent_reference_images(
+                "token",
+                fields,
+                Path("/tmp"),
+                download_fn=Mock(),
+                get_record_fn=fake_parent_lookup,
+            )
+
+    def test_render_storyboard_image_requires_parent_environment_before_otu_submit(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图片提示词": complete_storyboard_prompt(1),
+        }
+        parent = dict(parent_fields())
+        parent["环境图"] = []
+
+        def fake_safe_get_record(token, table_id, record_id):
+            if record_id == "recChild":
+                return child_fields
+            if record_id == "recParent":
+                return parent
+            raise AssertionError(record_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "safe_get_record", side_effect=fake_safe_get_record), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(storyboard_video, "submit_otu_image_task") as submitter:
+                with self.assertRaisesRegex(ValueError, "环境图必须上传"):
+                    storyboard_video.render_storyboard_image("recChild")
+
+        submitter.assert_not_called()
+
+    def test_build_image_reference_note_marks_environment_as_required_anchor(self):
+        note = storyboard_video.build_image_reference_note([
+            {"role": "product:1"},
+            {"role": "character:1"},
+            {"role": "environment:1"},
+        ])
+
+        self.assertIn("environment reference", note)
+        self.assertIn("fixed location", note)
+        self.assertIn("background anchors", note)
 
     def test_build_omni_video_prompt_rejects_rendering_storyboard_board(self):
         prompt = storyboard_video.build_omni_video_prompt(
@@ -666,7 +731,11 @@ Omni Video Prompt:
         with self.assertRaisesRegex(ValueError, "recMissingPhoto.*缺少模特照片"):
             storyboard_video.resolve_parent_reference_context(
                 "token",
-                {"关联产品记录": [{"record_ids": ["recProduct"]}], "选择模特": [{"record_ids": ["recMissingPhoto"]}]},
+                {
+                    "关联产品记录": [{"record_ids": ["recProduct"]}],
+                    "选择模特": [{"record_ids": ["recMissingPhoto"]}],
+                    "环境图": [{"file_token": "ft_environment"}],
+                },
                 get_record_fn=lambda token, table_id, record_id: (
                     {"产品图片": [{"file_token": "ft_product"}]}
                     if record_id == "recProduct"
@@ -730,6 +799,9 @@ Omni Video Prompt:
 
         self.assertEqual([item["环节"] for item in created], ["故事板图片提示词拆分-Gemini", "故事板视频生成-Omni"])
         self.assertIn("强制视觉网格排版", created[0]["提示词"])
+        self.assertIn("固定环境参考区", created[0]["提示词"])
+        self.assertIn("环境参考", created[0]["提示词"])
+        self.assertIn("所有镜头必须发生在同一个固定场景中", created[0]["提示词"])
         self.assertIn("第二区块", created[0]["提示词"])
         self.assertIn("素材区", created[0]["提示词"])
         self.assertIn("每个镜头网格内部", created[0]["提示词"])

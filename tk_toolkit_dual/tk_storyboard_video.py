@@ -140,6 +140,13 @@ def _require_link_ids(fields: Dict[str, Any], field_name: str, label: str) -> Li
     return ids
 
 
+def _require_attachment_tokens(fields: Dict[str, Any], field_name: str, label: str) -> List[str]:
+    tokens = _extract_attachment_tokens(fields.get(field_name))
+    if not tokens:
+        raise ValueError(f"{field_name}必须上传至少 1 张{label}")
+    return tokens
+
+
 def _first_text(fields: Dict[str, Any], names: Iterable[str]) -> str:
     for name in names:
         value = extract_text(fields.get(name)).strip()
@@ -158,6 +165,7 @@ def resolve_parent_reference_context(
 ) -> Dict[str, Any]:
     product_record_id = _require_single_link(parent_fields, "关联产品记录", "产品")
     model_record_ids = _require_link_ids(parent_fields, "选择模特", "模特")
+    environment_tokens = _require_attachment_tokens(parent_fields, "环境图", "环境参考图")
     product_fields = get_record_fn(token, product_table_id, product_record_id)
 
     product_tokens = _extract_attachment_tokens(product_fields.get("产品图片"))
@@ -191,7 +199,7 @@ def resolve_parent_reference_context(
         "product_tokens": product_tokens,
         "characters": characters,
         "character_tokens": [character["photo_token"] for character in characters],
-        "environment_tokens": _extract_attachment_tokens(parent_fields.get("环境图")),
+        "environment_tokens": environment_tokens,
     }
 
 
@@ -335,6 +343,7 @@ Keep every selected human/pet character consistent across all storyboards. Do no
 - 【强制垫图指令】
 - 顶部表头
 - 中部素材区
+- 固定环境参考区
 - 核心分镜区
 - 微剧情分镜
 - 镜头网格
@@ -408,6 +417,15 @@ def validate_storyboard_image_prompt(storyboard_no: int, image_prompt: str) -> N
     ))
     if not has_material_zone:
         missing.append("素材区")
+    if not _contains_any_marker(image_prompt, (
+        "固定环境参考区",
+        "环境参考",
+        "固定场景",
+        "environment reference",
+        "fixed environment",
+        "fixed scene",
+    )):
+        missing.append("固定环境参考区")
     if not _contains_any_marker(image_prompt, ("核心分镜区", "微剧情分镜", "core storyboard", "storyboard grid")):
         missing.append("核心分镜区")
     if not _contains_any_marker(image_prompt, ("镜头网格", "shot grid", "storyboard grid", "grid cells")):
@@ -658,14 +676,16 @@ def collect_parent_reference_images(
     context = resolve_parent_reference_context(token, parent_fields, get_record_fn=get_record_fn)
     product_tokens = context["product_tokens"]
     character_tokens = context["character_tokens"]
+    environment_tokens = context["environment_tokens"]
     required = [{"role": "product:1", "file_token": product_tokens[0]}]
     required.extend(
         {"role": f"character:{idx}", "file_token": file_token}
         for idx, file_token in enumerate(character_tokens, start=1)
     )
+    required.append({"role": "environment:1", "file_token": environment_tokens[0]})
     if len(required) > max_count:
         raise ValueError(
-            f"参考图数量超过上限：第一张产品图 + 已选模特图共 {len(required)} 张，"
+            f"参考图数量超过上限：第一张产品图 + 已选模特图 + 环境图共 {len(required)} 张，"
             f"当前最多可用 {max_count} 张；请减少模特数量"
         )
 
@@ -676,7 +696,7 @@ def collect_parent_reference_images(
     )
     optional.extend(
         {"role": f"environment:{idx}", "file_token": file_token}
-        for idx, file_token in enumerate(context["environment_tokens"], start=1)
+        for idx, file_token in enumerate(environment_tokens[1:], start=2)
     )
     selected = required + optional[: max_count - len(required)]
 
@@ -719,7 +739,10 @@ def build_image_reference_note(refs: List[Dict[str, str]]) -> str:
         elif role.startswith("character"):
             lines.append(f"Reference image {idx} = character reference. Keep the same character identity, face/body/pet traits, outfit, and visual style.")
         elif role.startswith("environment"):
-            lines.append(f"Reference image {idx} = environment reference. Keep the same location, lighting logic, props, and atmosphere when relevant.")
+            lines.append(
+                f"Reference image {idx} = environment reference. Treat it as the fixed location anchor: keep the same room, furniture, "
+                "background anchors, problem spot, lighting logic, props, and atmosphere across every storyboard and shot."
+            )
     lines.append("Use all references as identity anchors, not optional inspiration.")
     return "\n".join(lines)
 
