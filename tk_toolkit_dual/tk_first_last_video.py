@@ -1102,18 +1102,9 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, record_id)
     ensure_active_child_or_single(fields)
     prompt = extract_text(fields.get("首尾帧生视频提示词")).strip()
-    if not prompt:
-        raise ValueError("首尾帧生视频提示词为空")
-    first_frame_token = extract_text(fields.get("首帧图file_token")).strip()
-    last_frame_token = extract_text(fields.get("尾帧图file_token")).strip()
-    if not first_frame_token:
-        raise ValueError("缺少当前首帧图file_token，无法生成首尾帧视频")
-    if not last_frame_token:
-        raise ValueError("缺少当前尾帧图file_token，无法生成首尾帧视频")
+    existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     version = current_version(fields, "视频版本")
     work_dir = ensure_stage_work_dir(record_id, "video", version)
-    first_frame_path = download_feishu_media(token, first_frame_token, work_dir / f"{record_id}_video_first_frame_v{version}.png")
-    last_frame_path = download_feishu_media(token, last_frame_token, work_dir / f"{record_id}_video_last_frame_v{version}.png")
     _, cfg = get_stage_config(
         VIDEO_STAGE_NAME,
         default_model=DEFAULT_OTU_MODEL,
@@ -1134,35 +1125,59 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         "prompt_chars": len(prompt),
         "output_path": output_path,
     }
+    if existing_task_id:
+        summary["existing_task_id"] = existing_task_id
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
 
     field_types = get_table_field_types(token, TABLE_FIRST_LAST_VIDEO)
-    start_fields = video_result_reset_fields("生成中")
-    start_fields.update({
-        "视频通道": "OTU",
-        "视频生成模型": f"OTU / {cfg.get('model') or DEFAULT_OTU_MODEL}",
-        "视频生成状态": "生成中",
-        "视频版本": version,
-        "视频错误信息": "",
-    })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
-    task_id, submit_body = submit_first_last_video_task(
-        cfg,
-        prompt,
-        str(first_frame_path),
-        str(last_frame_path),
-        seconds=seconds,
-        size=size,
-        aspect_ratio=aspect_ratio,
-    )
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
-        "视频任务ID": task_id,
-        "视频版本": version,
-        "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
-        "视频错误信息": f"已提交 OTU 首尾帧视频任务，正在轮询。task_id={task_id}",
-    }))
+    if existing_task_id:
+        task_id = existing_task_id
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "视频通道": "OTU",
+            "视频生成模型": f"OTU / {cfg.get('model') or DEFAULT_OTU_MODEL}",
+            "视频生成状态": "生成中",
+            "视频任务ID": task_id,
+            "视频版本": version,
+            "视频错误信息": f"恢复轮询已有 OTU 首尾帧视频任务。task_id={task_id}",
+            "错误信息": "",
+        }))
+    else:
+        if not prompt:
+            raise ValueError("首尾帧生视频提示词为空")
+        first_frame_token = extract_text(fields.get("首帧图file_token")).strip()
+        last_frame_token = extract_text(fields.get("尾帧图file_token")).strip()
+        if not first_frame_token:
+            raise ValueError("缺少当前首帧图file_token，无法生成首尾帧视频")
+        if not last_frame_token:
+            raise ValueError("缺少当前尾帧图file_token，无法生成首尾帧视频")
+        first_frame_path = download_feishu_media(token, first_frame_token, work_dir / f"{record_id}_video_first_frame_v{version}.png")
+        last_frame_path = download_feishu_media(token, last_frame_token, work_dir / f"{record_id}_video_last_frame_v{version}.png")
+        start_fields = video_result_reset_fields("生成中")
+        start_fields.update({
+            "视频通道": "OTU",
+            "视频生成模型": f"OTU / {cfg.get('model') or DEFAULT_OTU_MODEL}",
+            "视频生成状态": "生成中",
+            "视频版本": version,
+            "视频错误信息": "",
+        })
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
+        task_id, submit_body = submit_first_last_video_task(
+            cfg,
+            prompt,
+            str(first_frame_path),
+            str(last_frame_path),
+            seconds=seconds,
+            size=size,
+            aspect_ratio=aspect_ratio,
+        )
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "视频任务ID": task_id,
+            "视频版本": version,
+            "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
+            "视频错误信息": f"已提交 OTU 首尾帧视频任务，正在轮询。task_id={task_id}",
+        }))
     result = poll_otu_video_task(cfg, task_id)
     video_url = extract_video_url(result)
     if not video_url:

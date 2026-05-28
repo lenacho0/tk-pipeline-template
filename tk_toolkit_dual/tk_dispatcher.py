@@ -315,7 +315,6 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
-        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
         'skip_deprecated_records': True,
         'skip_if_field_values': {'记录类型': ['母任务']},
     },

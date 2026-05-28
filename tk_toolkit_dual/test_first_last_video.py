@@ -158,7 +158,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
             self.assertEqual(watches[name]["script"], "tk_first_last_video.py")
             self.assertEqual(watches[name]["args"], args)
 
-        self.assertEqual(watches["首尾帧视频生成"]["claim_clear_fields"], ["视频任务ID", "视频生成原始响应JSON"])
+        self.assertNotIn("claim_clear_fields", watches["首尾帧视频生成"])
+        claim_fields = dispatcher.apply_claim_clear_fields({"视频生成状态": "生成中"}, watches["首尾帧视频生成"])
+        self.assertEqual(claim_fields, {"视频生成状态": "生成中"})
         self.assertEqual(watches["首尾帧首帧图生成"]["skip_if_field_values"]["记录类型"], ["母任务"])
         self.assertTrue(watches["首尾帧首帧图生成"]["skip_deprecated_records"])
 
@@ -580,6 +582,7 @@ video prompt exactly
         self.assertEqual(patch_fields["首尾帧视频"], [])
         self.assertIsNone(patch_fields["首尾帧视频URL"])
         self.assertEqual(patch_fields["首尾帧视频file_token"], "")
+        self.assertEqual(patch_fields["视频任务ID"], "")
         self.assertEqual(patch_fields["视频生成状态"], "待生成")
         self.assertEqual(patch_fields["视频操作"], "不触发")
 
@@ -847,6 +850,53 @@ video prompt exactly
         self.assertEqual(kwargs["data"]["prompt"], "video prompt")
         self.assertEqual(kwargs["data"]["seconds"], "6")
         self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
+
+    def test_render_video_resumes_existing_otu_task_without_resubmitting(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "首尾帧生视频提示词": "video prompt",
+            "首帧图file_token": "ft_first",
+            "尾帧图file_token": "ft_last",
+            "视频生成状态": "生成中",
+            "视频任务ID": "task_existing",
+            "视频版本": 2,
+            "目标时长秒": 6,
+        }
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "get_stage_config", return_value=("rec_cfg", {
+                 "api_key": "sk",
+                 "api_base": "https://otuapi.com",
+                 "model": "veo_3_1-fast-fl",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             })), \
+             patch.object(first_last, "get_table_field_types", return_value={"首尾帧视频URL": 1}), \
+             patch.object(first_last, "submit_first_last_video_task") as submitter, \
+             patch.object(first_last, "download_feishu_media") as download_media, \
+             patch.object(first_last, "poll_otu_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}) as poller, \
+             patch.object(first_last, "download_video", return_value="/tmp/video.mp4") as downloader, \
+             patch.object(first_last, "upload_video_to_feishu", return_value="ft_video") as uploader, \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.render_video("rec1")
+
+        submitter.assert_not_called()
+        download_media.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing")
+        downloader.assert_called_once_with("https://x.test/video.mp4", result["output_path"])
+        uploader.assert_called_once()
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_existing")
+        self.assertEqual(updates[0]["视频任务ID"], "task_existing")
+        self.assertIn("恢复轮询", updates[0]["视频错误信息"])
+        self.assertEqual(updates[-1]["视频生成状态"], "成功")
+        self.assertEqual(updates[-1]["首尾帧视频file_token"], "ft_video")
 
 
 if __name__ == "__main__":
