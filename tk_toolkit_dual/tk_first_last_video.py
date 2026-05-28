@@ -1071,29 +1071,33 @@ def submit_first_last_video_task(
 ) -> Tuple[str, Dict[str, Any]]:
     url = videos_url(config.get("api_base") or DEFAULT_OTU_API_BASE)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
-    with open(first_frame_path, "rb") as first_file, open(last_frame_path, "rb") as last_file:
-        files = [
-            ("input_reference[]", (os.path.basename(first_frame_path), first_file, "image/png")),
-            ("input_reference[]", (os.path.basename(last_frame_path), last_file, "image/png")),
-        ]
-        data = {
-            "model": config.get("model") or DEFAULT_OTU_MODEL,
-            "prompt": prompt,
-            "seconds": seconds,
-            "size": size or DEFAULT_OTU_SIZE,
-            "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
-        }
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
-    try:
-        body = resp.json()
-    except Exception:
-        body = {"raw_text": resp.text[:1000]}
-    if resp.status_code >= 400:
-        raise RuntimeError(f"OTU 首尾帧视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
-    task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
-    if not task_id:
-        raise RuntimeError(f"OTU 首尾帧视频任务提交未返回任务 ID: {str(body)[:1200]}")
-    return task_id, body
+
+    def _submit_once() -> Tuple[str, Dict[str, Any]]:
+        with open(first_frame_path, "rb") as first_file, open(last_frame_path, "rb") as last_file:
+            files = [
+                ("input_reference[]", (os.path.basename(first_frame_path), first_file, "image/png")),
+                ("input_reference[]", (os.path.basename(last_frame_path), last_file, "image/png")),
+            ]
+            data = {
+                "model": config.get("model") or DEFAULT_OTU_MODEL,
+                "prompt": prompt,
+                "seconds": seconds,
+                "size": size or DEFAULT_OTU_SIZE,
+                "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+            }
+            resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OTU 首尾帧视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+        task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+        if not task_id:
+            raise RuntimeError(f"OTU 首尾帧视频任务提交未返回任务 ID: {str(body)[:1200]}")
+        return task_id, body
+
+    return with_retry(_submit_once, max_attempts=4, label=f"submit first/last OTU video {url}")
 
 
 def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:

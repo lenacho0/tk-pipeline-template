@@ -78,6 +78,7 @@ MAX_POLL_SECONDS = 2400
 SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
+DOWNLOAD_REQUEST_TIMEOUT = (30, 90)
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordUpdater = Callable[[str, str, str, Dict[str, Any]], Any]
@@ -531,7 +532,11 @@ def poll_otu_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
     start = time.time()
     last_body: Dict[str, Any] = {}
     while time.time() - start < MAX_POLL_SECONDS:
-        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        resp = with_retry(
+            lambda: requests.get(url, headers=headers, timeout=POLL_TIMEOUT),
+            max_attempts=4,
+            label=f"poll OTU video {task_id}",
+        )
         try:
             body = resp.json()
         except Exception:
@@ -583,31 +588,38 @@ def extract_video_url(result: Dict[str, Any]) -> str:
 
 
 def download_video(video_url: str, save_path: str) -> str:
-    resp = requests.get(video_url, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
-    if resp.status_code != 200:
-        raise RuntimeError(f"视频下载失败: HTTP {resp.status_code}, url={video_url[:300]}")
-    with open(save_path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-    if os.path.getsize(save_path) < 10000:
-        raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
-    return save_path
+    def _download_once() -> str:
+        resp = requests.get(video_url, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"视频下载失败: HTTP {resp.status_code}, url={video_url[:300]}")
+        with open(save_path, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+        if os.path.getsize(save_path) < 10000:
+            raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
+        return save_path
+
+    return with_retry(_download_once, max_attempts=4, label=f"download video {video_url[:120]}")
 
 
 def download_video_content(config: Dict[str, str], task_id: str, save_path: str) -> str:
     url = video_content_url(config.get("api_base") or DEFAULT_API_BASE, task_id)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
-    resp = requests.get(url, headers=headers, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
-    if resp.status_code != 200:
-        raise RuntimeError(f"视频 content 下载失败: HTTP {resp.status_code}, task_id={task_id}")
-    with open(save_path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-    if os.path.getsize(save_path) < 10000:
-        raise RuntimeError(f"视频 content 下载成功但文件过小: {save_path}")
-    return save_path
+
+    def _download_once() -> str:
+        resp = requests.get(url, headers=headers, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"视频 content 下载失败: HTTP {resp.status_code}, task_id={task_id}")
+        with open(save_path, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+        if os.path.getsize(save_path) < 10000:
+            raise RuntimeError(f"视频 content 下载成功但文件过小: {save_path}")
+        return save_path
+
+    return with_retry(_download_once, max_attempts=4, label=f"download video content {task_id}")
 
 
 def native_veo_api_base(config: Dict[str, str]) -> str:

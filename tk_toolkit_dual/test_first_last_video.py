@@ -851,6 +851,33 @@ video prompt exactly
         self.assertEqual(kwargs["data"]["seconds"], "6")
         self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
 
+    def test_submit_first_last_video_task_retries_transient_network_failure(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
+            first.write(b"first")
+            first.flush()
+            last.write(b"last")
+            last.flush()
+            response = Mock()
+            response.status_code = 200
+            response.json.return_value = {"id": "task_video", "status": "queued"}
+            response.text = '{"id":"task_video"}'
+
+            with patch.object(first_last.requests, "post", side_effect=[first_last.requests.exceptions.SSLError("unexpected eof"), response]) as post, \
+                 patch("common.sleep_backoff"):
+                task_id, body = first_last.submit_first_last_video_task(
+                    {"api_key": "sk", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
+                    "video prompt",
+                    first.name,
+                    last.name,
+                    seconds="6",
+                    size="720x1280",
+                    aspect_ratio="9:16",
+                )
+
+        self.assertEqual(task_id, "task_video")
+        self.assertEqual(body["status"], "queued")
+        self.assertEqual(post.call_count, 2)
+
     def test_render_video_resumes_existing_otu_task_without_resubmitting(self):
         updates = []
         fields = {
