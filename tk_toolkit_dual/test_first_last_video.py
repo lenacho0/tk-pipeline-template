@@ -88,6 +88,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "首尾帧文档附件",
             "目标时长秒",
             "拆分状态",
+            "场景拆分操作",
             "总场景数",
             "错误信息",
         ])
@@ -96,13 +97,69 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "记录状态",
             "批量拆分状态",
             "文档拆分状态",
-            "场景拆分操作",
             "当前批次ID",
             "首帧生图提示词",
             "尾帧生图提示词",
             "首尾帧生视频提示词",
         ]:
             self.assertNotIn(hidden_field, entry_fields)
+
+    def test_workflow_views_keep_related_regeneration_controls_without_filters(self):
+        views = create_table.TABLE_DEFINITION["views"]
+
+        self.assertEqual(list(views.keys()), [
+            "01-用户入口",
+            "02-场景子任务",
+            "03-首帧审核",
+            "04-尾帧审核",
+            "05-视频结果",
+            "99-排错",
+        ])
+        self.assertIn("场景拆分操作", views["01-用户入口"])
+        for field_name in ["场景拆分操作", "首帧图操作", "尾帧图操作", "视频操作"]:
+            self.assertIn(field_name, views["02-场景子任务"])
+            self.assertIn(field_name, views["99-排错"])
+        self.assertIn("首帧图操作", views["03-首帧审核"])
+        self.assertIn("尾帧图操作", views["04-尾帧审核"])
+        self.assertIn("视频操作", views["05-视频结果"])
+        self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
+        self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
+
+    def test_prune_obsolete_views_deletes_only_legacy_first_last_views(self):
+        calls = []
+
+        def fake_run_json(args):
+            calls.append(args)
+            if "+view-list" in args:
+                return {"data": {"views": [
+                    {"id": "vew_default", "name": "Grid View"},
+                    {"id": "vew_entry", "name": "01-用户入口"},
+                    {"id": "vew_old_first", "name": "02-首帧审核"},
+                    {"id": "vew_child", "name": "02-场景子任务"},
+                    {"id": "vew_old_last", "name": "03-尾帧审核"},
+                    {"id": "vew_first", "name": "03-首帧审核"},
+                    {"id": "vew_old_video", "name": "04-视频结果"},
+                    {"id": "vew_last", "name": "04-尾帧审核"},
+                    {"id": "vew_video", "name": "05-视频结果"},
+                    {"id": "vew_debug", "name": "99-排错"},
+                ]}}
+            if "+view-delete" in args:
+                return {"ok": True}
+            raise AssertionError(args)
+
+        with patch.object(create_table, "run_json", side_effect=fake_run_json):
+            deleted = create_table.prune_obsolete_views("app_token", "tbl_first_last")
+
+        self.assertEqual(deleted, ["Grid View", "02-首帧审核", "03-尾帧审核", "04-视频结果"])
+        delete_view_ids = [
+            args[args.index("--view-id") + 1]
+            for args in calls
+            if "+view-delete" in args
+        ]
+        self.assertEqual(delete_view_ids, ["vew_default", "vew_old_first", "vew_old_last", "vew_old_video"])
+        self.assertTrue(all("--yes" in args for args in calls if "+view-delete" in args))
+        self.assertNotIn("vew_entry", delete_view_ids)
+        self.assertNotIn("vew_child", delete_view_ids)
 
     def test_migrate_renamed_fields_renames_batch_split_status_without_duplicate(self):
         calls = []
@@ -132,6 +189,17 @@ class FirstLastVideoTableTests(unittest.TestCase):
         data = json.loads(template_path.read_text(encoding="utf-8"))
 
         self.assertIn("first_last_video", data["feishu"]["tables"])
+
+    def test_create_script_prefers_configured_first_last_table_id(self):
+        configured = {
+            "feishu": {
+                "tables": {
+                    "first_last_video": "tbl_configured",
+                },
+            },
+        }
+        self.assertEqual(create_table.resolve_first_last_table_id(configured, {create_table.TABLE_NAME: "tbl_by_name"}), "tbl_configured")
+        self.assertEqual(create_table.resolve_first_last_table_id({"feishu": {"tables": {}}}, {create_table.TABLE_NAME: "tbl_by_name"}), "tbl_by_name")
 
     def test_dispatcher_has_all_first_last_video_watches(self):
         watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
