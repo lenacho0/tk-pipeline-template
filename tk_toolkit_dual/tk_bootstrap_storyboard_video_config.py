@@ -30,9 +30,9 @@ DEFAULT_API_BASE = "https://otuapi.com"
 DEFAULT_TEXT_API_BASE = "https://aihubmix.com/gemini"
 DEFAULT_TEXT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
-DEFAULT_IMAGE_SIZE = "1024x1024"
+DEFAULT_IMAGE_SIZE = "1280x720"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
-DEFAULT_OMNI_SIZE = "1280x720"
+DEFAULT_OMNI_SIZE = "720x1280"
 DEFAULT_SPLIT_PROMPT = STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT
 DEFAULT_OMNI_VIDEO_PROMPT = STORYBOARD_OMNI_VIDEO_PROMPT
 
@@ -120,11 +120,11 @@ def main() -> None:
             "API Key": api_key,
             "API 代理地址": DEFAULT_API_BASE,
             "画面尺寸": DEFAULT_OMNI_SIZE,
-            "画面比例": "16:9",
+            "画面比例": "9:16",
             "调用方式": "专用 API",
             "状态": "启用",
             "提示词": DEFAULT_OMNI_VIDEO_PROMPT,
-            "备注": "Omni 10s 故事板图生视频配置；模型固定 omni_flash-10s，横屏尺寸由代码默认 1280x720。",
+            "备注": "Omni 10s 故事板图生视频配置；默认竖屏尺寸 720x1280，可由故事板分段记录上的 Omni 参数字段覆盖。",
         },
     ]
     created = []

@@ -93,6 +93,7 @@ WATCH_LIST = [
         'timeout': 900,
         'max_concurrency': 1,
         'max_retries': 1,
+        'required_field_values': {'记录类型': ['母任务']},
     },
     {
         'name': '故事板图片生成',
@@ -107,6 +108,7 @@ WATCH_LIST = [
         'timeout': 1200,
         'max_concurrency': 1,
         'max_retries': 2,
+        'required_field_values': {'记录类型': ['Storyboard分段']},
         'claim_clear_values': {
             '故事板图': [],
             '故事板图片任务ID': '',
@@ -134,6 +136,7 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
+        'required_field_values': {'记录类型': ['Storyboard分段']},
         'claim_clear_values': {
             '分镜视频': [],
             '分镜视频URL': None,

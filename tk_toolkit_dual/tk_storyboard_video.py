@@ -68,7 +68,11 @@ SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
 IMAGE_STAGE_NAME = "故事板图片生成-OTU"
 OMNI_STAGE_NAME = "故事板视频生成-Omni"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
-DEFAULT_OMNI_SIZE = "1280x720"
+DEFAULT_OMNI_SIZE = "720x1280"
+DEFAULT_OMNI_ASPECT_RATIO = "9:16"
+DEFAULT_STORYBOARD_IMAGE_MODEL = DEFAULT_OTU_IMAGE_MODEL
+DEFAULT_STORYBOARD_IMAGE_SIZE = "1280x720"
+DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO = "16:9"
 MAX_REFERENCE_IMAGES = 7
 BASE_WORK_DIR = Path(WORKSPACE) / "storyboard_video_work"
 POLL_INTERVAL = 15
@@ -338,6 +342,13 @@ def build_storyboard_prompt_generation_request(fields: Dict[str, Any], *, system
 
 Keep every selected human/pet character consistent across all storyboards. Do not merge, replace, omit, or casually change any selected character unless the script explicitly calls for a character to be off-screen.
 
+【参考图优先于脚本文字外观】
+本次任务的【关联产品记录】、【选择模特】和【环境图】是视觉身份的最高优先级来源。
+如果脚本里的人物服装、发型、脸型、年龄感、产品瓶型、标签颜色、包装文字、场景家具或光线描述与参考图冲突，必须以参考图为准。
+不得根据脚本自行改写人物服装、脸、发型、体型或宠物外观；只能写“same as the selected character reference image / same outfit as reference image”。
+不得根据脚本自行改写产品瓶型、喷头、标签、颜色、logo、包装比例或文字；只能写“same exact product as the product reference image”。
+角色A/角色B只是剧情身份，不得覆盖所选模特照片里的真实视觉身份。最终 Storyboard Prompt 中如需描述角色外观，必须绑定到参考图，而不是使用脚本文字发散。
+
 【自动化预检硬性要求】
 为确保下游图片生成不会遗漏版式，每段 Storyboard Prompt 必须原样包含以下文本：
 - 【强制垫图指令】
@@ -528,8 +539,14 @@ def build_child_storyboard_records(
             "Storyboard编号": no,
             "Time Range": item["time_range"],
             "故事板图片提示词": item["image_prompt"],
+            "故事板图片模型": DEFAULT_STORYBOARD_IMAGE_MODEL,
+            "故事板图片画面尺寸": DEFAULT_STORYBOARD_IMAGE_SIZE,
+            "故事板图片画面比例": DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
             "故事板图片生成状态": "待生成",
             "视频提示词": item.get("video_prompt", ""),
+            "Omni模型": DEFAULT_OMNI_MODEL,
+            "Omni画面尺寸": DEFAULT_OMNI_SIZE,
+            "Omni画面比例": DEFAULT_OMNI_ASPECT_RATIO,
             "视频生成状态": "不触发",
             "错误信息": "",
         }
@@ -677,12 +694,18 @@ def collect_parent_reference_images(
     product_tokens = context["product_tokens"]
     character_tokens = context["character_tokens"]
     environment_tokens = context["environment_tokens"]
-    required = [{"role": "product:1", "file_token": product_tokens[0]}]
+    required = [{"role": "product:1", "file_token": product_tokens[0], "name": context.get("product_name", "selected product")}]
     required.extend(
-        {"role": f"character:{idx}", "file_token": file_token}
-        for idx, file_token in enumerate(character_tokens, start=1)
+        {
+            "role": f"character:{idx}",
+            "file_token": character["photo_token"],
+            "name": character.get("name") or f"Character {idx}",
+            "type": character.get("type", ""),
+        }
+        for idx, character in enumerate(context.get("characters") or [], start=1)
+        for file_token in [character["photo_token"]]
     )
-    required.append({"role": "environment:1", "file_token": environment_tokens[0]})
+    required.append({"role": "environment:1", "file_token": environment_tokens[0], "name": "selected environment"})
     if len(required) > max_count:
         raise ValueError(
             f"参考图数量超过上限：第一张产品图 + 已选模特图 + 环境图共 {len(required)} 张，"
@@ -691,11 +714,11 @@ def collect_parent_reference_images(
 
     optional: List[Dict[str, str]] = []
     optional.extend(
-        {"role": f"product:{idx}", "file_token": file_token}
+        {"role": f"product:{idx}", "file_token": file_token, "name": context.get("product_name", "selected product")}
         for idx, file_token in enumerate(product_tokens[1:], start=2)
     )
     optional.extend(
-        {"role": f"environment:{idx}", "file_token": file_token}
+        {"role": f"environment:{idx}", "file_token": file_token, "name": "selected environment"}
         for idx, file_token in enumerate(environment_tokens[1:], start=2)
     )
     selected = required + optional[: max_count - len(required)]
@@ -705,7 +728,13 @@ def collect_parent_reference_images(
         safe_role = item["role"].replace(":", "_")
         local_path = task_dir / f"reference_{safe_role}.png"
         downloaded = download_fn(token, item["file_token"], str(local_path))
-        refs.append({"role": item["role"], "path": _downloaded_path(downloaded, local_path), "file_token": item["file_token"]})
+        refs.append({
+            "role": item["role"],
+            "path": _downloaded_path(downloaded, local_path),
+            "file_token": item["file_token"],
+            "name": item.get("name", ""),
+            "type": item.get("type", ""),
+        })
     return refs
 
 
@@ -731,20 +760,94 @@ def collect_omni_reference_images(
 
 
 def build_image_reference_note(refs: List[Dict[str, str]]) -> str:
-    lines = []
+    lines = [
+        "Highest-priority visual rule: reference images override the storyboard text.",
+        "Ignore any conflicting text in the storyboard prompt about character outfit, face, hair, body, product bottle shape, label, color, logo, packaging, furniture, or lighting.",
+        "Use the text prompt only for layout, sequence, actions, timing, emotion, and dialogue.",
+    ]
     for idx, ref in enumerate(refs, start=1):
         role = ref.get("role", "reference")
+        name = ref.get("name", "").strip()
+        name_note = f" ({name})" if name else ""
         if role.startswith("product"):
-            lines.append(f"Reference image {idx} = product reference. Keep product packaging, shape, label, color, logo, and proportions unchanged.")
+            lines.append(
+                f"Reference image {idx} = product reference{name_note}. Copy this exact product. "
+                "Keep packaging, bottle shape, nozzle, label, color, logo, text placement, and proportions unchanged; do not redraw it as a different product."
+            )
         elif role.startswith("character"):
-            lines.append(f"Reference image {idx} = character reference. Keep the same character identity, face/body/pet traits, outfit, and visual style.")
+            lines.append(
+                f"Reference image {idx} = character reference{name_note}. Copy this exact selected model/pet identity. "
+                "Keep the same face, hair, body, outfit, clothing color, footwear, and visual style; do not replace with script-invented clothing."
+            )
         elif role.startswith("environment"):
             lines.append(
-                f"Reference image {idx} = environment reference. Treat it as the fixed location anchor: keep the same room, furniture, "
+                f"Reference image {idx} = environment reference{name_note}. Treat it as the fixed location anchor: keep the same room, furniture, "
                 "background anchors, problem spot, lighting logic, props, and atmosphere across every storyboard and shot."
             )
     lines.append("Use all references as identity anchors, not optional inspiration.")
     return "\n".join(lines)
+
+
+def _render_reference_contact_sheet(refs: List[Dict[str, str]], out_path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageOps
+
+    tiles = []
+    for ref in refs:
+        path = ref.get("path", "")
+        if not path or not os.path.exists(path):
+            continue
+        with Image.open(path) as img:
+            tiles.append((ref, img.convert("RGB").copy()))
+    if not tiles:
+        raise ValueError("缺少可用参考图，无法生成参考图索引板")
+
+    tile_w, tile_h = 520, 420
+    label_h = 44
+    cols = min(4, len(tiles))
+    rows = (len(tiles) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * tile_w, rows * (tile_h + label_h)), "white")
+    draw = ImageDraw.Draw(sheet)
+
+    for idx, (ref, img) in enumerate(tiles):
+        col = idx % cols
+        row = idx // cols
+        x = col * tile_w
+        y = row * (tile_h + label_h)
+        label = f"{idx + 1}. {ref.get('role', 'reference')}"
+        if ref.get("name"):
+            label += f" - {ref['name']}"
+        draw.rectangle([x, y, x + tile_w - 1, y + label_h - 1], fill=(0, 110, 100))
+        draw.text((x + 12, y + 12), label[:70], fill="white")
+        fitted = ImageOps.contain(img, (tile_w - 20, tile_h - 20))
+        px = x + (tile_w - fitted.width) // 2
+        py = y + label_h + (tile_h - fitted.height) // 2
+        sheet.paste(fitted, (px, py))
+        draw.rectangle([x, y, x + tile_w - 1, y + tile_h + label_h - 1], outline=(200, 200, 200), width=2)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out_path)
+
+
+def build_reference_contact_sheet(refs: List[Dict[str, str]], out_path: Path) -> str:
+    _render_reference_contact_sheet(refs, out_path)
+    return str(out_path)
+
+
+def resolve_storyboard_image_record_parameters(fields: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "model": extract_text(fields.get("故事板图片模型")).strip() or DEFAULT_STORYBOARD_IMAGE_MODEL,
+        "size": extract_text(fields.get("故事板图片画面尺寸")).strip() or DEFAULT_STORYBOARD_IMAGE_SIZE,
+        "aspect_ratio": extract_text(fields.get("故事板图片画面比例")).strip() or DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
+    }
+
+
+def missing_storyboard_image_default_fields(fields: Dict[str, Any]) -> Dict[str, str]:
+    defaults = {
+        "故事板图片模型": DEFAULT_STORYBOARD_IMAGE_MODEL,
+        "故事板图片画面尺寸": DEFAULT_STORYBOARD_IMAGE_SIZE,
+        "故事板图片画面比例": DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
+    }
+    return {name: value for name, value in defaults.items() if not extract_text(fields.get(name)).strip()}
 
 
 def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -762,20 +865,34 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     refs = collect_parent_reference_images(token, parent_fields, work_dir)
     reference_urls = build_reference_urls(token, refs)
     prompt = f"{build_image_reference_note(refs)}\n\n{prompt}".strip()
-    summary = {"record_id": record_id, "dry_run": dry_run, "reference_count": len(refs), "prompt_chars": len(prompt)}
+    record_params = resolve_storyboard_image_record_parameters(fields)
+    model_name = normalize_image_model_choice(record_params["model"])
+    size = record_params["size"]
+    aspect_ratio = record_params["aspect_ratio"]
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "reference_count": len(refs),
+        "model": model_name,
+        "size": size,
+        "aspect_ratio": aspect_ratio,
+        "prompt_chars": len(prompt),
+    }
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
+
+    primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
 
     _, cfg = get_stage_config(
         IMAGE_STAGE_NAME,
         default_model=DEFAULT_OTU_IMAGE_MODEL,
         default_api_base=DEFAULT_OTU_API_BASE,
-        default_size=DEFAULT_OTU_IMAGE_SIZE,
+        default_size=DEFAULT_STORYBOARD_IMAGE_SIZE,
     )
-    model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         **image_regeneration_reset_fields(),
+        **missing_storyboard_image_default_fields(fields),
         "故事板图片生成状态": "生成中",
         "故事板图片错误信息": "",
     }))
@@ -784,9 +901,14 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
         prompt,
         input_mode="image-to-image" if refs else "text-to-image",
-        image_path=refs[0]["path"] if refs else "",
-        metadata={"urls": reference_urls, "reference_roles": [ref["role"] for ref in refs], "aspectRatio": "16:9"},
-        size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+        image_path=primary_reference_path if refs else "",
+        metadata={
+            "urls": reference_urls,
+            "reference_roles": [ref["role"] for ref in refs],
+            "aspectRatio": aspect_ratio,
+            "aspect_ratio": aspect_ratio,
+        },
+        size=size,
     )
     if submit_task_id:
         safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
@@ -817,6 +939,23 @@ def build_omni_video_prompt(child_fields: Dict[str, Any], parent_fields: Dict[st
     return parse_omni_video_prompt_template(system_prompt or OMNI_VIDEO_PROMPT_RULES)
 
 
+def resolve_omni_record_parameters(fields: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "model": extract_text(fields.get("Omni模型")).strip() or DEFAULT_OMNI_MODEL,
+        "size": extract_text(fields.get("Omni画面尺寸")).strip() or DEFAULT_OMNI_SIZE,
+        "aspect_ratio": extract_text(fields.get("Omni画面比例")).strip() or DEFAULT_OMNI_ASPECT_RATIO,
+    }
+
+
+def missing_omni_default_fields(fields: Dict[str, Any]) -> Dict[str, str]:
+    defaults = {
+        "Omni模型": DEFAULT_OMNI_MODEL,
+        "Omni画面尺寸": DEFAULT_OMNI_SIZE,
+        "Omni画面比例": DEFAULT_OMNI_ASPECT_RATIO,
+    }
+    return {name: value for name, value in defaults.items() if not extract_text(fields.get(name)).strip()}
+
+
 def videos_url(api_base: str) -> str:
     base = (api_base or DEFAULT_OTU_API_BASE).rstrip("/")
     if base.endswith("/v1/videos"):
@@ -836,17 +975,20 @@ def submit_omni_video_task(
     refs: List[Dict[str, str]],
     *,
     size: str = DEFAULT_OMNI_SIZE,
+    aspect_ratio: str = DEFAULT_OMNI_ASPECT_RATIO,
 ) -> Tuple[str, Dict[str, Any]]:
     if not refs:
         raise ValueError("Omni 图生视频至少需要 1 张参考图")
     url = videos_url(config.get("api_base") or DEFAULT_OTU_API_BASE)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     opened = []
-    files: List[Tuple[str, Tuple[Any, ...]]] = [
-        ("model", (None, config.get("model") or DEFAULT_OMNI_MODEL)),
-        ("prompt", (None, prompt)),
-        ("size", (None, size or DEFAULT_OMNI_SIZE)),
-    ]
+    data = {
+        "model": config.get("model") or DEFAULT_OMNI_MODEL,
+        "prompt": prompt,
+        "size": size or DEFAULT_OMNI_SIZE,
+        "aspect_ratio": aspect_ratio or DEFAULT_OMNI_ASPECT_RATIO,
+    }
+    files: List[Tuple[str, Tuple[Any, ...]]] = []
     try:
         for ref in refs[:7]:
             path = ref.get("path", "")
@@ -855,7 +997,7 @@ def submit_omni_video_task(
             f = open(path, "rb")
             opened.append(f)
             files.append(("input_reference[]", (os.path.basename(path), f, "image/png")))
-        resp = requests.post(url, headers=headers, files=files, timeout=SUBMIT_TIMEOUT)
+        resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
     finally:
         for f in opened:
             f.close()
@@ -940,8 +1082,10 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     refs = collect_omni_reference_images(token, fields, parent_fields, work_dir)
     _, cfg = get_stage_config(OMNI_STAGE_NAME, default_model=DEFAULT_OMNI_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OMNI_SIZE)
     prompt = build_omni_video_prompt(fields, parent_fields, system_prompt=cfg.get("prompt") or OMNI_VIDEO_PROMPT_RULES)
-    cfg["model"] = cfg.get("model") or DEFAULT_OMNI_MODEL
-    size = cfg.get("size") or DEFAULT_OMNI_SIZE
+    record_params = resolve_omni_record_parameters(fields)
+    cfg["model"] = record_params["model"]
+    size = record_params["size"]
+    aspect_ratio = record_params["aspect_ratio"]
     output_path = str(work_dir / f"{record_id}_omni.mp4")
     summary = {
         "record_id": record_id,
@@ -949,6 +1093,7 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "reference_count": len(refs),
         "model": cfg["model"],
         "size": size,
+        "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
         "output_path": output_path,
     }
@@ -959,10 +1104,12 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     field_types = get_table_field_types(token, TABLE_STORYBOARD_VIDEO)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         **video_regeneration_reset_fields(),
+        **missing_omni_default_fields(fields),
+        "视频提示词": prompt[:10000],
         "视频生成状态": "生成中",
         "视频错误信息": "",
     }))
-    task_id, submit_body = submit_omni_video_task(cfg, prompt, refs, size=size)
+    task_id, submit_body = submit_omni_video_task(cfg, prompt, refs, size=size, aspect_ratio=aspect_ratio)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         "视频任务ID": task_id,
         "视频错误信息": f"已提交 Omni 图生视频任务，正在轮询。task_id={task_id}",

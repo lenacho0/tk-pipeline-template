@@ -111,6 +111,9 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("固定环境参考区", prompt)
         self.assertIn("环境参考", prompt)
         self.assertIn("所有镜头必须发生在同一个固定场景中", prompt)
+        self.assertIn("参考图优先于脚本文字外观", prompt)
+        self.assertIn("不得根据脚本自行改写人物服装", prompt)
+        self.assertIn("不得根据脚本自行改写产品瓶型", prompt)
 
     def test_prompt_generation_request_uses_configured_system_prompt(self):
         fields = dict(parent_fields(), **{"产品名称": "Pet odor spray", "目标人群": "Thai pet owners"})
@@ -353,7 +356,19 @@ Storyboard 02 Prompt:
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
         self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
         self.assertEqual(records[0]["fields"]["故事板图片提示词"], complete_storyboard_prompt(1))
+        self.assertEqual(records[0]["fields"]["故事板图片模型"], "gpt-image-2")
+        self.assertEqual(records[0]["fields"]["故事板图片画面尺寸"], "1280x720")
+        self.assertEqual(records[0]["fields"]["故事板图片画面比例"], "16:9")
+        self.assertEqual(records[0]["fields"]["Omni模型"], "omni_flash-10s")
+        self.assertEqual(records[0]["fields"]["Omni画面尺寸"], "720x1280")
+        self.assertEqual(records[0]["fields"]["Omni画面比例"], "9:16")
         self.assertEqual(records[1]["fields"]["故事板图片提示词"], complete_storyboard_prompt(2, include_hook=False))
+        self.assertEqual(records[1]["fields"]["故事板图片模型"], "gpt-image-2")
+        self.assertEqual(records[1]["fields"]["故事板图片画面尺寸"], "1280x720")
+        self.assertEqual(records[1]["fields"]["故事板图片画面比例"], "16:9")
+        self.assertEqual(records[1]["fields"]["Omni模型"], "omni_flash-10s")
+        self.assertEqual(records[1]["fields"]["Omni画面尺寸"], "720x1280")
+        self.assertEqual(records[1]["fields"]["Omni画面比例"], "9:16")
 
     def test_split_storyboards_requires_environment_image_before_calling_model(self):
         fields = dict(parent_fields())
@@ -565,14 +580,135 @@ Storyboard 02 Prompt:
 
     def test_build_image_reference_note_marks_environment_as_required_anchor(self):
         note = storyboard_video.build_image_reference_note([
-            {"role": "product:1"},
-            {"role": "character:1"},
-            {"role": "environment:1"},
+            {"role": "product:1", "name": "Pet spray"},
+            {"role": "character:1", "name": "Thai model"},
+            {"role": "environment:1", "name": "Living room"},
         ])
 
         self.assertIn("environment reference", note)
         self.assertIn("fixed location", note)
         self.assertIn("background anchors", note)
+        self.assertIn("Ignore any conflicting text", note)
+        self.assertIn("Pet spray", note)
+        self.assertIn("Thai model", note)
+
+    def test_reference_contact_sheet_contains_all_references_as_primary_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            refs = []
+            for idx, role in enumerate(["product:1", "character:1", "character:2", "environment:1"], start=1):
+                path = tmp_path / f"ref_{idx}.png"
+                path.write_bytes(b"not-real-image")
+                refs.append({"role": role, "path": str(path)})
+            out_path = tmp_path / "contact.png"
+
+            with patch.object(storyboard_video, "_render_reference_contact_sheet") as renderer:
+                result = storyboard_video.build_reference_contact_sheet(refs, out_path)
+
+        self.assertEqual(result, str(out_path))
+        renderer.assert_called_once_with(refs, out_path)
+
+    def test_render_storyboard_image_uses_record_parameters(self):
+        updates = []
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图片提示词": complete_storyboard_prompt(1),
+            "故事板图片模型": "gpt-image-2-2K",
+            "故事板图片画面尺寸": "1280x720",
+            "故事板图片画面比例": "16:9",
+        }
+
+        def fake_safe_get_record(token, table_id, record_id):
+            if record_id == "recChild":
+                return child_fields
+            if record_id == "recParent":
+                return parent_fields()
+            raise AssertionError(record_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            product = tmp_path / "product.png"
+            character = tmp_path / "character.png"
+            environment = tmp_path / "environment.png"
+            for path in (product, character, environment):
+                path.write_bytes(b"image")
+
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_storyboard"), \
+                 patch.object(storyboard_video, "safe_get_record", side_effect=fake_safe_get_record), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
+                 patch.object(storyboard_video, "collect_parent_reference_images", return_value=[
+                     {"role": "product:1", "path": str(product)},
+                     {"role": "character:1", "path": str(character)},
+                     {"role": "environment:1", "path": str(environment)},
+                 ]), \
+                 patch.object(storyboard_video, "build_reference_urls", return_value=["https://ref/product.png", "https://ref/character.png", "https://ref/environment.png"]), \
+                 patch.object(storyboard_video, "get_stage_config", return_value=("cfg_image", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "wrong", "size": "wrong"})), \
+                 patch.object(storyboard_video, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+                 patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(storyboard_video, "build_reference_contact_sheet", return_value=str(tmp_path / "contact.png")) as contact_sheet, \
+                 patch.object(storyboard_video, "submit_otu_image_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
+                 patch.object(storyboard_video, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/storyboard.png"}), \
+                 patch.object(storyboard_video, "download_otu_image_result"), \
+                 patch.object(storyboard_video, "upload_image_to_feishu", return_value="ft_story"), \
+                 patch.object(storyboard_video, "ensure_record_current_generation"):
+                result = storyboard_video.render_storyboard_image("recChild")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["model"], "gpt-image-2-2K")
+        self.assertEqual(result["size"], "1280x720")
+        self.assertEqual(result["aspect_ratio"], "16:9")
+        submitter.assert_called_once()
+        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["image_path"], str(tmp_path / "contact.png"))
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertIn("environment:1", submitter.call_args.kwargs["metadata"]["reference_roles"])
+        contact_sheet.assert_called_once()
+        submitted_prompt = submitter.call_args.args[1]
+        self.assertIn("reference images override the storyboard text", submitted_prompt)
+        self.assertIn("Ignore any conflicting text", submitted_prompt)
+
+    def test_render_storyboard_image_falls_back_to_specific_defaults_for_old_records(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图片提示词": complete_storyboard_prompt(1),
+            "故事板图片模型": "",
+            "故事板图片画面尺寸": "",
+            "故事板图片画面比例": "",
+        }
+
+        def fake_safe_get_record(token, table_id, record_id):
+            if record_id == "recChild":
+                return child_fields
+            if record_id == "recParent":
+                return parent_fields()
+            raise AssertionError(record_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            ref = tmp_path / "ref.png"
+            ref.write_bytes(b"image")
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_storyboard"), \
+                 patch.object(storyboard_video, "safe_get_record", side_effect=fake_safe_get_record), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
+                 patch.object(storyboard_video, "collect_parent_reference_images", return_value=[{"role": "environment:1", "path": str(ref)}]), \
+                 patch.object(storyboard_video, "build_reference_urls", return_value=["https://ref/environment.png"]), \
+                 patch.object(storyboard_video, "get_stage_config", return_value=("cfg_image", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "wrong", "size": "wrong"})), \
+                 patch.object(storyboard_video, "safe_update_record"), \
+                 patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(storyboard_video, "build_reference_contact_sheet", return_value=str(tmp_path / "contact.png")), \
+                 patch.object(storyboard_video, "submit_otu_image_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
+                 patch.object(storyboard_video, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/storyboard.png"}), \
+                 patch.object(storyboard_video, "download_otu_image_result"), \
+                 patch.object(storyboard_video, "upload_image_to_feishu", return_value="ft_story"), \
+                 patch.object(storyboard_video, "ensure_record_current_generation"):
+                storyboard_video.render_storyboard_image("recChild")
+
+        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
 
     def test_build_omni_video_prompt_rejects_rendering_storyboard_board(self):
         prompt = storyboard_video.build_omni_video_prompt(
@@ -607,7 +743,7 @@ Omni Video Prompt:
         self.assertNotIn("extra video direction", prompt)
         self.assertNotIn("board prompt", prompt)
 
-    def test_submit_omni_video_task_uses_multipart_without_seconds(self):
+    def test_submit_omni_video_task_uses_multipart_with_size_and_aspect_ratio_without_seconds(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as story, tempfile.NamedTemporaryFile(suffix=".png") as product:
             story.write(b"story")
             story.flush()
@@ -623,7 +759,8 @@ Omni Video Prompt:
                     {"api_base": "https://otuapi.com", "api_key": "sk-test", "model": "omni_flash-10s"},
                     "prompt text",
                     [{"role": "storyboard", "path": story.name}, {"role": "product:1", "path": product.name}],
-                    size="1280x720",
+                    size="720x1280",
+                    aspect_ratio="9:16",
                 )
 
         self.assertEqual(task_id, "task_omni")
@@ -631,12 +768,102 @@ Omni Video Prompt:
         args, kwargs = post.call_args
         self.assertEqual(args[0], "https://otuapi.com/v1/videos")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk-test")
+        self.assertEqual(kwargs["data"], {
+            "model": "omni_flash-10s",
+            "prompt": "prompt text",
+            "size": "720x1280",
+            "aspect_ratio": "9:16",
+        })
         form_fields = kwargs["files"]
-        self.assertEqual(form_fields[0], ("model", (None, "omni_flash-10s")))
-        self.assertEqual(form_fields[1], ("prompt", (None, "prompt text")))
-        self.assertEqual(form_fields[2], ("size", (None, "1280x720")))
-        self.assertNotIn("seconds", [item[0] for item in form_fields])
-        self.assertEqual([item[0] for item in form_fields if item[0] == "input_reference[]"], ["input_reference[]", "input_reference[]"])
+        self.assertNotIn("seconds", kwargs["data"])
+        self.assertEqual([item[0] for item in form_fields], ["input_reference[]", "input_reference[]"])
+
+    def test_render_omni_video_uses_record_parameters_and_writes_prompt(self):
+        updates = []
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图": [{"file_token": "ft_story"}],
+            "Omni模型": "omni_flash-10s",
+            "Omni画面尺寸": "1280x720",
+            "Omni画面比例": "16:9",
+        }
+
+        def fake_safe_get_record(token, table_id, record_id):
+            if record_id == "recChild":
+                return child_fields
+            if record_id == "recParent":
+                return parent_fields()
+            raise AssertionError(record_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            story = tmp_path / "story.png"
+            story.write_bytes(b"story")
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_storyboard"), \
+                 patch.object(storyboard_video, "safe_get_record", side_effect=fake_safe_get_record), \
+                 patch.object(storyboard_video, "parent_fields_with_reference_snapshots", side_effect=lambda token, fields: fields), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
+                 patch.object(storyboard_video, "collect_omni_reference_images", return_value=[{"role": "storyboard", "path": str(story)}]), \
+                 patch.object(storyboard_video, "get_stage_config", return_value=("cfg_video", {"api_key": "sk", "api_base": "https://otuapi.com", "prompt": "Omni Video Prompt:\nCONFIG PROMPT"})), \
+                 patch.object(storyboard_video, "get_table_field_types", return_value={"分镜视频URL": 0}), \
+                 patch.object(storyboard_video, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+                 patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(storyboard_video, "submit_omni_video_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
+                 patch.object(storyboard_video, "poll_omni_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}), \
+                 patch.object(storyboard_video, "download_video"), \
+                 patch.object(storyboard_video, "upload_video_to_feishu", return_value="ft_video"), \
+                 patch.object(storyboard_video, "ensure_record_current_generation"):
+                result = storyboard_video.render_omni_video("recChild")
+
+        self.assertEqual(result["status"], "success")
+        submitter.assert_called_once()
+        self.assertEqual(submitter.call_args.args[0]["model"], "omni_flash-10s")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        prompt_updates = [item["视频提示词"] for item in updates if "视频提示词" in item]
+        self.assertEqual(prompt_updates, ["CONFIG PROMPT"])
+
+    def test_render_omni_video_falls_back_to_specific_defaults_for_old_records(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图": [{"file_token": "ft_story"}],
+            "Omni模型": "",
+            "Omni画面尺寸": "",
+            "Omni画面比例": "",
+        }
+
+        def fake_safe_get_record(token, table_id, record_id):
+            if record_id == "recChild":
+                return child_fields
+            if record_id == "recParent":
+                return parent_fields()
+            raise AssertionError(record_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            story = tmp_path / "story.png"
+            story.write_bytes(b"story")
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_storyboard"), \
+                 patch.object(storyboard_video, "safe_get_record", side_effect=fake_safe_get_record), \
+                 patch.object(storyboard_video, "parent_fields_with_reference_snapshots", side_effect=lambda token, fields: fields), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
+                 patch.object(storyboard_video, "collect_omni_reference_images", return_value=[{"role": "storyboard", "path": str(story)}]), \
+                 patch.object(storyboard_video, "get_stage_config", return_value=("cfg_video", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "wrong", "size": "wrong", "prompt": "Omni Video Prompt:\nCONFIG PROMPT"})), \
+                 patch.object(storyboard_video, "get_table_field_types", return_value={"分镜视频URL": 0}), \
+                 patch.object(storyboard_video, "safe_update_record"), \
+                 patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(storyboard_video, "submit_omni_video_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
+                 patch.object(storyboard_video, "poll_omni_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}), \
+                 patch.object(storyboard_video, "download_video"), \
+                 patch.object(storyboard_video, "upload_video_to_feishu", return_value="ft_video"), \
+                 patch.object(storyboard_video, "ensure_record_current_generation"):
+                storyboard_video.render_omni_video("recChild")
+
+        self.assertEqual(submitter.call_args.args[0]["model"], "omni_flash-10s")
+        self.assertEqual(submitter.call_args.kwargs["size"], "720x1280")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "9:16")
 
     def test_table_definition_has_single_mixed_parent_child_table(self):
         field_names = [field["name"] for field in create_table.STORYBOARD_VIDEO_FIELDS]
@@ -665,12 +892,43 @@ Omni Video Prompt:
         self.assertIn("故事板图片生成状态", field_names)
         self.assertIn("视频生成状态", field_names)
         self.assertIn("分镜视频", field_names)
+        field_by_name = {field["name"]: field for field in create_table.STORYBOARD_VIDEO_FIELDS}
+        self.assertEqual([opt["name"] for opt in field_by_name["故事板图片模型"]["options"]], ["gpt-image-2", "gpt-image-2-2K", "gpt-image-2-4K"])
+        self.assertEqual([opt["name"] for opt in field_by_name["故事板图片画面尺寸"]["options"]], ["1280x720", "720x1280", "1024x1024"])
+        self.assertEqual([opt["name"] for opt in field_by_name["故事板图片画面比例"]["options"]], ["16:9", "9:16", "1:1"])
+        self.assertEqual([opt["name"] for opt in field_by_name["Omni模型"]["options"]], ["omni_flash-10s"])
+        self.assertEqual([opt["name"] for opt in field_by_name["Omni画面尺寸"]["options"]], ["720x1280", "1280x720"])
+        self.assertEqual([opt["name"] for opt in field_by_name["Omni画面比例"]["options"]], ["9:16", "16:9"])
+        image_view = create_table.TABLE_DEFINITION["views"]["02-故事板图片"]
+        self.assertIn("故事板图片模型", image_view)
+        self.assertIn("故事板图片画面尺寸", image_view)
+        self.assertIn("故事板图片画面比例", image_view)
+        self.assertLess(image_view.index("故事板图片提示词"), image_view.index("故事板图片模型"))
+        self.assertLess(image_view.index("故事板图片画面比例"), image_view.index("故事板图片生成状态"))
+        omni_view = create_table.TABLE_DEFINITION["views"]["03-Omni视频"]
+        self.assertIn("Omni模型", omni_view)
+        self.assertIn("Omni画面尺寸", omni_view)
+        self.assertIn("Omni画面比例", omni_view)
+        self.assertLess(omni_view.index("视频提示词"), omni_view.index("Omni模型"))
+        self.assertLess(omni_view.index("Omni画面比例"), omni_view.index("视频生成状态"))
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "storyboard_video")
         self.assertEqual(create_table.TABLE_DEFINITION["views"]["01-母任务入口"], [
             "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分状态", "错误信息",
         ])
         self.assertIn("02-故事板图片", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-Omni视频", create_table.TABLE_DEFINITION["views"])
+        self.assertEqual(create_table.VIEW_FILTERS["01-母任务入口"], {
+            "logic": "and",
+            "conditions": [["记录类型", "intersects", ["母任务"]]],
+        })
+        self.assertEqual(create_table.VIEW_FILTERS["02-故事板图片"], {
+            "logic": "and",
+            "conditions": [["记录类型", "intersects", ["Storyboard分段"]]],
+        })
+        self.assertEqual(create_table.VIEW_FILTERS["03-Omni视频"], {
+            "logic": "and",
+            "conditions": [["记录类型", "intersects", ["Storyboard分段"]]],
+        })
 
     def test_prune_obsolete_fields_deletes_by_field_id_for_special_names(self):
         calls = []
@@ -691,6 +949,183 @@ Omni Video Prompt:
         delete_call = [call for call in calls if "+field-delete" in call][0]
         self.assertEqual(deleted, ["黄金3秒/戏剧钩子"])
         self.assertEqual(delete_call[delete_call.index("--field-id") + 1], "fldHook")
+
+    def test_backfill_storyboard_omni_defaults_only_updates_empty_segment_fields(self):
+        updates = []
+        records = [
+            {
+                "record_id": "rec_empty",
+                "fields": {
+                    "记录类型": "Storyboard分段",
+                    "Omni模型": "",
+                    "Omni画面尺寸": "",
+                    "Omni画面比例": "",
+                },
+            },
+            {
+                "record_id": "rec_custom",
+                "fields": {
+                    "记录类型": "Storyboard分段",
+                    "Omni模型": "omni_flash-10s",
+                    "Omni画面尺寸": "1280x720",
+                    "Omni画面比例": "16:9",
+                },
+            },
+            {
+                "record_id": "rec_parent",
+                "fields": {
+                    "记录类型": "母任务",
+                    "Omni模型": "",
+                    "Omni画面尺寸": "",
+                    "Omni画面比例": "",
+                },
+            },
+        ]
+
+        with patch.object(create_table, "safe_list_records", return_value=records), \
+             patch.object(create_table, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append((record_id, fields))):
+            updated = create_table.backfill_storyboard_omni_defaults("token", "tbl_storyboard")
+
+        self.assertEqual(updated, 1)
+        self.assertEqual(updates, [(
+            "rec_empty",
+            {
+                "Omni模型": "omni_flash-10s",
+                "Omni画面尺寸": "720x1280",
+                "Omni画面比例": "9:16",
+            },
+        )])
+
+    def test_backfill_storyboard_image_defaults_only_updates_empty_segment_fields(self):
+        updates = []
+        records = [
+            {
+                "record_id": "rec_empty",
+                "fields": {
+                    "记录类型": "Storyboard分段",
+                    "故事板图片模型": "",
+                    "故事板图片画面尺寸": "",
+                    "故事板图片画面比例": "",
+                },
+            },
+            {
+                "record_id": "rec_custom",
+                "fields": {
+                    "记录类型": "Storyboard分段",
+                    "故事板图片模型": "gpt-image-2-2K",
+                    "故事板图片画面尺寸": "720x1280",
+                    "故事板图片画面比例": "9:16",
+                },
+            },
+            {
+                "record_id": "rec_parent",
+                "fields": {
+                    "记录类型": "母任务",
+                    "故事板图片模型": "",
+                    "故事板图片画面尺寸": "",
+                    "故事板图片画面比例": "",
+                },
+            },
+        ]
+
+        with patch.object(create_table, "safe_list_records", return_value=records), \
+             patch.object(create_table, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append((record_id, fields))):
+            updated = create_table.backfill_storyboard_image_defaults("token", "tbl_storyboard")
+
+        self.assertEqual(updated, 1)
+        self.assertEqual(updates, [(
+            "rec_empty",
+            {
+                "故事板图片模型": "gpt-image-2",
+                "故事板图片画面尺寸": "1280x720",
+                "故事板图片画面比例": "16:9",
+            },
+        )])
+
+    def test_backfill_storyboard_record_types_repairs_mixed_parent_child_rows(self):
+        updates = []
+        records = [
+            {
+                "record_id": "rec_child_marked_parent",
+                "fields": {
+                    "记录类型": "母任务",
+                    "父任务记录ID": "recParent",
+                    "故事板图片提示词": "prompt",
+                },
+            },
+            {
+                "record_id": "rec_empty_parent_type",
+                "fields": {
+                    "记录类型": "",
+                    "父任务记录ID": "",
+                    "脚本内容": "script",
+                    "关联产品记录": [{"record_ids": ["recProduct"]}],
+                },
+            },
+            {
+                "record_id": "rec_blank",
+                "fields": {
+                    "记录类型": "",
+                    "父任务记录ID": "",
+                    "脚本内容": "",
+                },
+            },
+            {
+                "record_id": "rec_good_child",
+                "fields": {
+                    "记录类型": "Storyboard分段",
+                    "父任务记录ID": "recParent",
+                },
+            },
+        ]
+
+        with patch.object(create_table, "safe_list_records", return_value=records), \
+             patch.object(create_table, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append((record_id, fields))):
+            updated = create_table.backfill_storyboard_record_types("token", "tbl_storyboard")
+
+        self.assertEqual(updated, 2)
+        self.assertEqual(updates, [
+            ("rec_child_marked_parent", {"记录类型": "Storyboard分段"}),
+            ("rec_empty_parent_type", {"记录类型": "母任务"}),
+        ])
+
+    def test_backfill_storyboard_parent_task_names_only_updates_empty_parents(self):
+        updates = []
+        records = [
+            {"record_id": "recParent123456", "fields": {"记录类型": "母任务", "任务名称": ""}},
+            {"record_id": "recNamed", "fields": {"记录类型": "母任务", "任务名称": "已有名称"}},
+            {"record_id": "recChild", "fields": {"记录类型": "Storyboard分段", "任务名称": ""}},
+        ]
+
+        with patch.object(create_table, "safe_list_records", return_value=records), \
+             patch.object(create_table, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append((record_id, fields))):
+            updated = create_table.backfill_storyboard_parent_task_names("token", "tbl_storyboard")
+
+        self.assertEqual(updated, 1)
+        self.assertEqual(updates, [("recParent123456", {"任务名称": "故事板任务-123456"})])
+
+    def test_storyboard_dispatcher_filters_by_record_type(self):
+        storyboard_watches = {
+            watch["name"]: watch
+            for watch in dispatcher.RAW_WATCH_LIST
+            if watch.get("name") in {"故事板提示词拆分", "故事板图片生成", "故事板Omni视频生成"}
+        }
+
+        self.assertEqual(storyboard_watches["故事板提示词拆分"]["required_field_values"], {"记录类型": ["母任务"]})
+        self.assertEqual(storyboard_watches["故事板图片生成"]["required_field_values"], {"记录类型": ["Storyboard分段"]})
+        self.assertEqual(storyboard_watches["故事板Omni视频生成"]["required_field_values"], {"记录类型": ["Storyboard分段"]})
+
+    def test_resolve_storyboard_table_id_prefers_configured_existing_table_id(self):
+        table_id, created = create_table.resolve_storyboard_table_id(
+            {"feishu": {"tables": {"storyboard_video": "tbl_existing"}}},
+            "base",
+            {"Other Table": "tbl_other"},
+            create_table_fn=Mock(side_effect=AssertionError("should not create table")),
+            fields=[],
+        )
+
+        self.assertEqual(table_id, "tbl_existing")
+        self.assertFalse(created)
 
     def test_resolve_parent_reference_context_uses_linked_product_and_model(self):
         context = storyboard_video.resolve_parent_reference_context(
@@ -814,6 +1249,8 @@ Omni Video Prompt:
         self.assertEqual(created[0]["API Key"], "sk-text")
         self.assertEqual(created[1]["模型名称"], "omni_flash-10s")
         self.assertEqual(created[1]["API 代理地址"], "https://otuapi.com")
+        self.assertEqual(created[1]["画面尺寸"], "720x1280")
+        self.assertEqual(created[1]["画面比例"], "9:16")
         self.assertIn("根据上传图片的核心人物形象", created[1]["提示词"])
         self.assertIn("极度重要（排他指令）", created[1]["提示词"])
         self.assertIn("纯净、无边框、无文字", created[1]["提示词"])
