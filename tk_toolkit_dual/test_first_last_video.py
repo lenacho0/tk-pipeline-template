@@ -229,7 +229,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertNotIn("claim_clear_fields", watches["首尾帧视频生成"])
         claim_fields = dispatcher.apply_claim_clear_fields({"视频生成状态": "生成中"}, watches["首尾帧视频生成"])
         self.assertEqual(claim_fields, {"视频生成状态": "生成中"})
+        self.assertEqual(watches["首尾帧场景重新拆分"]["required_field_values"]["记录类型"], ["", "母任务"])
         self.assertEqual(watches["首尾帧首帧图生成"]["skip_if_field_values"]["记录类型"], ["母任务"])
+        self.assertEqual(watches["首尾帧视频生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertTrue(watches["首尾帧首帧图生成"]["skip_deprecated_records"])
 
     def test_dispatcher_skips_deprecated_first_last_records(self):

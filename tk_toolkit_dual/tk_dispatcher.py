@@ -188,7 +188,7 @@ WATCH_LIST = [
         'max_concurrency': 1,
         'max_retries': 0,
         'skip_deprecated_records': True,
-        'required_field_values': {'记录类型': ['母任务']},
+        'required_field_values': {'记录类型': ['', '母任务']},
     },
     {
         'name': '首尾帧首帧图重生成',
@@ -307,6 +307,7 @@ WATCH_LIST = [
         'table': TABLE_FIRST_LAST_VIDEO,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '视频错误信息',
