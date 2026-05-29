@@ -39,6 +39,7 @@ TABLE_SCRIPT_DOC_REFERENCE_ASSETS = _TABLES.get('script_doc_reference_assets', _
 TABLE_SCRIPT_DOC_SHOTS = _TABLES.get('script_doc_shots', '') # 脚本文档分镜生产
 TABLE_STORYBOARD_VIDEO = _TABLES.get('storyboard_video', '') # 故事板图片/Omni视频生成
 TABLE_FIRST_LAST_VIDEO = _TABLES.get('first_last_video', '') # 首尾帧视频生成
+TABLE_MULTI_ROLE_FIRST_LAST = _TABLES.get('multi_role_first_last', '') # 多角色首尾帧生成
 TABLE_VOICE_LIBRARY = _TABLES.get('voice_library', '')        # 音色库
 TABLE_TEXT_AUDIO = _TABLES.get('text_audio', '')              # 文案转音频
 TABLE_PRODUCT      = _TABLES['product']           # 产品信息

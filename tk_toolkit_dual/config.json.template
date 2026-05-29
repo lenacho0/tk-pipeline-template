@@ -10,6 +10,7 @@
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
       "storyboard_video": "故事板图片视频生成表的 table_id",
       "first_last_video": "首尾帧视频生成表的 table_id",
+      "multi_role_first_last": "多角色首尾帧生成表的 table_id",
       "voice_library": "音色库表的 table_id",
       "text_audio": "文案转音频表的 table_id",
       "product": "产品信息表的 table_id",
