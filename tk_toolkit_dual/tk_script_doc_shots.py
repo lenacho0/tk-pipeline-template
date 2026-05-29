@@ -507,6 +507,64 @@ def build_parse_prompt(parent_fields: Dict[str, Any], raw_script: str, *, system
 """.strip()
 
 
+def build_reference_image_prompt(fields: Dict[str, Any]) -> str:
+    asset_type = extract_text(fields.get("参考类型")).strip().lower()
+    asset_name = extract_text(fields.get("参考名称")).strip()
+    prompt = extract_text(fields.get("参考提示词")).strip()
+    revision_note = extract_text(fields.get("参考图修改要求")).strip()
+    if asset_type == "human":
+        revision_block = ""
+        if revision_note:
+            revision_block = f"""
+
+本次重生成修改要求:
+{revision_note}
+该修改要求只能微调当前人物设定，不能破坏同一角色、超干净白底、无文字水印、九视图人物设定图版式，以及五官、发际线、年龄气质的一致性。
+""".rstrip()
+        return f"""
+纯白干净棚拍背景。以脚本人物描述/参考提示词为唯一角色设定锚点:脸型轮廓(下颌线、颧骨、下巴形状)、眼型、眉形、鼻梁与鼻翼、嘴唇厚薄与嘴角形状、年龄气质必须严格一致;发际线与发型尽量一致。只允许同一个角色，禁止换脸、禁止五官漂移。
+
+角色名称: {asset_name or "human"}
+脚本人物描述/参考提示词:
+{prompt}
+
+版式(单张合成图，干净网格，统一光影与色彩):
+左侧(约60%宽度):三张大图横排列:
+1)全身正视站姿(中性站姿，手臂自然下垂)
+2)全身90°侧视站姿(中性站姿，注意头脚方向要一致)
+3)全身后视站姿(中性站姿，手臂自然下垂)
+右侧(约40%宽度):2x3网格六张头部小图:
+1)头部正面(neutral)
+2)头部背面(back of head，用于发型与头型一致性)
+3)头部左45°(neutral)
+4)头部右45°(neutral)
+5)表情特写:开心/愉悦(happy，笑但克制不夸张)
+6)表情特写:生气/愤怒(angry，眉眼紧张但不夸张变形)
+
+质感与画质:高端写实棚拍/电影级人像质感，眼睛清晰锐利对焦，真实皮肤微观质感(毛孔与细纹，不磨皮不塑料)，全图各分区曝光与色彩一致，8K细节，轻胶片颗粒，超干净白底，脚下干净柔和投影。
+强约束:画面内不允许任何可读文字，不要FRONT/SIDE等标签，不要字幕、不要logo、不要UI叠层、不要水印块;不要多余人物;不要畸形手指/多肢体/脸崩;六张小图必须是同一张脸同一发际线。
+{revision_block}
+""".strip()
+
+    revision_block = ""
+    if revision_note:
+        revision_block = f"""
+
+Revision request:
+{revision_note}
+Keep it consistent with the asset type, asset name, and original prompt.
+""".rstrip()
+    return f"""
+Generate one clean reference image for later storyboard consistency.
+Asset type: {extract_text(fields.get('参考类型'))}
+Asset name: {asset_name}
+Prompt: {prompt}
+
+Output a single image only. No text, watermark, collage, or split panels.
+{revision_block}
+""".strip()
+
+
 def create_records(token: str, table_id: str, records: List[Dict[str, Dict[str, Any]]]) -> int:
     created = 0
     for i in range(0, len(records), 10):
@@ -620,13 +678,14 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     prompt = extract_text(fields.get("参考提示词")).strip()
     if not prompt:
         raise ValueError("参考提示词为空")
+    full_prompt = build_reference_image_prompt(fields)
     cfg = get_model_config(token, CONFIG_RECORDS.get("main_image_otu"))
     model_name = normalize_image_model_choice(cfg["model"] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = cfg["api_key"]
     api_base = cfg["api_base"] or DEFAULT_OTU_API_BASE
     if not api_key:
         raise ValueError("分镜图生成配置缺少 API Key")
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "model": model_name}
+    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(full_prompt), "model": model_name}
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -635,14 +694,6 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         "参考图生成状态": "生成中",
         "错误信息": "",
     }))
-    full_prompt = f"""
-Generate one clean reference image for later storyboard consistency.
-Asset type: {extract_text(fields.get('参考类型'))}
-Asset name: {extract_text(fields.get('参考名称'))}
-Prompt: {prompt}
-
-Output a single image only. No text, watermark, collage, or split panels.
-""".strip()
     work_dir = Path(WORKSPACE) / "script_doc_reference_work" / record_id
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / f"{record_id}_reference.png"

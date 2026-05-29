@@ -206,6 +206,47 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("## 目标参数", prompt)
         self.assertIn("0-4s: hook", prompt)
 
+    def test_human_reference_prompt_uses_character_sheet_layout(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "human",
+            "参考名称": "owner",
+            "参考提示词": "Thai woman in white shirt, anxious but kind",
+        })
+
+        self.assertIn("以脚本人物描述/参考提示词为唯一角色设定锚点", prompt)
+        self.assertIn("左侧(约60%宽度):三张大图横排列", prompt)
+        self.assertIn("右侧(约40%宽度):2x3网格六张头部小图", prompt)
+        self.assertIn("全身正视站姿", prompt)
+        self.assertIn("全身90°侧视站姿", prompt)
+        self.assertIn("全身后视站姿", prompt)
+        self.assertIn("同一张脸同一发际线", prompt)
+        self.assertNotIn("collage, or split panels", prompt)
+
+    def test_human_reference_prompt_appends_revision_note_without_relaxing_constraints(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "human",
+            "参考名称": "owner",
+            "参考提示词": "Thai woman in white shirt",
+            "参考图修改要求": "衣服改成浅蓝色，但不要改变年龄感",
+        })
+
+        self.assertIn("本次重生成修改要求", prompt)
+        self.assertIn("衣服改成浅蓝色，但不要改变年龄感", prompt)
+        self.assertIn("不能破坏同一角色、超干净白底、无文字水印、九视图人物设定图版式", prompt)
+
+    def test_non_human_reference_prompt_keeps_single_image_logic(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "pet",
+            "参考名称": "MoMo",
+            "参考提示词": "white cat with blue eyes",
+            "参考图修改要求": "fur slightly longer",
+        })
+
+        self.assertIn("Generate one clean reference image for later storyboard consistency.", prompt)
+        self.assertIn("Output a single image only. No text, watermark, collage, or split panels.", prompt)
+        self.assertIn("fur slightly longer", prompt)
+        self.assertNotIn("2x3网格六张头部小图", prompt)
+
     def test_collect_reference_images_uses_only_shot_requested_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
