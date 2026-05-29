@@ -467,7 +467,7 @@ WATCH_LIST = [
         'script': 'tk_multi_role_first_last.py',
         'args': ['video'],
         'timeout': 2400,
-        'max_concurrency': 1,
+        'max_concurrency': 2,
         'max_retries': 1,
         'required_field_values': {'记录类型': ['视频片段']},
         'skip_deprecated_records': True,

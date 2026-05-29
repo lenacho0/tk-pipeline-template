@@ -421,6 +421,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(watches["多角色关键帧生成"]["required_field_values"], {"记录类型": ["关键帧"]})
         self.assertEqual(watches["多角色视频片段生成"]["required_field_values"], {"记录类型": ["视频片段"]})
         self.assertEqual(watches["多角色视频片段生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["多角色视频片段生成"]["max_concurrency"], 2)
 
     def test_video_plan_uses_shared_keyframe_for_both_clips(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=3))
