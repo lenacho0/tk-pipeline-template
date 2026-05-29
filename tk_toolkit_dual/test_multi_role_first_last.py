@@ -294,6 +294,68 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(result["task_id"], "task_existing")
         self.assertTrue(any(update.get("关键帧生成状态") == "成功" for update in updates))
 
+    def test_video_clip_resumes_existing_task_id(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 2,
+            "视频任务ID": "task_existing",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
+             patch.object(multi_role, "get_table_field_types", return_value={}), \
+             patch.object(multi_role, "submit_otu_video_task") as submit, \
+             patch.object(multi_role, "download_feishu_media") as download_ref, \
+             patch.object(multi_role, "poll_otu_video_task", return_value={"url": "https://example.com/out.mp4"}) as poll, \
+             patch.object(multi_role, "extract_video_url", return_value="https://example.com/out.mp4"), \
+             patch.object(multi_role, "download_video"), \
+             patch.object(multi_role, "upload_video_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+        submit.assert_not_called()
+        download_ref.assert_not_called()
+        poll.assert_called_once()
+        self.assertEqual(result["task_id"], "task_existing")
+        self.assertEqual(updates[0]["视频任务ID"], "task_existing")
+        self.assertIn("恢复轮询已有 OTU 视频任务", updates[0]["视频错误信息"])
+        self.assertTrue(any(update.get("视频生成状态") == "成功" for update in updates))
+
     def test_regeneration_resets_current_output_and_increments_version(self):
         updates = []
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
@@ -358,6 +420,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(watches["多角色参考图生成"]["required_field_values"], {"记录类型": ["参考资产"]})
         self.assertEqual(watches["多角色关键帧生成"]["required_field_values"], {"记录类型": ["关键帧"]})
         self.assertEqual(watches["多角色视频片段生成"]["required_field_values"], {"记录类型": ["视频片段"]})
+        self.assertEqual(watches["多角色视频片段生成"]["trigger_values"], ["待生成", "生成中"])
 
     def test_video_plan_uses_shared_keyframe_for_both_clips(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=3))

@@ -460,6 +460,7 @@ WATCH_LIST = [
         'table': TABLE_MULTI_ROLE_FIRST_LAST,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '视频错误信息',
