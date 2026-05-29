@@ -778,6 +778,48 @@ video prompt exactly
         self.assertEqual(updates[-1]["首帧图版本"], 2)
         self.assertIn("first_frame_v2", updates[-1]["首帧图本地路径"])
 
+    def test_render_first_frame_resumes_existing_otu_task_without_resubmitting(self):
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+                 patch.object(first_last, "get_feishu_token", return_value="token"), \
+                 patch.object(first_last, "safe_get_record", side_effect=[
+                     {
+                         "记录类型": "场景子任务",
+                         "记录状态": "有效",
+                         "首帧生图提示词": "first prompt",
+                         "首帧图生成状态": "生成中",
+                         "首帧图版本": 2,
+                         "首帧图任务ID": "img_task_existing",
+                         "首帧图原始响应JSON": json.dumps({"submit": {"id": "img_task_existing"}}),
+                     },
+                     {"记录状态": "有效", "首帧图生成状态": "生成中", "首帧图版本": 2, "首帧图任务ID": "img_task_existing"},
+                 ]), \
+                 patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+                 patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
+                 patch.object(first_last, "submit_otu_image_task") as submitter, \
+                 patch.object(first_last, "collect_product_reference_images") as collect_refs, \
+                 patch.object(first_last, "reference_urls_for_refs") as reference_urls, \
+                 patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/first.png"}) as poller, \
+                 patch.object(first_last, "download_otu_image_result") as downloader, \
+                 patch.object(first_last, "upload_image_to_feishu", return_value="ft_first"):
+                result = first_last.render_first_frame("rec1")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "img_task_existing")
+        submitter.assert_not_called()
+        collect_refs.assert_not_called()
+        reference_urls.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "img_task_existing")
+        downloader.assert_called_once()
+        self.assertEqual(updates[0]["首帧图任务ID"], "img_task_existing")
+        self.assertIn("恢复轮询已有 OTU 首帧图任务", updates[0]["首帧图错误信息"])
+        self.assertEqual(updates[-1]["首帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["首帧图file_token"], "ft_first")
+
     def test_collect_product_reference_images_uses_uploaded_product_attachment_without_cropping(self):
         with tempfile.TemporaryDirectory() as tmp:
             work_dir = Path(tmp)

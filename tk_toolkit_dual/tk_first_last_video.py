@@ -94,6 +94,19 @@ def compact_json(value: Any, max_chars: int = 20000) -> str:
     return text[: max_chars - 200] + "\n...TRUNCATED..."
 
 
+def parse_compact_json_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    raw = extract_text(value).strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def ensure_first_last_table() -> None:
     if not TABLE_FIRST_LAST_VIDEO:
         raise RuntimeError("config.json 尚未配置 first_last_video 表 ID")
@@ -826,18 +839,22 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, record_id)
     ensure_active_child_or_single(fields)
     prompt = extract_text(fields.get("首帧生图提示词")).strip()
-    if not prompt:
+    current_status = extract_text(fields.get("首帧图生成状态")).strip()
+    existing_task_id = extract_text(fields.get("首帧图任务ID")).strip() if current_status == "生成中" else ""
+    if not prompt and not existing_task_id:
         raise ValueError("首帧生图提示词为空")
     version = current_version(fields, "首帧图版本")
     work_dir = ensure_stage_work_dir(record_id, "first_frame", version)
-    product_context = resolve_product_reference_context(token, fields, record_id)
+    product_context = None if existing_task_id else resolve_product_reference_context(token, fields, record_id)
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "prompt_chars": len(prompt),
-        "product_record_id": product_context["product_record_id"],
-        "product_reference_count": len(product_context["product_tokens"]),
+        "product_record_id": product_context["product_record_id"] if product_context else "",
+        "product_reference_count": len(product_context["product_tokens"]) if product_context else 0,
     }
+    if existing_task_id:
+        summary["existing_task_id"] = existing_task_id
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -849,47 +866,60 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         default_size=DEFAULT_OTU_IMAGE_SIZE,
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
-    start_fields = first_frame_result_reset_fields("生成中")
-    start_fields.update({
-        "首帧图版本": version,
-        "首帧图生成状态": "生成中",
-        "首帧图错误信息": "",
-        **product_reference_record_fields(product_context),
-    })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
     out_path = str(work_dir / f"{record_id}_first_frame_v{version}.png")
-    product_refs = collect_product_reference_images(token, product_context, work_dir)
-    reference_urls = reference_urls_for_refs(token, product_refs)
-    reference_summary = {
-        "product_record_id": product_context["product_record_id"],
-        "product_name": product_context.get("product_name", ""),
-        "reference_roles": [ref["role"] for ref in product_refs],
-        "reference_file_tokens": [ref["file_token"] for ref in product_refs],
-        "reference_paths": [ref.get("path", "") for ref in product_refs],
-        "reference_urls": reference_urls,
-        "input_mode": "image-to-image",
-        "remote_reference_urls": bool(reference_urls),
-    }
-    submit_task_id, submit_body = submit_otu_image_task(
-        {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
-        prompt,
-        input_mode="image-to-image",
-        image_path=product_refs[0]["path"],
-        metadata={
-            "reference_roles": [ref["role"] for ref in product_refs],
+    if existing_task_id:
+        submit_task_id = existing_task_id
+        previous_raw = parse_compact_json_object(fields.get("首帧图原始响应JSON"))
+        submit_body = previous_raw.get("submit") if isinstance(previous_raw.get("submit"), dict) else {"id": submit_task_id}
+        reference_summary = previous_raw.get("references") if isinstance(previous_raw.get("references"), dict) else {}
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "首帧图任务ID": submit_task_id,
+            "首帧图版本": version,
+            "首帧图生成状态": "生成中",
+            "首帧图错误信息": f"恢复轮询已有 OTU 首帧图任务。task_id={submit_task_id}",
+            "错误信息": "",
+        }))
+    else:
+        start_fields = first_frame_result_reset_fields("生成中")
+        start_fields.update({
+            "首帧图版本": version,
+            "首帧图生成状态": "生成中",
+            "首帧图错误信息": "",
+            **product_reference_record_fields(product_context),
+        })
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
+        product_refs = collect_product_reference_images(token, product_context, work_dir)
+        reference_urls = reference_urls_for_refs(token, product_refs)
+        reference_summary = {
             "product_record_id": product_context["product_record_id"],
-            "product_reference_file_tokens": [ref["file_token"] for ref in product_refs],
-            "urls": reference_urls,
-            "aspectRatio": "9:16",
-        },
-        size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
-    )
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
-        "首帧图任务ID": submit_task_id,
-        "首帧图版本": version,
-        "首帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
-        "首帧图错误信息": f"已提交 OTU 首帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
-    }))
+            "product_name": product_context.get("product_name", ""),
+            "reference_roles": [ref["role"] for ref in product_refs],
+            "reference_file_tokens": [ref["file_token"] for ref in product_refs],
+            "reference_paths": [ref.get("path", "") for ref in product_refs],
+            "reference_urls": reference_urls,
+            "input_mode": "image-to-image",
+            "remote_reference_urls": bool(reference_urls),
+        }
+        submit_task_id, submit_body = submit_otu_image_task(
+            {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
+            prompt,
+            input_mode="image-to-image",
+            image_path=product_refs[0]["path"],
+            metadata={
+                "reference_roles": [ref["role"] for ref in product_refs],
+                "product_record_id": product_context["product_record_id"],
+                "product_reference_file_tokens": [ref["file_token"] for ref in product_refs],
+                "urls": reference_urls,
+                "aspectRatio": "9:16",
+            },
+            size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+        )
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "首帧图任务ID": submit_task_id,
+            "首帧图版本": version,
+            "首帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
+            "首帧图错误信息": f"已提交 OTU 首帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
+        }))
     result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
     result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
     if not result_url:
@@ -909,9 +939,9 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         "首帧图错误信息": "",
         "首帧审核状态": "待确认",
         "错误信息": "",
-        **product_reference_record_fields(product_context),
+        **(product_reference_record_fields(product_context) if product_context else {}),
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
+    summary.update({"status": "success", "task_id": submit_task_id, "file_token": file_token, "output_path": out_path})
     return summary
 
 
