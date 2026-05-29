@@ -19,6 +19,8 @@ POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
 POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
+MAX_SUBMIT_REQUEST_ERRORS = 3
+MAX_POLL_REQUEST_ERRORS = 8
 
 
 def normalize_image_channel(value: Any) -> str:
@@ -128,7 +130,18 @@ def submit_otu_image_task(
     if image_path:
         with open(image_path, "rb") as image_file:
             payload["image_base64"] = base64.b64encode(image_file.read()).decode("ascii")
-    resp = requests.post(url, headers=headers, json=payload, timeout=SUBMIT_TIMEOUT)
+    last_submit_error: Optional[requests.RequestException] = None
+    for attempt in range(1, MAX_SUBMIT_REQUEST_ERRORS + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=SUBMIT_TIMEOUT)
+            break
+        except requests.RequestException as exc:
+            last_submit_error = exc
+            if attempt >= MAX_SUBMIT_REQUEST_ERRORS:
+                raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={exc}") from exc
+            time.sleep(POLL_INTERVAL)
+    else:
+        raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={last_submit_error}")
     try:
         body = resp.json()
     except Exception:
@@ -154,8 +167,21 @@ def poll_otu_image_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     start = time.time()
     last_body: Dict[str, Any] = {}
+    consecutive_request_errors = 0
     while time.time() - start < MAX_POLL_SECONDS:
-        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        try:
+            resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        except requests.RequestException as exc:
+            consecutive_request_errors += 1
+            last_body = {
+                "poll_error": str(exc),
+                "consecutive_request_errors": consecutive_request_errors,
+            }
+            if consecutive_request_errors > MAX_POLL_REQUEST_ERRORS:
+                raise RuntimeError(f"OTU 图片任务轮询网络连续失败: task_id={task_id}, error={exc}") from exc
+            time.sleep(POLL_INTERVAL)
+            continue
+        consecutive_request_errors = 0
         try:
             body = resp.json()
         except Exception:
