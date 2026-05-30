@@ -44,6 +44,7 @@ from common import (  # noqa: E402
     upload_image_to_feishu,
     with_retry,
 )
+import ai_routing  # noqa: E402
 from tk_shot_script_gen import (  # noqa: E402
     build_readable_script,
     extract_json_object,
@@ -618,24 +619,45 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     if not api_key:
         raise ValueError("脚本文档结构化拆分-Gemini 缺少 API Key")
     prompt = build_parse_prompt(fields, raw_script, system_prompt=cfg.get("prompt") or DEFAULT_PARSE_PROMPT)
+    config_records = safe_list_records(token, TABLE_CONFIG) if (not dry_run or ai_routing.record_wants_unified_route(fields)) else []
+    use_unified_route = ai_routing.unified_route_enabled(fields, config_records)
+    unified_route = None
+    if use_unified_route:
+        unified_route = ai_routing.route_from_record(fields, {
+            **cfg,
+            "provider": "AIHubMix",
+            "capability": "文本",
+            "task_type": "脚本解析拆分",
+            "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
+        })
 
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
+    if unified_route:
+        summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if unified_route and ai_routing.unified_route_dry_run_only(config_records):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
         "解析状态": "解析中",
         "解析错误信息": "",
     }))
-    from google import genai
-    client = genai.Client(api_key=api_key, http_options={"base_url": api_base})
-    response = with_retry(
-        lambda: client.models.generate_content(model=model_name, contents=[prompt]),
-        max_attempts=3,
-        label="gemini script doc shots parse",
-    )
-    payload = validate_and_normalize_payload(extract_json_object(getattr(response, "text", "") or ""), target_seconds)
+    if unified_route:
+        result = with_retry(lambda: ai_routing.call_text_model(unified_route, prompt), max_attempts=3, label="unified script doc shots parse")
+        raw_text = result.text
+    else:
+        from google import genai
+        client = genai.Client(api_key=api_key, http_options={"base_url": api_base})
+        response = with_retry(
+            lambda: client.models.generate_content(model=model_name, contents=[prompt]),
+            max_attempts=3,
+            label="gemini script doc shots parse",
+        )
+        raw_text = getattr(response, "text", "") or ""
+    payload = validate_and_normalize_payload(extract_json_object(raw_text), target_seconds)
     readable_script = build_readable_script({"shots": payload["shots"]})
     batch_id = f"SCRIPTDOC-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
     asset_records = build_reference_asset_records(record_id, payload)

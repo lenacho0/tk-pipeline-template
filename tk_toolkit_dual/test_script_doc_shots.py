@@ -155,6 +155,16 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
 
+    def test_unified_ai_route_fields_are_optional_and_visible_in_advanced_view(self):
+        fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
+        for name in ["使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"]:
+            self.assertIn(name, fields)
+
+        views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_shots")["views"]
+        self.assertIn("高级AI参数", views)
+        self.assertIn("使用统一AI路由", views["高级AI参数"])
+        self.assertIn("AI参数JSON", views["高级AI参数"])
+
     def test_split_table_records_omit_mixed_record_type_field(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)
 

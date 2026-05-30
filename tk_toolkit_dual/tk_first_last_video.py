@@ -74,6 +74,7 @@ from tk_shot_video import (  # noqa: E402
     video_item_url,
     videos_url,
 )
+import ai_routing  # noqa: E402
 
 
 IMAGE_STAGE_NAME = "图片生成-OTU"
@@ -779,6 +780,34 @@ def get_stage_config(
     raise ValueError(f"找不到模型配置: {stage_name}")
 
 
+def maybe_unified_media_summary(
+    token: str,
+    fields: Dict[str, Any],
+    cfg: Dict[str, str],
+    *,
+    capability: str,
+    task_type: str,
+    model: str,
+    prompt: str,
+    params: Dict[str, Any],
+    reference_count: int,
+) -> Optional[Dict[str, Any]]:
+    if not ai_routing.record_wants_unified_route(fields):
+        return None
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    if not ai_routing.unified_route_enabled(fields, config_records):
+        return None
+    route = ai_routing.route_from_record(fields, {
+        **cfg,
+        "provider": "OTU",
+        "capability": capability,
+        "task_type": task_type,
+        "model": f"OTU / {model}",
+    })
+    route.params.update(params)
+    return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
+
+
 def parse_document(record_id: str, *, dry_run: bool = False, raw_model_output: Any = None) -> Dict[str, Any]:
     ensure_first_last_table()
     token = get_feishu_token()
@@ -846,19 +875,6 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     version = current_version(fields, "首帧图版本")
     work_dir = ensure_stage_work_dir(record_id, "first_frame", version)
     product_context = None if existing_task_id else resolve_product_reference_context(token, fields, record_id)
-    summary = {
-        "record_id": record_id,
-        "dry_run": dry_run,
-        "prompt_chars": len(prompt),
-        "product_record_id": product_context["product_record_id"] if product_context else "",
-        "product_reference_count": len(product_context["product_tokens"]) if product_context else 0,
-    }
-    if existing_task_id:
-        summary["existing_task_id"] = existing_task_id
-    if dry_run:
-        summary["status"] = "dry_run_ready"
-        return summary
-
     _, cfg = get_stage_config(
         IMAGE_STAGE_NAME,
         default_model=DEFAULT_OTU_IMAGE_MODEL,
@@ -866,6 +882,37 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         default_size=DEFAULT_OTU_IMAGE_SIZE,
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "prompt_chars": len(prompt),
+        "model": model_name,
+        "size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+        "product_record_id": product_context["product_record_id"] if product_context else "",
+        "product_reference_count": len(product_context["product_tokens"]) if product_context else 0,
+    }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="图片",
+        task_type="首帧图生图",
+        model=model_name,
+        prompt=prompt,
+        params={"size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE, "aspect_ratio": "9:16"},
+        reference_count=summary["product_reference_count"],
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
+    if existing_task_id:
+        summary["existing_task_id"] = existing_task_id
+    if dry_run:
+        summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
+        return summary
+
     out_path = str(work_dir / f"{record_id}_first_frame_v{version}.png")
     if existing_task_id:
         submit_task_id = existing_task_id
@@ -1159,10 +1206,26 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         "prompt_chars": len(prompt),
         "output_path": output_path,
     }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="视频",
+        task_type="首尾帧视频",
+        model=cfg.get("model") or DEFAULT_OTU_MODEL,
+        prompt=prompt,
+        params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
+        reference_count=2,
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if existing_task_id:
         summary["existing_task_id"] = existing_task_id
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     field_types = get_table_field_types(token, TABLE_FIRST_LAST_VIDEO)

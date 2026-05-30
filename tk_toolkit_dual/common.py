@@ -113,7 +113,7 @@ def list_records(token, table_id, page_size=100):
 def extract_text(val):
     if isinstance(val, str): return val
     if isinstance(val, list):
-        return ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in val)
+        return ''.join(str(item.get('text') or '') if isinstance(item, dict) else str(item) for item in val)
     return str(val) if val else ''
 
 
@@ -216,6 +216,7 @@ def get_model_config(token, record_id):
         'model': extract_text(fields.get('模型名称', '')),
         'api_key': extract_text(fields.get('API Key', '')),
         'api_base': extract_text(fields.get('API 代理地址', '')),
+        'call_type': extract_text(fields.get('调用方式', '')),
         'prompt': extract_text(fields.get('提示词', '')),
     }
 

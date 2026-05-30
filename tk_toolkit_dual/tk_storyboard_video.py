@@ -62,6 +62,7 @@ from tk_storyboard_video_prompt import (  # noqa: E402
     STORYBOARD_IMAGE_PROMPT_SPLIT_SYSTEM_PROMPT,
     STORYBOARD_OMNI_VIDEO_PROMPT,
 )
+import ai_routing  # noqa: E402
 
 
 SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
@@ -618,9 +619,25 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
 
     cfg = get_text_generation_config(token)
     prompt = build_storyboard_prompt_generation_request(fields, system_prompt=cfg.get("prompt") or STORYBOARD_PROMPT_RULES)
+    config_records = safe_list_records(token, TABLE_CONFIG) if (not dry_run or ai_routing.record_wants_unified_route(fields)) else []
+    use_unified_route = ai_routing.unified_route_enabled(fields, config_records)
+    unified_route = None
+    if use_unified_route:
+        unified_route = ai_routing.route_from_record(fields, {
+            **cfg,
+            "provider": "AIHubMix",
+            "capability": "文本",
+            "task_type": "故事板提示词拆分",
+            "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
+        })
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
+    if unified_route:
+        summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if unified_route and ai_routing.unified_route_dry_run_only(config_records):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
@@ -629,13 +646,17 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
     }))
 
     if raw_model_output is None:
-        client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
-        response = with_retry(
-            lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),
-            max_attempts=3,
-            label="storyboard prompt split",
-        )
-        raw_model_output = getattr(response, "text", "") or ""
+        if unified_route:
+            result = with_retry(lambda: ai_routing.call_text_model(unified_route, prompt), max_attempts=3, label="unified storyboard prompt split")
+            raw_model_output = result.text
+        else:
+            client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
+            response = with_retry(
+                lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),
+                max_attempts=3,
+                label="storyboard prompt split",
+            )
+            raw_model_output = getattr(response, "text", "") or ""
 
     payload = normalize_storyboard_payload(raw_model_output)
     batch_id = f"STORYBOARD-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
@@ -679,6 +700,34 @@ def get_stage_config(stage_name: str, *, default_model: str, default_api_base: s
             raise ValueError(f"{stage_name} 缺少 API Key")
         return rec.get("record_id") or rec.get("id") or "", cfg
     raise ValueError(f"找不到模型配置: {stage_name}")
+
+
+def maybe_unified_media_summary(
+    token: str,
+    fields: Dict[str, Any],
+    cfg: Dict[str, str],
+    *,
+    capability: str,
+    task_type: str,
+    model: str,
+    prompt: str,
+    params: Dict[str, Any],
+    reference_count: int,
+) -> Optional[Dict[str, Any]]:
+    if not ai_routing.record_wants_unified_route(fields):
+        return None
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    if not ai_routing.unified_route_enabled(fields, config_records):
+        return None
+    route = ai_routing.route_from_record(fields, {
+        **cfg,
+        "provider": "OTU",
+        "capability": capability,
+        "task_type": task_type,
+        "model": f"OTU / {model}",
+    })
+    route.params.update(params)
+    return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
 def collect_parent_reference_images(
@@ -869,6 +918,12 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     model_name = normalize_image_model_choice(record_params["model"])
     size = record_params["size"]
     aspect_ratio = record_params["aspect_ratio"]
+    _, cfg = get_stage_config(
+        IMAGE_STAGE_NAME,
+        default_model=DEFAULT_OTU_IMAGE_MODEL,
+        default_api_base=DEFAULT_OTU_API_BASE,
+        default_size=DEFAULT_STORYBOARD_IMAGE_SIZE,
+    )
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -878,18 +933,28 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
     }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="图片",
+        task_type="图生图/参考图重绘",
+        model=model_name,
+        prompt=prompt,
+        params={"size": size, "aspect_ratio": aspect_ratio},
+        reference_count=len(refs),
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
 
-    _, cfg = get_stage_config(
-        IMAGE_STAGE_NAME,
-        default_model=DEFAULT_OTU_IMAGE_MODEL,
-        default_api_base=DEFAULT_OTU_API_BASE,
-        default_size=DEFAULT_STORYBOARD_IMAGE_SIZE,
-    )
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         **image_regeneration_reset_fields(),
         **missing_storyboard_image_default_fields(fields),
@@ -1097,8 +1162,24 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "prompt_chars": len(prompt),
         "output_path": output_path,
     }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="视频",
+        task_type="首帧图生视频",
+        model=cfg["model"],
+        prompt=prompt,
+        params={"size": size, "aspect_ratio": aspect_ratio},
+        reference_count=len(refs),
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     field_types = get_table_field_types(token, TABLE_STORYBOARD_VIDEO)

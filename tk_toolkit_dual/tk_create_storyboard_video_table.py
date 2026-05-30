@@ -13,7 +13,12 @@ import time
 from pathlib import Path
 
 from tk_create_script_doc_shots_table import (
+    AI_CAPABILITY_OPTIONS,
+    AI_MODEL_OPTIONS,
+    AI_PROVIDER_OPTIONS,
+    AI_TASK_TYPE_OPTIONS,
     DEFAULT_CONFIG_PATHS,
+    YES_NO_OPTIONS,
     attachment,
     create_missing_fields,
     create_or_update_views,
@@ -82,6 +87,12 @@ STORYBOARD_VIDEO_FIELDS = [
     link("关联产品记录", "__PRODUCT_TABLE_ID__"),
     link("选择模特", "__MODEL_TABLE_ID__"),
     attachment("环境图"),
+    select("使用统一AI路由", YES_NO_OPTIONS),
+    select("AI供应商", AI_PROVIDER_OPTIONS),
+    select("AI能力类型", AI_CAPABILITY_OPTIONS),
+    select("AI任务类型", AI_TASK_TYPE_OPTIONS),
+    select("AI模型", AI_MODEL_OPTIONS),
+    text("AI参数JSON"),
     select("拆分状态", SPLIT_STATUS_OPTIONS),
     text("拆分结果JSON"),
     number("总故事板数"),
@@ -127,6 +138,12 @@ TABLE_DEFINITION = {
             "视频提示词", "Omni模型", "Omni画面尺寸", "Omni画面比例",
             "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频生成时间",
         ],
+        "高级AI参数": [
+            "记录类型", "任务名称", "父任务记录ID", "Storyboard编号",
+            "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
+            "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
+            "Omni模型", "Omni画面尺寸", "Omni画面比例",
+        ],
         "99-排错": [
             "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
             "拆分状态", "拆分结果JSON", "故事板图片提示词",
@@ -134,6 +151,7 @@ TABLE_DEFINITION = {
             "故事板图片任务ID", "故事板图片错误信息", "故事板图片生成时间",
             "视频提示词", "Omni模型", "Omni画面尺寸", "Omni画面比例",
             "视频任务ID", "视频错误信息", "视频生成时间", "错误信息",
+            "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
         ],
     },
 }

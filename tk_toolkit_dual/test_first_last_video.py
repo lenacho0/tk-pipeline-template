@@ -110,6 +110,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertEqual(list(views.keys()), [
             "01-用户入口",
             "02-场景子任务",
+            "高级AI参数",
             "03-首帧审核",
             "04-尾帧审核",
             "05-视频结果",
@@ -122,6 +123,8 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertIn("首帧图操作", views["03-首帧审核"])
         self.assertIn("尾帧图操作", views["04-尾帧审核"])
         self.assertIn("视频操作", views["05-视频结果"])
+        self.assertIn("使用统一AI路由", views["高级AI参数"])
+        self.assertIn("AI参数JSON", views["高级AI参数"])
         self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
         self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
 

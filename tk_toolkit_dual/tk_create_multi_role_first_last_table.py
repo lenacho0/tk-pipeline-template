@@ -80,6 +80,29 @@ KEYFRAME_TYPE_OPTIONS = [
 ]
 VIDEO_CLIP_OPTIONS = [opt("S01"), opt("S02")]
 YES_NO_OPTIONS = [opt("否", "Gray"), opt("是", "Green")]
+AI_PROVIDER_OPTIONS = [opt("AIHubMix"), opt("Aitgenne", "Purple"), opt("OTU", "Green")]
+AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("语音", "Purple")]
+AI_TASK_TYPE_OPTIONS = [
+    opt("脚本解析拆分"),
+    opt("故事板提示词拆分"),
+    opt("多角色首尾帧解析"),
+    opt("视频分析"),
+    opt("脚本生成"),
+    opt("视频提示词生成"),
+    opt("文生图", "Green"),
+    opt("图生图/参考图重绘", "Green"),
+    opt("首帧图生视频", "Blue"),
+    opt("首尾帧视频", "Blue"),
+    opt("TTS", "Purple"),
+]
+AI_MODEL_OPTIONS = [
+    opt("AIHubMix / gemini-3.1-pro-preview"),
+    opt("AIHubMix / gemini-2.5-flash"),
+    opt("Aitgenne / gpt-5.5", "Purple"),
+    opt("Aitgenne / gemini-3.1-pro-preview", "Purple"),
+    opt("OTU / gpt-image-2", "Green"),
+    opt("OTU / veo_3_1-fast-fl", "Blue"),
+]
 VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
 VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), opt("OTU / veo_3_1-fast-fl", "Green")]
 
@@ -94,6 +117,12 @@ MULTI_ROLE_FIRST_LAST_FIELDS = [
     link("关联产品记录", "__PRODUCT_TABLE_ID__"),
     text("产品名称"),
     number("目标时长秒"),
+    select("使用统一AI路由", YES_NO_OPTIONS),
+    select("AI供应商", AI_PROVIDER_OPTIONS),
+    select("AI能力类型", AI_CAPABILITY_OPTIONS),
+    select("AI任务类型", AI_TASK_TYPE_OPTIONS),
+    select("AI模型", AI_MODEL_OPTIONS),
+    text("AI参数JSON"),
     select("拆解状态", RUN_STATUS_OPTIONS),
     text("拆解结果JSON"),
     number("总角色数"),
@@ -192,11 +221,17 @@ TABLE_DEFINITION = {
             "尾关键帧类型", "视频提示词", "视频操作", "视频版本", "视频生成状态",
             "视频片段", "视频片段URL", "视频错误信息",
         ],
+        "高级AI参数": [
+            "任务名称", "记录类型", "记录状态", "父任务记录ID",
+            "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
+            "视频通道", "视频生成模型", "视频生成状态",
+        ],
         "99-排错": [
             "任务名称", "记录类型", "记录状态", "父任务记录ID", "批次ID", "拆解结果JSON",
             "角色机制JSON", "参考图清单JSON", "原始请求JSON", "参考图任务ID", "关键帧任务ID",
             "视频任务ID", "参考图原始响应JSON", "关键帧原始响应JSON", "视频原始响应JSON",
             "错误信息", "失败分类", "历史生成记录JSON",
+            "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
         ],
     },
 }

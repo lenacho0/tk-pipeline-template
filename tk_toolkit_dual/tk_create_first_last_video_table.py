@@ -13,6 +13,10 @@ from pathlib import Path
 
 from tk_create_script_doc_shots_table import (
     DEFAULT_CONFIG_PATHS,
+    AI_CAPABILITY_OPTIONS,
+    AI_MODEL_OPTIONS,
+    AI_PROVIDER_OPTIONS,
+    AI_TASK_TYPE_OPTIONS,
     attachment,
     create_missing_fields,
     create_or_update_views,
@@ -28,6 +32,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
     resolved_fields,
+    YES_NO_OPTIONS,
 )
 
 
@@ -66,6 +71,12 @@ FIRST_LAST_VIDEO_FIELDS = [
     text("首尾帧文档"),
     attachment("首尾帧文档附件"),
     number("目标时长秒"),
+    select("使用统一AI路由", YES_NO_OPTIONS),
+    select("AI供应商", AI_PROVIDER_OPTIONS),
+    select("AI能力类型", AI_CAPABILITY_OPTIONS),
+    select("AI任务类型", AI_TASK_TYPE_OPTIONS),
+    select("AI模型", AI_MODEL_OPTIONS),
+    text("AI参数JSON"),
     select("文档拆分状态", SPLIT_STATUS_OPTIONS),
     select("拆分状态", SPLIT_STATUS_OPTIONS),
     number("总场景数"),
@@ -156,6 +167,20 @@ TABLE_DEFINITION = {
             "视频生成状态",
             "错误信息",
         ],
+        "高级AI参数": [
+            "任务名称",
+            "记录类型",
+            "场景编号",
+            "使用统一AI路由",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+            "视频通道",
+            "视频生成模型",
+            "视频生成状态",
+        ],
         "03-首帧审核": [
             "任务名称",
             "场景编号",
@@ -232,6 +257,12 @@ TABLE_DEFINITION = {
             "尾帧图本地路径",
             "本地视频路径",
             "历史生成记录JSON",
+            "使用统一AI路由",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
         ],
     },
 }
