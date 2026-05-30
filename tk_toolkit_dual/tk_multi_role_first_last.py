@@ -72,6 +72,7 @@ from tk_shot_video import (  # noqa: E402
     video_item_url,
     videos_url,
 )
+import ai_routing  # noqa: E402
 
 
 PARSE_STAGE_NAME = "多角色首尾帧解析-Gemini"
@@ -577,12 +578,41 @@ def get_stage_config(stage_name: str, *, default_model: str, default_api_base: s
             "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
             "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
             "aspect_ratio": extract_text(fields.get("画面比例")).strip() or DEFAULT_ASPECT_RATIO,
+            "call_type": extract_text(fields.get("调用方式")).strip(),
             "prompt": extract_text(fields.get("提示词")).strip(),
         }
         if not cfg["api_key"]:
             raise ValueError(f"{stage_name} 缺少 API Key")
         return rec.get("record_id") or rec.get("id") or "", cfg
     raise ValueError(f"找不到模型配置: {stage_name}")
+
+
+def maybe_unified_media_summary(
+    token: str,
+    fields: Dict[str, Any],
+    cfg: Dict[str, str],
+    *,
+    capability: str,
+    task_type: str,
+    model: str,
+    prompt: str,
+    params: Dict[str, Any],
+    reference_count: int,
+) -> Optional[Dict[str, Any]]:
+    if not ai_routing.record_wants_unified_route(fields):
+        return None
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    if not ai_routing.unified_route_enabled(fields, config_records):
+        return None
+    route = ai_routing.route_from_record(fields, {
+        **cfg,
+        "provider": "OTU",
+        "capability": capability,
+        "task_type": task_type,
+        "model": f"OTU / {model}",
+    })
+    route.params.update(params)
+    return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
 def deprecate_existing_children(token: str, parent_record_id: str) -> int:
@@ -611,10 +641,29 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
     script = extract_text(fields.get("输入脚本")).strip()
     if not script:
         raise ValueError("输入脚本为空")
-    prompt = build_parse_prompt(fields, script)
+    config_records = safe_list_records(token, TABLE_CONFIG) if (not dry_run or ai_routing.record_wants_unified_route(fields)) else []
+    use_unified_route = ai_routing.unified_route_enabled(fields, config_records)
+    cfg: Dict[str, str] = {}
+    if use_unified_route or not dry_run:
+        _, cfg = get_stage_config(PARSE_STAGE_NAME, default_model="gemini-2.5-flash", default_api_base="https://aihubmix.com/gemini")
+    prompt = build_parse_prompt(fields, script, system_prompt=(cfg.get("prompt") or DEFAULT_PARSE_PROMPT) if cfg else DEFAULT_PARSE_PROMPT)
+    unified_route = None
+    if use_unified_route:
+        unified_route = ai_routing.route_from_record(fields, {
+            **cfg,
+            "provider": "AIHubMix",
+            "capability": "文本",
+            "task_type": "多角色首尾帧解析",
+            "model": cfg.get("model") or "AIHubMix / gemini-2.5-flash",
+        })
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
+    if unified_route:
+        summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if unified_route and ai_routing.unified_route_dry_run_only(config_records):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
         "记录类型": PARENT_RECORD_TYPE,
@@ -623,15 +672,17 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
         "错误信息": "",
     }))
     if raw_model_output is None:
-        _, cfg = get_stage_config(PARSE_STAGE_NAME, default_model="gemini-2.5-flash", default_api_base="https://aihubmix.com/gemini")
-        prompt = build_parse_prompt(fields, script, system_prompt=cfg.get("prompt") or DEFAULT_PARSE_PROMPT)
-        client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
-        response = with_retry(
-            lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),
-            max_attempts=3,
-            label="multi-role first-last parse",
-        )
-        raw_model_output = getattr(response, "text", "") or ""
+        if unified_route:
+            result = with_retry(lambda: ai_routing.call_text_model(unified_route, prompt), max_attempts=3, label="unified multi-role first-last parse")
+            raw_model_output = result.text
+        else:
+            client = genai.Client(api_key=cfg["api_key"], http_options={"base_url": cfg.get("api_base") or "https://aihubmix.com/gemini"})
+            response = with_retry(
+                lambda: client.models.generate_content(model=cfg.get("model") or "gemini-2.5-flash", contents=[prompt]),
+                max_attempts=3,
+                label="multi-role first-last parse",
+            )
+            raw_model_output = getattr(response, "text", "") or ""
     payload = normalize_plan_payload(raw_model_output)
     batch_id = make_batch_id(record_id)
     deprecated = deprecate_existing_children(token, record_id)
@@ -934,9 +985,27 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     work_dir = ensure_stage_work_dir(record_id, "reference_image", version)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)
     output_path = str(work_dir / f"{record_id}_reference_v{version}.png")
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "output_path": output_path}
+    model_name = cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL
+    size = cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE
+    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "model": model_name, "size": size, "output_path": output_path}
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="图片",
+        task_type="文生图",
+        model=model_name,
+        prompt=prompt,
+        params={"size": size, "aspect_ratio": "9:16"},
+        reference_count=0,
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
     start_fields = {
         "参考图生成状态": "生成中",
@@ -1010,15 +1079,35 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     primary = _primary_base_reference(refs)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)
     output_path = str(work_dir / f"{record_id}_keyframe_v{version}.png")
+    model_name = cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL
+    size = cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "prompt_chars": len(prompt),
+        "model": model_name,
+        "size": size,
         "reference_count": len(refs),
         "output_path": output_path,
     }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="图片",
+        task_type="图生图/参考图重绘",
+        model=model_name,
+        prompt=prompt,
+        params={"size": size, "aspect_ratio": "9:16"},
+        reference_count=len(refs),
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
         "关键帧生成状态": "生成中",
@@ -1148,9 +1237,35 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     size = cfg.get("size") or DEFAULT_OTU_SIZE
     aspect_ratio = cfg.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
     output_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
-    summary = {"record_id": record_id, "dry_run": dry_run, "first_keyframe": first_type, "last_keyframe": last_type, "output_path": output_path}
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "first_keyframe": first_type,
+        "last_keyframe": last_type,
+        "model": cfg.get("model") or DEFAULT_OTU_MODEL,
+        "seconds": seconds,
+        "size": size,
+        "aspect_ratio": aspect_ratio,
+        "output_path": output_path,
+    }
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="视频",
+        task_type="首尾帧视频",
+        model=cfg.get("model") or DEFAULT_OTU_MODEL,
+        prompt=prompt,
+        params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
+        reference_count=2,
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
     existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     field_types = get_table_field_types(token, TABLE_MULTI_ROLE_FIRST_LAST)
