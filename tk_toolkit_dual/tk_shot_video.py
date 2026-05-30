@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-003-3 单镜头分镜视频生成。
+003-3 脚本文档单镜头分镜视频生成。
 
 用法:
-  python3 tk_shot_video.py <shot_storyboard_record_id>
-  python3 tk_shot_video.py <shot_storyboard_record_id> --dry-run
+  python3 tk_shot_video.py <script_doc_shot_record_id>
+  python3 tk_shot_video.py <script_doc_shot_record_id> --dry-run
 """
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
     TABLE_SCRIPT_DOC_SHOTS,
-    TABLE_SHOT_STORYBOARD,
     WORKSPACE,
     build_error_payload,
     extract_text,
@@ -61,9 +60,8 @@ from otu_image import (  # noqa: E402
 )
 
 
-STAGE_NAME = "逐镜头分镜视频生成"
-SEEDDANCE_STAGE_NAME = "九宫格生成视频-seeddance2.0"
-OTU_STAGE_NAME = "逐镜头分镜视频生成-OTU"
+STAGE_NAME = "分镜视频生成-Veo"
+OTU_STAGE_NAME = "分镜视频生成-OTU"
 BASE_WORK_DIR = Path(WORKSPACE) / "shot_video_work"
 DEFAULT_MODEL = "veo-3.1-fast-generate-preview"
 DEFAULT_OTU_MODEL = "veo_3_1-fast-fl"
@@ -80,6 +78,7 @@ MAX_POLL_SECONDS = 2400
 SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
+DOWNLOAD_REQUEST_TIMEOUT = (30, 90)
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordUpdater = Callable[[str, str, str, Dict[str, Any]], Any]
@@ -89,14 +88,12 @@ ReferenceDownloader = Callable[[str, str, Path], Path]
 NativeClientFactory = Callable[[Dict[str, str]], Any]
 
 
-def resolve_video_table(table: str = "shot_storyboard") -> str:
+def resolve_video_table(table: str = "script_doc") -> str:
     if table in ("script_doc", "script_doc_shots", TABLE_SCRIPT_DOC_SHOTS):
         if not TABLE_SCRIPT_DOC_SHOTS:
             raise ValueError("config.json 尚未配置 script_doc_shots 表 ID")
         return TABLE_SCRIPT_DOC_SHOTS
-    if not TABLE_SHOT_STORYBOARD:
-        raise ValueError("config.json 尚未配置 shot_storyboard 表 ID")
-    return TABLE_SHOT_STORYBOARD
+    raise ValueError("不再支持旧 shot_storyboard 表，请使用 script_doc")
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -231,7 +228,7 @@ def resolve_model_config_stage(channel: str, provider: str) -> str:
     if normalize_video_channel(channel) == "OTU":
         return OTU_STAGE_NAME
     if provider == "seeddance2.0":
-        return SEEDDANCE_STAGE_NAME
+        return STAGE_NAME
     return STAGE_NAME
 
 
@@ -535,7 +532,11 @@ def poll_otu_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
     start = time.time()
     last_body: Dict[str, Any] = {}
     while time.time() - start < MAX_POLL_SECONDS:
-        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        resp = with_retry(
+            lambda: requests.get(url, headers=headers, timeout=POLL_TIMEOUT),
+            max_attempts=4,
+            label=f"poll OTU video {task_id}",
+        )
         try:
             body = resp.json()
         except Exception:
@@ -587,31 +588,38 @@ def extract_video_url(result: Dict[str, Any]) -> str:
 
 
 def download_video(video_url: str, save_path: str) -> str:
-    resp = requests.get(video_url, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
-    if resp.status_code != 200:
-        raise RuntimeError(f"视频下载失败: HTTP {resp.status_code}, url={video_url[:300]}")
-    with open(save_path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-    if os.path.getsize(save_path) < 10000:
-        raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
-    return save_path
+    def _download_once() -> str:
+        resp = requests.get(video_url, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"视频下载失败: HTTP {resp.status_code}, url={video_url[:300]}")
+        with open(save_path, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+        if os.path.getsize(save_path) < 10000:
+            raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
+        return save_path
+
+    return with_retry(_download_once, max_attempts=4, label=f"download video {video_url[:120]}")
 
 
 def download_video_content(config: Dict[str, str], task_id: str, save_path: str) -> str:
     url = video_content_url(config.get("api_base") or DEFAULT_API_BASE, task_id)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
-    resp = requests.get(url, headers=headers, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
-    if resp.status_code != 200:
-        raise RuntimeError(f"视频 content 下载失败: HTTP {resp.status_code}, task_id={task_id}")
-    with open(save_path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-    if os.path.getsize(save_path) < 10000:
-        raise RuntimeError(f"视频 content 下载成功但文件过小: {save_path}")
-    return save_path
+
+    def _download_once() -> str:
+        resp = requests.get(url, headers=headers, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"视频 content 下载失败: HTTP {resp.status_code}, task_id={task_id}")
+        with open(save_path, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+        if os.path.getsize(save_path) < 10000:
+            raise RuntimeError(f"视频 content 下载成功但文件过小: {save_path}")
+        return save_path
+
+    return with_retry(_download_once, max_attempts=4, label=f"download video content {task_id}")
 
 
 def native_veo_api_base(config: Dict[str, str]) -> str:
@@ -948,7 +956,7 @@ def run_shot_video_generation(
     record_id: str,
     *,
     dry_run: bool = False,
-    table: str = "shot_storyboard",
+    table: str = "script_doc",
     token: Optional[str] = None,
     get_record_fn: RecordGetter = safe_get_record,
     update_record_fn: RecordUpdater = safe_update_record,
@@ -1165,8 +1173,8 @@ def run_shot_video_generation(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="003-3 单镜头 AIHubMix/Veo 分镜视频生成")
-    parser.add_argument("record_id", help="003-3 shot_storyboard record_id")
-    parser.add_argument("--table", default="shot_storyboard", choices=["shot_storyboard", "script_doc"], help="选择来源表")
+    parser.add_argument("record_id", help="003-3 script_doc_shots record_id")
+    parser.add_argument("--table", default="script_doc", choices=["script_doc"], help="选择来源表")
     parser.add_argument("--dry-run", action="store_true", help="只验证输入和配置，不提交视频任务")
     parser.add_argument("--output-file", help="保存运行摘要 JSON")
     args = parser.parse_args()

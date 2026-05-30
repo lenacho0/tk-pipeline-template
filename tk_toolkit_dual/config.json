@@ -5,36 +5,26 @@
     "bitable_app_token": "LBWUbgRfEavAgjsXNIhcpo0Dnvb",
     "tables": {
       "config": "tblPUVFtpjogYOGn",
-      "fetch_config": "tbl4cIPQYHSHbFzV",
-      "data": "tblKNlGHJKwJWyRW",
-      "analysis": "tblozrImDy0r4dBN",
-      "script_gen": "tbl2Yp6T4jDN8Rfr",
-      "shot_script_gen": "tblRf9jAD00Jma9p",
-      "shot_storyboard": "tblRVg5Ob7VW2zCI",
       "voice_library": "tblPfREXMoSafUDW",
       "text_audio": "tblrLVPbX4RzXVFL",
       "product": "tblF2cZmbQEJMiUH",
       "model_appearance": "tblvpVOYockZmCG8",
-      "video": "tblQdTGSsmQbPMQd",
-      "pet_reference_v1": "tblvS7q8hmQRlXEP",
       "script_doc_shots": "tbldPJLJhczlGzSt",
       "script_doc_tasks": "tblBC37ktQBHPLep",
       "script_doc_reference_assets": "tblFg33rvB7eCyzr",
-      "storyboard_video": "tblvWwejeP8RzYDX"
+      "storyboard_video": "tblvWwejeP8RzYDX",
+      "first_last_video": "tblPPfKQMMC0D4XC",
+      "multi_role_first_last": "tblObiMzCDn9ilFQ",
+      "nine_grid_video": "tbliRML5KjmzVjB0"
     }
   },
   "fastmoss": {
     "token": ""
   },
   "config_records": {
-    "fetch": "recveiIeCBik6u",
-    "analysis": "recveizDqAaxWy",
-    "script_gen": "recveizDqAB9Xo",
-    "shot_script_gen": "recveQZPORmm33",
-    "storyboard": "recveizDqA44fi",
-    "shot_storyboard": "recveQZRZc7NUI",
-    "video": "recveppNaVCcyd",
-    "pet_reference_analysis": ""
+    "script_doc_text_split": "recveQZPORmm33",
+    "storyboard_text_split": "recvkP9VfsEY3o",
+    "main_image_otu": "recveQZRZc7NUI"
   },
   "products": {
     "宠物尿味分解除臭喷雾": "recveikpqWjEiB",
@@ -56,30 +46,25 @@
       "record_state_cache_ttl_seconds": 300
     },
     "stages": {
-      "tk_fetch.py": {
-        "max_concurrency": 2,
-        "max_retries": 2,
-        "timeout": 900
-      },
-      "tk_analyze.py": {
-        "max_concurrency": 4,
-        "max_retries": 2,
-        "timeout": 900
-      },
-      "tk_script_gen.py": {
-        "max_concurrency": 4,
-        "max_retries": 2,
-        "timeout": 600
-      },
-      "tk_storyboard.py": {
-        "max_concurrency": 2,
-        "max_retries": 2,
+      "tk_script_doc_shots.py": {
+        "max_concurrency": 1,
+        "max_retries": 1,
         "timeout": 1200
       },
-      "tk_shot_script_gen.py": {
+      "tk_first_last_video.py": {
+        "max_concurrency": 1,
+        "max_retries": 1,
+        "timeout": 2400
+      },
+      "tk_storyboard_video.py": {
+        "max_concurrency": 1,
+        "max_retries": 1,
+        "timeout": 2400
+      },
+      "tk_shot_voiceover.py": {
         "max_concurrency": 2,
         "max_retries": 2,
-        "timeout": 900
+        "timeout": 300
       },
       "tk_shot_storyboard.py": {
         "max_concurrency": 3,
@@ -90,11 +75,6 @@
         "max_concurrency": 1,
         "max_retries": 1,
         "timeout": 2400
-      },
-      "tk_video.py": {
-        "max_concurrency": 1,
-        "max_retries": 1,
-        "timeout": 1800
       }
     }
   },

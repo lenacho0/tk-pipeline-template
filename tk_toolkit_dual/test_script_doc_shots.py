@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -136,7 +137,15 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(fields["视频通道"]["type"], "select")
         self.assertEqual([item["name"] for item in fields["视频通道"]["options"]], ["AIHubMix", "OTU"])
         self.assertEqual(fields["视频生成模型"]["type"], "select")
-        self.assertEqual([item["name"] for item in fields["视频生成模型"]["options"]], ["默认（配置表）", "AIHubMix / veo3.1", "AIHubMix / seeddance2.0", "AIHubMix / veo-3.1-fast-generate-preview", "OTU / veo_3_1-fast-fl"])
+        video_model_options = [item["name"] for item in fields["视频生成模型"]["options"]]
+        self.assertEqual(video_model_options[0], "默认（配置表）")
+        for option in [
+            "AIHubMix / veo-3.1-fast-generate-preview",
+            "AIHubMix / seeddance2.0",
+            "OTU / veo_3_1-fast-fl",
+            "OTU / veo_3_1-fast-fl-hd",
+        ]:
+            self.assertIn(option, video_model_options)
         self.assertEqual(fields["视频生成时间"]["type"], "datetime")
         self.assertEqual(fields["生成时间"]["type"], "datetime")
 
@@ -153,6 +162,16 @@ class ScriptDocShotsTests(unittest.TestCase):
         )
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
+
+    def test_unified_ai_route_fields_are_optional_and_visible_in_advanced_view(self):
+        fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
+        for name in ["使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"]:
+            self.assertIn(name, fields)
+
+        views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_shots")["views"]
+        self.assertIn("高级AI参数", views)
+        self.assertIn("使用统一AI路由", views["高级AI参数"])
+        self.assertIn("AI参数JSON", views["高级AI参数"])
 
     def test_split_table_records_omit_mixed_record_type_field(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)
@@ -172,13 +191,92 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(shot_records[0]["fields"]["父文档记录ID"], "recParent")
         self.assertEqual(shot_records[0]["fields"]["关联产品记录"], ["recProduct"])
 
+    def test_parse_parent_record_uses_script_doc_text_split_config(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档正文": "0-4s: hook",
+            "视频时长": "8s",
+        }
+        with patch.dict(doc_shots.CONFIG_RECORDS, {"script_doc_text_split": "rec_script_split"}, clear=True), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=parent_fields), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-text",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "prompt": "CONFIGURED SCRIPT DOC PROMPT",
+             }) as getter:
+            result = doc_shots.parse_parent_record("recParent", dry_run=True)
+
+        getter.assert_called_once_with("token", "rec_script_split")
+        self.assertEqual(result["status"], "dry_run_ready")
+        self.assertEqual(result["record_id"], "recParent")
+
+    def test_build_parse_prompt_uses_configured_system_prompt(self):
+        prompt = doc_shots.build_parse_prompt(
+            {"视频时长": "8s", "分镜风格": "写实", "产品名": "Pet Spray"},
+            "0-4s: hook",
+            system_prompt="CONFIGURED SCRIPT DOC PROMPT",
+        )
+
+        self.assertIn("CONFIGURED SCRIPT DOC PROMPT", prompt)
+        self.assertIn("## 目标参数", prompt)
+        self.assertIn("0-4s: hook", prompt)
+
+    def test_human_reference_prompt_uses_character_sheet_layout(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "human",
+            "参考名称": "owner",
+            "参考提示词": "Thai woman in white shirt, anxious but kind",
+        })
+
+        self.assertIn("以脚本人物描述/参考提示词为唯一角色设定锚点", prompt)
+        self.assertIn("左侧(约60%宽度):三张大图横排列", prompt)
+        self.assertIn("右侧(约40%宽度):2x3网格六张头部小图", prompt)
+        self.assertIn("全身正视站姿", prompt)
+        self.assertIn("全身90°侧视站姿", prompt)
+        self.assertIn("全身后视站姿", prompt)
+        self.assertIn("同一张脸同一发际线", prompt)
+        self.assertNotIn("collage, or split panels", prompt)
+
+    def test_human_reference_prompt_appends_revision_note_without_relaxing_constraints(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "human",
+            "参考名称": "owner",
+            "参考提示词": "Thai woman in white shirt",
+            "参考图修改要求": "衣服改成浅蓝色，但不要改变年龄感",
+        })
+
+        self.assertIn("本次重生成修改要求", prompt)
+        self.assertIn("衣服改成浅蓝色，但不要改变年龄感", prompt)
+        self.assertIn("不能破坏同一角色、超干净白底、无文字水印、九视图人物设定图版式", prompt)
+
+    def test_non_human_reference_prompt_keeps_single_image_logic(self):
+        prompt = doc_shots.build_reference_image_prompt({
+            "参考类型": "pet",
+            "参考名称": "MoMo",
+            "参考提示词": "white cat with blue eyes",
+            "参考图修改要求": "fur slightly longer",
+        })
+
+        self.assertIn("Generate one clean reference image for later storyboard consistency.", prompt)
+        self.assertIn("Output a single image only. No text, watermark, collage, or split panels.", prompt)
+        self.assertIn("fur slightly longer", prompt)
+        self.assertNotIn("2x3网格六张头部小图", prompt)
+
     def test_collect_reference_images_uses_only_shot_requested_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            product_path = tmp_path / "product.png"
+            product_paths = [
+                tmp_path / "product_1.png",
+                tmp_path / "product_2.png",
+                tmp_path / "product_3.png",
+            ]
             pet_path = tmp_path / "pet.png"
             env_path = tmp_path / "env.png"
-            product_path.write_bytes(b"x" * 2000)
+            for path in product_paths:
+                path.write_bytes(b"x" * 2000)
             pet_path.write_bytes(b"x" * 2000)
             env_path.write_bytes(b"x" * 2000)
             fields = {
@@ -211,8 +309,12 @@ class ScriptDocShotsTests(unittest.TestCase):
                     },
                 },
             ]
-            download = Mock(side_effect=[product_path, pet_path])
-            get_product = Mock(return_value=("recProduct", {"产品图片": [{"file_token": "ft_product"}]}))
+            download = Mock(side_effect=[*product_paths, pet_path])
+            get_product = Mock(return_value=("recProduct", {"产品图片": [
+                {"file_token": "ft_product_1"},
+                {"file_token": "ft_product_2"},
+                {"file_token": "ft_product_3"},
+            ]}))
 
             refs = doc_shots.collect_reference_images_for_shot(
                 "token",
@@ -224,8 +326,19 @@ class ScriptDocShotsTests(unittest.TestCase):
                 product_getter=get_product,
             )
 
-            self.assertEqual([r["role"] for r in refs], ["product", "pet:pet_hero"])
-            self.assertEqual([call.args[1] for call in download.call_args_list], ["ft_product", "ft_pet"])
+            self.assertEqual([r["role"] for r in refs], ["product:1", "product:2", "product:3", "pet:pet_hero"])
+            self.assertEqual(
+                [call.args[1] for call in download.call_args_list],
+                ["ft_product_1", "ft_product_2", "ft_product_3", "ft_pet"],
+            )
+            self.assertEqual(
+                [call.args[2] for call in download.call_args_list[:3]],
+                [
+                    str(tmp_path / "reference_product_1.png"),
+                    str(tmp_path / "reference_product_2.png"),
+                    str(tmp_path / "reference_product_3.png"),
+                ],
+            )
 
     def test_collect_reference_images_rejects_unapproved_required_asset(self):
         with tempfile.TemporaryDirectory() as tmp:

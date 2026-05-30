@@ -120,6 +120,19 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(kwargs["files"]["aspect_ratio"], (None, "9:16"))
         self.assertIn("input_reference[]", kwargs["files"])
 
+    def test_poll_otu_video_task_retries_transient_ssl_failure(self):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"status": "completed", "video_url": "https://x.test/video.mp4"}
+        response.text = '{"status":"completed"}'
+
+        with patch.object(video.requests, "get", side_effect=[video.requests.exceptions.SSLError("unexpected eof"), response]) as getter, \
+             patch("common.sleep_backoff"):
+            result = video.poll_otu_video_task({"api_key": "sk", "api_base": "https://otuapi.com"}, "task_1")
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(getter.call_count, 2)
+
     def test_call_native_veo_uses_image_as_first_frame_and_portrait_config(self):
         fake_client = Mock()
         fake_client.models.generate_videos.return_value = SimpleNamespace(name="operations/native_1")
@@ -310,6 +323,24 @@ class ShotVideoTest(unittest.TestCase):
     def test_extract_video_url_handles_nested_values(self):
         result = {"data": {"output": [{"result_url": "https://x.test/video.mp4"}]}}
         self.assertEqual(video.extract_video_url(result), "https://x.test/video.mp4")
+
+    def test_download_video_retries_transient_ssl_failure(self):
+        first_error = video.requests.exceptions.SSLError("unexpected eof")
+        response = Mock()
+        response.status_code = 200
+        response.iter_content.return_value = [b"x" * 12000]
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(video.requests, "get", side_effect=[first_error, response]) as getter, \
+             patch("common.sleep_backoff"):
+            out_path = os.path.join(tmp, "out.mp4")
+            result = video.download_video("https://x.test/video.mp4", out_path)
+            output_size = os.path.getsize(result)
+
+        self.assertEqual(result, out_path)
+        self.assertEqual(getter.call_count, 2)
+        self.assertEqual(getter.call_args.kwargs["timeout"], video.DOWNLOAD_REQUEST_TIMEOUT)
+        self.assertGreater(output_size, 10000)
 
     def test_success_fields_include_video_attachment_and_status(self):
         fields = video.build_success_fields(

@@ -34,31 +34,23 @@ APP_TOKEN = _FEISHU['bitable_app_token']
 _TABLES = _FEISHU['tables']
 
 TABLE_CONFIG       = _TABLES['config']           # 模型与API配置
-TABLE_FETCH_CONFIG = _TABLES['fetch_config']      # 抓取配置
-TABLE_DATA         = _TABLES['data']              # 爆款数据表
-TABLE_ANALYSIS     = _TABLES['analysis']          # 脚本分析
-TABLE_SCRIPT_GEN   = _TABLES['script_gen']        # 产品脚本生成
-TABLE_SHOT_SCRIPT_GEN = _TABLES.get('shot_script_gen', '')   # 逐镜头脚本生成
-TABLE_SHOT_STORYBOARD = _TABLES.get('shot_storyboard', '')   # 逐镜头分镜图
 TABLE_SCRIPT_DOC_TASKS = _TABLES.get('script_doc_tasks', _TABLES.get('script_doc_shots', '')) # 脚本文档任务
 TABLE_SCRIPT_DOC_REFERENCE_ASSETS = _TABLES.get('script_doc_reference_assets', _TABLES.get('script_doc_shots', '')) # 脚本文档参考资产
 TABLE_SCRIPT_DOC_SHOTS = _TABLES.get('script_doc_shots', '') # 脚本文档分镜生产
 TABLE_STORYBOARD_VIDEO = _TABLES.get('storyboard_video', '') # 故事板图片/Omni视频生成
+TABLE_NINE_GRID_VIDEO = _TABLES.get('nine_grid_video', '') # 多图九宫格视频生成
+TABLE_FIRST_LAST_VIDEO = _TABLES.get('first_last_video', '') # 首尾帧视频生成
+TABLE_MULTI_ROLE_FIRST_LAST = _TABLES.get('multi_role_first_last', '') # 多角色首尾帧生成
 TABLE_VOICE_LIBRARY = _TABLES.get('voice_library', '')        # 音色库
 TABLE_TEXT_AUDIO = _TABLES.get('text_audio', '')              # 文案转音频
 TABLE_PRODUCT      = _TABLES['product']           # 产品信息
 TABLE_MODEL        = _TABLES['model_appearance']  # 模特形象
-TABLE_PET_REFERENCE_V1 = _TABLES.get('pet_reference_v1', '')  # 宠物拟人参考池V1
 
 # 各环节在「模型与API配置」表中的 record_id
 CONFIG_RECORDS = _CFG['config_records']
 
 # 产品名称 → record_id 映射（旧版兼容；新逻辑优先动态查产品表）
 PRODUCT_MAP = _CFG.get('products', {})
-
-# FastMoss
-FASTMOSS_TOKEN = _CFG.get('fastmoss', {}).get('token', '')
-DEFAULT_FASTMOSS_BASE = 'https://openapi.fastmoss.com'
 
 # 通知
 NOTIFICATION_USER_ID = _CFG.get('notification', {}).get('feishu_user_id', '')
@@ -121,7 +113,7 @@ def list_records(token, table_id, page_size=100):
 def extract_text(val):
     if isinstance(val, str): return val
     if isinstance(val, list):
-        return ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in val)
+        return ''.join(str(item.get('text') or '') if isinstance(item, dict) else str(item) for item in val)
     return str(val) if val else ''
 
 
@@ -174,6 +166,42 @@ def get_product_record(token, product_value):
     return record_id, fields
 
 
+def get_product_info(token, product_value):
+    record_id, fields = get_product_record(token, product_value)
+    if not record_id or not fields:
+        return None
+    return {
+        '产品名称-th': extract_text(fields.get('产品名称-th', '')),
+        '产品规格': extract_text(fields.get('产品规格', '')),
+        '核心卖点': extract_text(fields.get('核心卖点', '')),
+        '使用场景': extract_text(fields.get('使用场景', '')),
+        '目标用户': extract_text(fields.get('目标用户', '')),
+    }
+
+
+def get_model_info(token, task_fields):
+    model_link = task_fields.get('选择模特')
+    if not model_link:
+        return ''
+    model_infos = []
+    if isinstance(model_link, list):
+        for item in model_link:
+            if isinstance(item, dict) and 'record_ids' in item:
+                for rid in item['record_ids']:
+                    try:
+                        mf = safe_get_record(token, TABLE_MODEL, rid)
+                        info = f"- 名称: {extract_text(mf.get('模特名称',''))}"
+                        info += f", 类型: {extract_text(mf.get('模特类型',''))}"
+                        info += f", 品种: {extract_text(mf.get('品种',''))}"
+                        info += f", 毛色/肤色: {extract_text(mf.get('毛色/肤色',''))}"
+                        info += f", 性别: {extract_text(mf.get('性别',''))}"
+                        info += f", 外观描述: {extract_text(mf.get('外观描述',''))}"
+                        model_infos.append(info)
+                    except Exception:
+                        pass
+    return '\n'.join(model_infos) if model_infos else '无指定模特'
+
+
 def get_task_product_value(fields):
     linked = fields.get('关联产品')
     if linked and extract_linked_record_ids(linked):
@@ -188,6 +216,7 @@ def get_model_config(token, record_id):
         'model': extract_text(fields.get('模型名称', '')),
         'api_key': extract_text(fields.get('API Key', '')),
         'api_base': extract_text(fields.get('API 代理地址', '')),
+        'call_type': extract_text(fields.get('调用方式', '')),
         'prompt': extract_text(fields.get('提示词', '')),
     }
 
@@ -196,19 +225,58 @@ def get_gemini_client(api_key, api_base):
     return genai.Client(api_key=api_key, http_options={'base_url': api_base})
 
 
-def get_fetch_api_config(token):
-    """FastMoss 配置唯一从飞书配置表读取；本地 token 仅作为兜底兼容。"""
-    config = get_model_config(token, CONFIG_RECORDS['fetch'])
-    api_base = (config.get('api_base') or DEFAULT_FASTMOSS_BASE).rstrip('/')
-    api_key = (config.get('api_key') or '').strip()
-    if not api_key:
-        api_key = (FASTMOSS_TOKEN or '').strip()
-    if not api_key:
-        raise Exception('抓取配置缺少 FastMoss API Key（飞书配置表未配置，且本地兜底也为空）')
-    return {
-        'api_base': api_base,
-        'api_key': api_key,
-    }
+def ensure_task_dir(record_id):
+    task_dir = os.path.join(WORKSPACE, 'storyboard_work', record_id)
+    os.makedirs(task_dir, exist_ok=True)
+    return task_dir
+
+
+def download_attachment(token, file_token, save_path):
+    resp = requests.get(
+        f'https://open.feishu.cn/open-apis/drive/v1/medias/{file_token}/download',
+        headers={'Authorization': f'Bearer {token}'}, timeout=120, stream=True)
+    if resp.status_code == 200:
+        with open(save_path, 'wb') as f:
+            for chunk in resp.iter_content(8192):
+                f.write(chunk)
+        return True
+    return False
+
+
+def safe_download_attachment(token, file_token, save_path):
+    return with_retry(
+        lambda: _download_or_raise(token, file_token, save_path),
+        max_attempts=3,
+        label='feishu attachment download'
+    )
+
+
+def _download_or_raise(token, file_token, save_path):
+    ok = download_attachment(token, file_token, save_path)
+    if not ok:
+        raise Exception(f'附件下载失败: {file_token}')
+    return True
+
+
+def upload_image_to_feishu(token, file_path, file_name):
+    with open(file_path, 'rb') as f:
+        resp = requests.post(
+            'https://open.feishu.cn/open-apis/drive/v1/medias/upload_all',
+            headers={'Authorization': f'Bearer {token}'},
+            data={
+                'file_name': file_name,
+                'parent_type': 'bitable_file',
+                'parent_node': APP_TOKEN,
+                'size': str(os.path.getsize(file_path))
+            },
+            files={'file': (file_name, f, 'image/png')},
+            timeout=120
+        )
+    data = resp.json()
+    if data.get('code') != 0:
+        raise Exception(f"飞书上传失败: {data.get('msg')}")
+    return data['data']['file_token']
+
 
 # ============================================================
 # 稳定性增强：重试 / 安全请求 / 安全写回

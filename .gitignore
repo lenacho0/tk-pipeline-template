@@ -3,6 +3,7 @@
 
 # local env
 .env
+.clawhub/
 
 # runtime outputs
 downloads/
@@ -43,7 +44,12 @@ venv/
 **/.healthcheck_today
 
 # local/generated work dirs
+first_last_video_work/
+script_doc_reference_work/
+shot_video_work/
+shot_voiceover_work/
 storyboard_work/
+storyboard_video_work/
 video_work/
 tiktok_videos/
 archive_from_autoclaw_*/
@@ -64,10 +70,14 @@ memory/
 
 # ad-hoc temporary files
 .tmp_*
+tmp_*.png
 *.bak
 *.bak.*
 *.bak-*
 *.bak-disable-healthcheck-*
+
+# local connector/runtime config
+config/mcporter.json
 
 # TK generated media/workspaces (large runtime outputs)
 workspace/

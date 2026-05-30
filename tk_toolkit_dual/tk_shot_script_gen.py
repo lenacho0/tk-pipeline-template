@@ -13,8 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
-from tk_script_gen import get_model_info, get_product_info
-from tk_shot_storyboard import cleanup_shots_by_source, filter_existing_fields, split_shots
+from common import get_model_info, get_product_info
 from tk_storyboard_style import format_style_policy_for_prompt, resolve_storyboard_style_policy
 
 MAX_VISUAL_BIBLE_CHARS = 6000
@@ -242,98 +241,5 @@ def build_prompt(task_fields, product_info, model_info, raw_script):
 """.strip()
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 tk_shot_script_gen.py <record_id>")
-        sys.exit(1)
-    record_id = sys.argv[1]
-    token = get_feishu_token()
-
-    if not TABLE_SHOT_SCRIPT_GEN:
-        raise Exception("config.json 尚未配置 shot_script_gen 表 ID")
-
-    try:
-        log_event("INFO", "handwritten shot script task start", record_id=record_id)
-        config = get_model_config(token, CONFIG_RECORDS["shot_script_gen"])
-        model_name = config["model"] or "gemini-2.5-flash"
-        api_key = config["api_key"]
-        api_base = config["api_base"] or "https://aihubmix.com/gemini"
-        if not api_key:
-            raise Exception("飞书配置表缺少 API Key")
-
-        fields = safe_get_record(token, TABLE_SHOT_SCRIPT_GEN, record_id)
-        raw_script = get_handwritten_script(fields)
-        if not raw_script:
-            raise Exception("逐镜头母任务缺少手写脚本内容")
-
-        product_value = get_task_product_value(fields)
-        product_name = extract_text(product_value)
-        if not product_name and not extract_linked_record_ids(product_value):
-            raise Exception("未选择产品")
-
-        product_info = get_product_info(token, product_value)
-        if not product_info:
-            raise Exception(f"找不到产品: {product_name or product_value}")
-
-        model_info = get_model_info(token, fields)
-        target_seconds = parse_target_seconds(fields.get("视频时长", "15s"))
-        safe_update_record(token, TABLE_SHOT_SCRIPT_GEN, record_id, {"生成状态": "生成中"})
-
-        from google import genai
-        client = genai.Client(api_key=api_key, http_options={"base_url": api_base})
-        prompt = build_prompt(fields, product_info, model_info, raw_script)
-        response = with_retry(
-            lambda: client.models.generate_content(model=model_name, contents=[prompt]),
-            max_attempts=3,
-            label="gemini handwritten shot json generate_content",
-        )
-        payload = validate_and_normalize_payload(extract_json_object(getattr(response, "text", "") or ""), target_seconds)
-        readable_script = build_readable_script(payload)
-        visual_bible = build_visual_bible(fields, product_info, model_info, payload)
-
-        update_fields = {
-            "逐镜头脚本": readable_script[:10000],
-            "分镜头结构JSON": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))[:10000],
-            "总镜头数": len(payload.get("shots", [])),
-            "参考来源": "手写脚本，无爆款参考",
-            "参考分析记录IDs": "",
-            "参考视频ID列表": "",
-            "参考样本数": 0,
-            "参考策略摘要": "",
-            "全局视觉锚点": visual_bible,
-            "故事模式": payload.get("story_mode", ""),
-            "视觉连续性策略JSON": json.dumps(payload.get("visual_continuity_policy", {}), ensure_ascii=False, indent=2)[:10000],
-            "生成状态": "成功",
-        }
-        safe_update_record(
-            token,
-            TABLE_SHOT_SCRIPT_GEN,
-            record_id,
-            filter_existing_fields(token, TABLE_SHOT_SCRIPT_GEN, update_fields),
-        )
-
-        deleted = cleanup_shots_by_source(token, record_id)
-        log_event("INFO", "old shot records cleaned", record_id=record_id, deleted=deleted)
-        split_shots(token, record_id, payload)
-
-        log_event("INFO", "handwritten shot script task success", record_id=record_id, shot_count=len(payload.get("shots", [])))
-        print(f"✅ 手写脚本逐镜头 JSON 生成完成并已重建 shot 记录 ({len(payload.get('shots', []))}个镜头)")
-
-    except Exception as e:
-        payload = build_error_payload(e, stage="generate_handwritten_shot_json")
-        err = payload["message"]
-        log_event("ERROR", "handwritten shot script task failed", record_id=record_id, error=err, error_code=payload["error_code"], retryable=payload["retryable"])
-        try:
-            safe_update_record(token, TABLE_SHOT_SCRIPT_GEN, record_id, filter_existing_fields(token, TABLE_SHOT_SCRIPT_GEN, {
-                "生成状态": "失败",
-                "逐镜头脚本": f"错误[{payload['error_code']}]: {err}",
-                "错误信息": err,
-            }))
-        except Exception:
-            pass
-        print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={err}")
-        sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+    raise SystemExit("tk_shot_script_gen.py 仅保留主线共享的手写脚本解析工具函数，不再作为独立旧表 worker 运行。")
