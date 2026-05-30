@@ -13,7 +13,6 @@ import time
 from pathlib import Path
 
 from tk_create_script_doc_shots_table import (
-    AI_MODEL_OPTIONS,
     AI_PROVIDER_OPTIONS,
     DEFAULT_CONFIG_PATHS,
     attachment,
@@ -32,6 +31,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
 )
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, VIDEO_AI_MODEL_OPTIONS
 
 
 TABLE_NAME = "多图九宫格视频生成表"
@@ -47,10 +47,10 @@ VIDEO_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1
 VIDEO_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Gray")]
 
 
-def prefixed_field_group(prefix: str):
+def prefixed_field_group(prefix: str, model_options):
     return [
         select(f"{prefix}AI供应商", AI_PROVIDER_OPTIONS),
-        select(f"{prefix}AI模型", AI_MODEL_OPTIONS),
+        select(f"{prefix}AI模型", model_options),
         text(f"{prefix}AI参数JSON"),
     ]
 
@@ -64,7 +64,7 @@ NINE_GRID_VIDEO_FIELDS = [
     link("关联产品记录", "__PRODUCT_TABLE_ID__"),
     link("选择模特", "__MODEL_TABLE_ID__"),
     attachment("环境图"),
-    *prefixed_field_group("方案"),
+    *prefixed_field_group("方案", TEXT_MODEL_OPTIONS),
     select("方案生成状态", PLAN_STATUS_OPTIONS),
     text("方案JSON"),
     text("方案Markdown"),
@@ -79,7 +79,7 @@ NINE_GRID_VIDEO_FIELDS = [
     select("审核状态", REVIEW_STATUS_OPTIONS),
     text("审核备注"),
     text("九宫格图片提示词"),
-    *prefixed_field_group("图片"),
+    *prefixed_field_group("图片", IMAGE_MODEL_OPTIONS),
     select("图片画面尺寸", IMAGE_SIZE_OPTIONS),
     select("图片画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("图片生成状态", RUN_STATUS_OPTIONS),
@@ -88,7 +88,7 @@ NINE_GRID_VIDEO_FIELDS = [
     text("图片错误信息"),
     datetime_field("图片生成时间"),
     text("视频提示词"),
-    *prefixed_field_group("视频"),
+    *prefixed_field_group("视频", VIDEO_AI_MODEL_OPTIONS),
     select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
     select("视频画面比例", VIDEO_ASPECT_RATIO_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),

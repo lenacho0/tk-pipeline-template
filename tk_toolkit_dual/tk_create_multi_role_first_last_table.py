@@ -20,6 +20,13 @@ from tk_create_script_doc_shots_table import (
     resolved_fields as resolve_common_fields,
     update_config,
 )
+from ai_model_catalog import (
+    AI_CAPABILITY_OPTIONS,
+    AI_MODEL_OPTIONS,
+    AI_PROVIDER_OPTIONS,
+    AI_TASK_TYPE_OPTIONS,
+    VIDEO_MODEL_OPTIONS,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -80,31 +87,7 @@ KEYFRAME_TYPE_OPTIONS = [
 ]
 VIDEO_CLIP_OPTIONS = [opt("S01"), opt("S02")]
 YES_NO_OPTIONS = [opt("否", "Gray"), opt("是", "Green")]
-AI_PROVIDER_OPTIONS = [opt("AIHubMix"), opt("Aitgenne", "Purple"), opt("OTU", "Green")]
-AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("语音", "Purple")]
-AI_TASK_TYPE_OPTIONS = [
-    opt("脚本解析拆分"),
-    opt("故事板提示词拆分"),
-    opt("多角色首尾帧解析"),
-    opt("视频分析"),
-    opt("脚本生成"),
-    opt("视频提示词生成"),
-    opt("文生图", "Green"),
-    opt("图生图/参考图重绘", "Green"),
-    opt("首帧图生视频", "Blue"),
-    opt("首尾帧视频", "Blue"),
-    opt("TTS", "Purple"),
-]
-AI_MODEL_OPTIONS = [
-    opt("AIHubMix / gemini-3.1-pro-preview"),
-    opt("AIHubMix / gemini-2.5-flash"),
-    opt("Aitgenne / gpt-5.5", "Purple"),
-    opt("Aitgenne / gemini-3.1-pro-preview", "Purple"),
-    opt("OTU / gpt-image-2", "Green"),
-    opt("OTU / veo_3_1-fast-fl", "Blue"),
-]
 VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
-VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), opt("OTU / veo_3_1-fast-fl", "Green")]
 
 
 MULTI_ROLE_FIRST_LAST_FIELDS = [

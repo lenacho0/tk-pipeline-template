@@ -34,6 +34,7 @@ from tk_create_script_doc_shots_table import (
     resolved_fields,
     YES_NO_OPTIONS,
 )
+from ai_model_catalog import VIDEO_AI_MODEL_OPTIONS
 
 
 TABLE_NAME = "首尾帧视频生成表"
@@ -53,7 +54,7 @@ VIDEO_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成首尾帧�
 FIRST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发尾帧", "Blue")]
 LAST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发视频", "Blue")]
 VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
-VIDEO_MODEL_OPTIONS = [opt("OTU / veo_3_1-fast-fl", "Green")]
+VIDEO_MODEL_OPTIONS = VIDEO_AI_MODEL_OPTIONS
 
 
 FIRST_LAST_VIDEO_FIELDS = [

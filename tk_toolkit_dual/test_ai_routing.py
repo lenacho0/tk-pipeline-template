@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ai_routing
+import ai_model_catalog
 from common import extract_text
 
 
@@ -39,6 +40,22 @@ class UnifiedAiRoutingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "供应商不匹配"):
             ai_routing.validate_route(route)
+
+    def test_validate_model_rejects_candidate_catalog_entries(self):
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="文本",
+            task_type="脚本生成",
+            model="Aitgenne / gemini-3.1-pro-preview",
+        )
+
+        with self.assertRaisesRegex(ValueError, "AI模型不支持当前能力"):
+            ai_routing.validate_route(route)
+
+        self.assertEqual(
+            ai_model_catalog.find_model("Aitgenne", "文本", "gemini-3.1-pro-preview", include_candidate=True).status,
+            "candidate",
+        )
 
     def test_route_from_record_infers_openai_compatible_for_aitgenne_gpt(self):
         route = ai_routing.route_from_record(

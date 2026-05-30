@@ -136,6 +136,20 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("03-九宫格生成", create_table.TABLE_DEFINITION["views"])
         self.assertIn("04-视频生成", create_table.TABLE_DEFINITION["views"])
 
+    def test_nine_grid_model_options_are_split_by_capability(self):
+        field_by_name = {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}
+        plan_options = [item["name"] for item in field_by_name["方案AI模型"]["options"]]
+        image_options = [item["name"] for item in field_by_name["图片AI模型"]["options"]]
+        video_options = [item["name"] for item in field_by_name["视频AI模型"]["options"]]
+
+        self.assertIn("Aitgenne / gpt-5.5", plan_options)
+        self.assertIn("OTU / gpt-image-2-4K", image_options)
+        self.assertIn("Aitgenne / happyhorse-1.0-r2v", video_options)
+        self.assertNotIn("OTU / gpt-image-2", plan_options)
+        self.assertNotIn("Aitgenne / gpt-5.5", image_options)
+        self.assertNotIn("OTU / nano_banana_pro-4K", image_options)
+        self.assertNotIn("AIHubMix / sora-2-pro", video_options)
+
     def test_dispatcher_registers_nine_grid_watches_by_record_type(self):
         watches = {
             watch["name"]: watch

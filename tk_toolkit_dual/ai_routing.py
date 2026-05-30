@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import requests
 
+import ai_model_catalog
 from common import extract_text
 
 
@@ -47,65 +48,6 @@ class TextModelResult:
     endpoint: str
     provider: str
     model: str
-
-
-CATALOG: List[Dict[str, Any]] = [
-    {
-        "provider": "AIHubMix",
-        "capability": "文本",
-        "models": {"gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-pro-preview-05-13"},
-        "call_types": {"Gemini 原生 SDK"},
-        "supports_video_input": True,
-        "supports_structured_json": True,
-    },
-    {
-        "provider": "Aitgenne",
-        "capability": "文本",
-        "models": {"gpt-5.5", "gemini-3.1-pro-preview", "custom__aitgenne/gpt-5.4"},
-        "call_types": {"OpenAI兼容 chat/completions", "Gemini 原生 SDK", "Gemini 原生 inline_data"},
-        "supports_video_input": True,
-        "supports_structured_json": True,
-    },
-    {
-        "provider": "OTU",
-        "capability": "图片",
-        "models": {
-            "gpt-image-2",
-            "gpt-image-2-2K",
-            "gpt-image-2-4K",
-            "nano_banana_2",
-            "nano_banana_pro-1K",
-            "nano_banana_pro-2K",
-            "nano_banana_pro-4K",
-        },
-        "supports_structured_json": False,
-    },
-    {
-        "provider": "OTU",
-        "capability": "视频",
-        "models": {
-            "veo_3_1-fast-fl",
-            "veo_3_1-fast-fl-hd",
-            "veo_3_1-fast",
-            "veo_3_1",
-            "omni_flash-10s",
-            "sora-2-12s",
-        },
-        "supports_structured_json": False,
-    },
-    {
-        "provider": "AIHubMix",
-        "capability": "视频",
-        "models": {"veo-3.1-fast-generate-preview", "seeddance2.0", "sora-2-pro"},
-        "supports_structured_json": False,
-    },
-    {
-        "provider": "Aitgenne",
-        "capability": "语音",
-        "models": {"speech-2.8-turbo"},
-        "supports_structured_json": False,
-    },
-]
 
 
 def _norm(value: Any) -> str:
@@ -160,18 +102,11 @@ def unified_route_dry_run_only(config_records: Iterable[Dict[str, Any]]) -> bool
     return route_switch_mode(config_records) == ROUTE_MODE_DRY_RUN
 
 
-def _matching_catalog_entry(route: AiRoute) -> Optional[Dict[str, Any]]:
+def _matching_catalog_entry(route: AiRoute) -> Optional[ai_model_catalog.AiModelCatalogEntry]:
     model_bits = parse_model_display(route.model)
     provider = model_bits["provider"] or route.provider
     model = model_bits["model"]
-    for entry in CATALOG:
-        if entry["provider"] != provider:
-            continue
-        if entry["capability"] != route.capability:
-            continue
-        if model in entry.get("models", set()):
-            return entry
-    return None
+    return ai_model_catalog.find_model(provider, route.capability, model)
 
 
 def validate_route(route: AiRoute) -> AiRoute:
@@ -181,7 +116,7 @@ def validate_route(route: AiRoute) -> AiRoute:
     entry = _matching_catalog_entry(route)
     if not entry:
         raise ValueError(f"AI模型不支持当前能力: provider={route.provider}, capability={route.capability}, model={route.model}")
-    if route.call_type and entry.get("call_types") and route.call_type not in entry["call_types"]:
+    if route.call_type and entry.call_types and route.call_type not in entry.call_types:
         raise ValueError(f"调用方式不支持当前模型: {route.call_type}")
     return route
 
@@ -395,6 +330,8 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         "capability": route.capability,
         "task_type": route.task_type,
         "endpoint": media_endpoint(route),
+        "method": "POST",
+        "payload_keys": sorted(payload.keys()),
         "payload": payload,
         "reference_count": int(reference_count or 0),
         "api_key": route.api_key,

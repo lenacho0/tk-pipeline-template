@@ -137,7 +137,15 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(fields["视频通道"]["type"], "select")
         self.assertEqual([item["name"] for item in fields["视频通道"]["options"]], ["AIHubMix", "OTU"])
         self.assertEqual(fields["视频生成模型"]["type"], "select")
-        self.assertEqual([item["name"] for item in fields["视频生成模型"]["options"]], ["默认（配置表）", "AIHubMix / veo3.1", "AIHubMix / seeddance2.0", "AIHubMix / veo-3.1-fast-generate-preview", "OTU / veo_3_1-fast-fl"])
+        video_model_options = [item["name"] for item in fields["视频生成模型"]["options"]]
+        self.assertEqual(video_model_options[0], "默认（配置表）")
+        for option in [
+            "AIHubMix / veo-3.1-fast-generate-preview",
+            "AIHubMix / seeddance2.0",
+            "OTU / veo_3_1-fast-fl",
+            "OTU / veo_3_1-fast-fl-hd",
+        ]:
+            self.assertIn(option, video_model_options)
         self.assertEqual(fields["视频生成时间"]["type"], "datetime")
         self.assertEqual(fields["生成时间"]["type"], "datetime")
 
