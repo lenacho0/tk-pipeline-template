@@ -57,14 +57,14 @@ from tk_storyboard_video import (  # noqa: E402
     build_reference_urls,
     compact_json,
     filter_existing_fields,
+    poll_omni_video_task,
+    submit_omni_video_task,
 )
 from tk_shot_video import (  # noqa: E402
     download_video,
     extract_video_url,
     format_url_field_value,
     get_table_field_types,
-    poll_otu_video_task,
-    submit_otu_video_task,
     upload_video_to_feishu,
 )
 import ai_routing  # noqa: E402
@@ -85,7 +85,7 @@ DEFAULT_TEXT_MODEL = "AIHubMix / gemini-3.1-pro-preview"
 DEFAULT_IMAGE_PROVIDER = "OTU"
 DEFAULT_IMAGE_MODEL = "OTU / gpt-image-2"
 DEFAULT_VIDEO_PROVIDER = "OTU"
-DEFAULT_VIDEO_MODEL = "OTU / veo_3_1-fast-fl"
+DEFAULT_VIDEO_MODEL = "OTU / omni_flash-10s"
 DEFAULT_IMAGE_SIZE = "720x1280"
 DEFAULT_VIDEO_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
@@ -779,6 +779,45 @@ def _product_reference_items(
     ]
 
 
+def first_product_reference_item(
+    token: str,
+    parent_fields: Dict[str, Any],
+    *,
+    get_record_fn: Optional[Callable[[str, str, str], Dict[str, Any]]] = None,
+) -> Dict[str, str]:
+    product_ids = _extract_link_ids(parent_fields.get("关联产品记录"))
+    if not product_ids:
+        raise ValueError("九宫格视频生成缺少关联产品记录")
+    get_record = get_record_fn or safe_get_record
+    product_fields = get_record(token, TABLE_PRODUCT, product_ids[0])
+    product_tokens = _attachment_tokens(product_fields.get("产品图片"))
+    if not product_tokens:
+        raise ValueError("产品记录缺少产品图片")
+    product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
+    return {"role": "product:1", "file_token": product_tokens[0], "name": product_name or "selected product"}
+
+
+def collect_nine_grid_video_product_reference(
+    token: str,
+    parent_fields: Dict[str, Any],
+    task_dir: Path,
+    *,
+    product_item: Optional[Dict[str, str]] = None,
+    download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
+    get_record_fn: Optional[Callable[[str, str, str], Dict[str, Any]]] = None,
+) -> Dict[str, str]:
+    item = product_item or first_product_reference_item(token, parent_fields, get_record_fn=get_record_fn)
+    local_path = task_dir / "reference_product_1.png"
+    downloaded = download_fn(token, item["file_token"], str(local_path))
+    return {
+        "role": item["role"],
+        "path": _downloaded_path(downloaded, local_path),
+        "file_token": item["file_token"],
+        "name": item.get("name", ""),
+        "type": "product",
+    }
+
+
 def _asset_reference_file_token(
     token: str,
     fields: Dict[str, Any],
@@ -1094,10 +1133,16 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_nine_grid_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
-    prompt = extract_text(fields.get("视频提示词")).strip() or NINE_GRID_VIDEO_SYSTEM_PROMPT
+    prompt = extract_text(fields.get("视频提示词")).strip()
+    model_prompt = "\n\n".join(part for part in [NINE_GRID_VIDEO_SYSTEM_PROMPT, prompt] if part).strip()
     if not _attachment_token(fields.get("九宫格图")):
         raise ValueError("Board分段缺少九宫格图附件")
-    _, cfg = get_config_record(VIDEO_STAGE_NAME, default_model="veo_3_1-fast-fl", default_api_base="https://otuapi.com", default_size=DEFAULT_VIDEO_SIZE)
+    parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
+    if not parent_record_id:
+        raise ValueError("Board分段缺少父任务记录ID")
+    parent_fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, parent_record_id)
+    product_item = first_product_reference_item(token, parent_fields)
+    _, cfg = get_config_record(VIDEO_STAGE_NAME, default_model="omni_flash-10s", default_api_base="https://otuapi.com", default_size=DEFAULT_VIDEO_SIZE)
     params = {
         "size": _field_with_default(fields, "视频画面尺寸", DEFAULT_VIDEO_SIZE),
         "aspect_ratio": _field_with_default(fields, "视频画面比例", DEFAULT_ASPECT_RATIO),
@@ -1118,8 +1163,8 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
-        "route": ai_routing.build_media_request_summary(route, prompt, reference_count=1),
-        "prompt_chars": len(prompt),
+        "route": ai_routing.build_media_request_summary(route, model_prompt, reference_count=2),
+        "prompt_chars": len(model_prompt),
     }
     if dry_run:
         summary["status"] = "dry_run_ready"
@@ -1132,6 +1177,19 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     grid_path = str(work_dir / "reference_nine_grid.png")
     safe_download_attachment(token, grid_token, grid_path)
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    product_ref = collect_nine_grid_video_product_reference(
+        token,
+        parent_fields,
+        work_dir,
+        product_item=product_item,
+        download_fn=safe_download_attachment,
+    )
+    omni_refs = [{
+        "role": "nine_grid",
+        "path": grid_path,
+        "file_token": grid_token,
+        "name": "current Board nine-grid",
+    }, product_ref]
     output_path = str(work_dir / f"{record_id}_nine_grid_video.mp4")
     field_types = get_table_field_types(token, TABLE_NINE_GRID_VIDEO)
 
@@ -1144,11 +1202,11 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         "视频生成状态": "生成中",
         "错误信息": "",
     }))
-    task_id, _submit_body = submit_otu_video_task(
-        {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
-        f"{NINE_GRID_VIDEO_SYSTEM_PROMPT}\n\n{prompt}".strip(),
-        grid_path,
-        str(params.get("seconds") or "10"),
+    video_config = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
+    task_id, _submit_body = submit_omni_video_task(
+        video_config,
+        model_prompt,
+        omni_refs,
         size=params.get("size") or DEFAULT_VIDEO_SIZE,
         aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
     )
@@ -1156,10 +1214,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         "视频任务ID": task_id,
         "视频错误信息": f"已提交九宫格视频任务，正在轮询。task_id={task_id}",
     }))
-    result = poll_otu_video_task(
-        {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
-        task_id,
-    )
+    result = poll_omni_video_task(video_config, task_id)
     video_url = extract_video_url(result)
     if not video_url:
         raise RuntimeError(f"九宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
