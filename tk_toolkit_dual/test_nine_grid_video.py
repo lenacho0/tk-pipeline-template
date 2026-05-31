@@ -182,6 +182,44 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("不要提具体供应商或模型名", wanted[1]["提示词"])
         self.assertIn("不要提具体供应商或模型名", wanted[2]["提示词"])
 
+    def test_nine_grid_config_reuses_production_secret_when_preset_has_no_key(self):
+        records = [
+            {
+                "record_id": "recPreset",
+                "fields": {
+                    "环节": "多图九宫格图片生成",
+                    "模型名称": "gpt-image-2",
+                    "API 代理地址": "https://otuapi.com",
+                    "API Key": "",
+                    "提示词": "preset prompt",
+                },
+            },
+            {
+                "record_id": "recProduction",
+                "fields": {
+                    "环节": "图片生成-OTU",
+                    "模型名称": "gpt-image-2",
+                    "API 代理地址": "https://otuapi.com",
+                    "API Key": "prod-key",
+                    "提示词": "production prompt",
+                },
+            },
+        ]
+
+        with patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_list_records", return_value=records):
+            record_id, cfg = nine_grid.get_config_record(
+                nine_grid.IMAGE_STAGE_NAME,
+                default_model="gpt-image-2",
+                default_api_base="https://otuapi.com",
+            )
+
+        self.assertEqual(record_id, "recPreset")
+        self.assertEqual(cfg["model"], "gpt-image-2")
+        self.assertEqual(cfg["api_base"], "https://otuapi.com")
+        self.assertEqual(cfg["api_key"], "prod-key")
+        self.assertEqual(cfg["prompt"], "preset prompt")
+
     def test_image_dry_run_uses_image_prefixed_route_fields(self):
         child_fields = {
             "父任务记录ID": "recParent",

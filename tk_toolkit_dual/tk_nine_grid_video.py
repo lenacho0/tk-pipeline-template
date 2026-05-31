@@ -83,6 +83,11 @@ DEFAULT_VIDEO_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
 BASE_WORK_DIR = Path(WORKSPACE) / "nine_grid_video_work"
 MAX_REFERENCE_IMAGES = 7
+SECRET_FALLBACK_STAGES = {
+    PLAN_STAGE_NAME: ("故事板图片提示词拆分-Gemini",),
+    IMAGE_STAGE_NAME: ("图片生成-OTU", "故事板图片生成-OTU"),
+    VIDEO_STAGE_NAME: ("分镜视频生成-OTU",),
+}
 
 
 def ensure_nine_grid_table() -> None:
@@ -344,7 +349,8 @@ def _stage_config_records(token: str) -> List[Dict[str, Any]]:
 
 def get_config_record(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
-    for rec in safe_list_records(token, TABLE_CONFIG):
+    records = safe_list_records(token, TABLE_CONFIG)
+    for rec in records:
         fields = rec.get("fields") or {}
         if extract_text(fields.get("环节")).strip() != stage_name:
             continue
@@ -355,6 +361,21 @@ def get_config_record(stage_name: str, *, default_model: str, default_api_base: 
             "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
             "prompt": extract_text(fields.get("提示词")).strip(),
         }
+        if not cfg["api_key"]:
+            for fallback_stage in SECRET_FALLBACK_STAGES.get(stage_name, ()):
+                for fallback_rec in records:
+                    fallback_fields = fallback_rec.get("fields") or {}
+                    if extract_text(fallback_fields.get("环节")).strip() != fallback_stage:
+                        continue
+                    fallback_key = extract_text(fallback_fields.get("API Key")).strip()
+                    if not fallback_key:
+                        continue
+                    cfg["api_key"] = fallback_key
+                    if not cfg["api_base"]:
+                        cfg["api_base"] = extract_text(fallback_fields.get("API 代理地址")).strip()
+                    break
+                if cfg["api_key"]:
+                    break
         return rec.get("record_id") or rec.get("id") or "", cfg
     return "", {
         "model": default_model,
