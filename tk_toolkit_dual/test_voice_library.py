@@ -28,6 +28,15 @@ class VoiceLibraryTests(unittest.TestCase):
         path = voices.build_reference_audio_path('/tmp/task', 'recabc', [{'name': 'A2.WAV', 'file_token': 'token'}])
         self.assertEqual(path, '/tmp/task/recabc_reference_audio.wav')
 
+    def test_validate_clone_audio_duration_rejects_short_audio(self):
+        with patch.object(voices, 'probe_audio_duration_seconds', return_value=8.05):
+            with self.assertRaisesRegex(Exception, '复刻参考音频时长必须至少 10 秒'):
+                voices.validate_clone_audio_duration('/tmp/ref.mp3')
+
+    def test_find_ffprobe_binary_falls_back_to_homebrew_path(self):
+        with patch.object(voices.shutil, 'which', return_value=None), patch.object(voices.os.path, 'exists', return_value=True):
+            self.assertEqual(voices.find_ffprobe_binary(), '/opt/homebrew/bin/ffprobe')
+
     def test_parse_voice_design_response(self):
         fake_audio = b'\xff\xfb' + b'a' * 1200
         voice_id, audio = voices.parse_voice_design_response({

@@ -13,6 +13,8 @@ MiniMax 音色库生成
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from urllib.parse import urlparse
@@ -223,6 +225,52 @@ def build_reference_audio_path(task_dir, record_id, attachment_value):
     return os.path.join(task_dir, f'{record_id}_reference_audio{ext}')
 
 
+def find_ffprobe_binary():
+    found = shutil.which('ffprobe')
+    if found:
+        return found
+    for candidate in ('/opt/homebrew/bin/ffprobe', '/usr/local/bin/ffprobe', '/usr/bin/ffprobe'):
+        if os.path.exists(candidate):
+            return candidate
+    raise Exception('无法读取复刻参考音频时长: 找不到 ffprobe')
+
+
+def probe_audio_duration_seconds(file_path):
+    try:
+        ffprobe = find_ffprobe_binary()
+        completed = subprocess.run(
+            [
+                ffprobe,
+                '-v',
+                'error',
+                '-show_entries',
+                'format=duration',
+                '-of',
+                'default=noprint_wrappers=1:nokey=1',
+                file_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as e:
+        raise Exception(f'无法读取复刻参考音频时长: {e}') from e
+    try:
+        return float((completed.stdout or '').strip())
+    except ValueError as e:
+        raise Exception('无法读取复刻参考音频时长: ffprobe 未返回有效 duration') from e
+
+
+def validate_clone_audio_duration(file_path):
+    duration = probe_audio_duration_seconds(file_path)
+    if duration < 10:
+        raise Exception(f'复刻参考音频时长必须至少 10 秒，当前约 {duration:.2f} 秒')
+    if duration > 300:
+        raise Exception(f'复刻参考音频时长不能超过 5 分钟，当前约 {duration:.2f} 秒')
+    return duration
+
+
 def run_voice_library_record(token, record_id):
     if not TABLE_VOICE_LIBRARY:
         raise Exception('config.json 尚未配置 voice_library 表 ID')
@@ -267,6 +315,7 @@ def run_voice_library_record(token, record_id):
             raise Exception('参考音频为空')
         ref_path = build_reference_audio_path(task_dir, record_id, fields.get('参考音频'))
         download_feishu_media(token, file_token, ref_path)
+        validate_clone_audio_duration(ref_path)
         voice_id = current_voice_id or generate_clone_voice_id(record_id)
         file_id = with_retry(lambda: upload_clone_audio(ref_path, config), max_attempts=2, label='upload clone audio')
         demo_url = with_retry(lambda: clone_voice(file_id, voice_id, preview_text, config), max_attempts=2, label='voice clone')
