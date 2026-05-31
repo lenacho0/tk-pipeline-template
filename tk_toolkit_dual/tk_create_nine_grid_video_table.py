@@ -38,8 +38,12 @@ TABLE_NAME = "多图九宫格视频生成表"
 
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 PLAN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
-RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("Board分段", "Green")]
+RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("参考资产", "Purple"), opt("Board分段", "Green")]
 REVIEW_STATUS_OPTIONS = [opt("待确认", "Orange"), opt("通过", "Green"), opt("不通过", "Red")]
+REFERENCE_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue"), opt("选择模特表", "Purple")]
+ENVIRONMENT_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue")]
+ASSET_TYPE_OPTIONS = [opt("human", "Blue"), opt("pet", "Green"), opt("environment", "Purple")]
+REFERENCE_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成参考图", "Orange")]
 
 IMAGE_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1024x1024", "Gray")]
 IMAGE_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("1:1", "Gray")]
@@ -62,12 +66,30 @@ NINE_GRID_VIDEO_FIELDS = [
     text("批次ID"),
     text("脚本内容"),
     link("关联产品记录", "__PRODUCT_TABLE_ID__"),
+    select("人物/宠物默认来源", REFERENCE_SOURCE_OPTIONS),
+    select("环境图来源", ENVIRONMENT_SOURCE_OPTIONS),
     link("选择模特", "__MODEL_TABLE_ID__"),
     attachment("环境图"),
+    *prefixed_field_group("参考图", IMAGE_MODEL_OPTIONS),
     *prefixed_field_group("方案", TEXT_MODEL_OPTIONS),
     select("方案生成状态", PLAN_STATUS_OPTIONS),
     text("方案JSON"),
     text("方案Markdown"),
+    text("资产ID"),
+    select("资产类型", ASSET_TYPE_OPTIONS),
+    text("资产名称"),
+    text("资产角色说明"),
+    text("参考提示词"),
+    select("参考图来源", REFERENCE_SOURCE_OPTIONS),
+    select("参考图生成状态", RUN_STATUS_OPTIONS),
+    attachment("参考图"),
+    text("参考图file_token"),
+    text("参考图本地路径"),
+    text("参考图任务ID"),
+    text("参考图错误信息"),
+    datetime_field("参考图生成时间"),
+    select("参考图审核状态", REVIEW_STATUS_OPTIONS),
+    select("参考图操作", REFERENCE_OPERATION_OPTIONS),
     number("总Board数"),
     number("Board编号"),
     text("Time Range"),
@@ -107,8 +129,14 @@ TABLE_DEFINITION = {
     "fields": NINE_GRID_VIDEO_FIELDS,
     "views": {
         "01-任务入口": [
-            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图",
+            "任务名称", "脚本内容", "关联产品记录", "人物/宠物默认来源", "环境图来源",
             "方案AI模型", "方案AI参数JSON", "方案生成状态", "错误信息",
+        ],
+        "02-参考资产确认": [
+            "记录类型", "任务名称", "父任务记录ID", "资产ID", "资产类型", "资产名称",
+            "资产角色说明", "参考图来源", "选择模特", "参考提示词",
+            "参考图AI模型", "参考图AI参数JSON", "参考图生成状态", "参考图",
+            "参考图审核状态", "参考图操作", "参考图错误信息",
         ],
         "02-方案审核": [
             "记录类型", "任务名称", "父任务记录ID", "Board编号", "Time Range", "叙事任务",
@@ -126,15 +154,20 @@ TABLE_DEFINITION = {
         ],
         "高级AI参数": [
             "记录类型", "任务名称", "父任务记录ID", "Board编号",
+            "参考图AI模型", "参考图AI参数JSON",
             "方案AI模型", "方案AI参数JSON",
             "图片AI模型", "图片AI参数JSON",
             "视频AI模型", "视频AI参数JSON",
         ],
         "99-排错": [
             "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
+            "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源",
+            "参考图生成状态", "参考图审核状态", "参考图任务ID", "参考图file_token",
+            "参考图本地路径", "参考图错误信息", "参考图生成时间",
             "方案生成状态", "方案JSON", "方案Markdown", "九格摘要JSON",
             "图片任务ID", "图片错误信息", "图片生成时间",
             "视频任务ID", "视频错误信息", "视频生成时间", "错误信息",
+            "参考图AI供应商", "参考图AI模型", "参考图AI参数JSON",
             "方案AI供应商", "方案AI模型", "方案AI参数JSON",
             "图片AI供应商", "图片AI模型", "图片AI参数JSON",
             "视频AI供应商", "视频AI模型", "视频AI参数JSON",
@@ -145,6 +178,7 @@ TABLE_DEFINITION = {
 
 VIEW_FILTERS = {
     "01-任务入口": {"logic": "and", "conditions": [["记录类型", "intersects", ["母任务"]]]},
+    "02-参考资产确认": {"logic": "and", "conditions": [["记录类型", "intersects", ["参考资产"]]]},
     "02-方案审核": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
     "03-九宫格生成": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
     "04-视频生成": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},

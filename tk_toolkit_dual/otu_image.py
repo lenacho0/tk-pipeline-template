@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -107,14 +108,12 @@ def submit_otu_image_task(
     input_mode: str,
     image_path: str = "",
     image_url: str = "",
+    reference_image_paths: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     size: str = DEFAULT_OTU_IMAGE_SIZE,
 ) -> Tuple[str, Dict[str, Any]]:
     url = f"{(config.get('api_base') or DEFAULT_OTU_API_BASE).rstrip('/')}/v1/videos"
-    headers = {
-        "Authorization": f"Bearer {config['api_key']}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {config['api_key']}"}
     submit_metadata = {"aspectRatio": DEFAULT_ASPECT_RATIO}
     if metadata:
         submit_metadata.update(metadata)
@@ -130,16 +129,38 @@ def submit_otu_image_task(
     if image_path:
         with open(image_path, "rb") as image_file:
             payload["image_base64"] = base64.b64encode(image_file.read()).decode("ascii")
+    reference_image_paths = [path for path in (reference_image_paths or []) if path]
     last_submit_error: Optional[requests.RequestException] = None
     for attempt in range(1, MAX_SUBMIT_REQUEST_ERRORS + 1):
+        opened = []
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=SUBMIT_TIMEOUT)
+            if reference_image_paths:
+                files = []
+                for path in reference_image_paths:
+                    image_file = open(path, "rb")
+                    opened.append(image_file)
+                    files.append(("input_reference[]", (os.path.basename(path), image_file, "image/png")))
+                data = {
+                    "model": payload["model"],
+                    "prompt": payload["prompt"],
+                    "metadata": json.dumps(submit_metadata, ensure_ascii=False),
+                    "input_mode": payload["input_mode"],
+                    "size": payload["size"],
+                }
+                resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+            else:
+                json_headers = dict(headers)
+                json_headers["Content-Type"] = "application/json"
+                resp = requests.post(url, headers=json_headers, json=payload, timeout=SUBMIT_TIMEOUT)
             break
         except requests.RequestException as exc:
             last_submit_error = exc
             if attempt >= MAX_SUBMIT_REQUEST_ERRORS:
                 raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={exc}") from exc
             time.sleep(POLL_INTERVAL)
+        finally:
+            for handle in opened:
+                handle.close()
     else:
         raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={last_submit_error}")
     try:

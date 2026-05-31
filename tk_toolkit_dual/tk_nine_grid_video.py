@@ -12,16 +12,19 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
+    TABLE_MODEL,
     TABLE_NINE_GRID_VIDEO,
+    TABLE_PRODUCT,
     WORKSPACE,
     build_error_payload,
     extract_linked_record_ids,
@@ -51,9 +54,7 @@ from tk_nine_grid_video_prompt import (  # noqa: E402
 )
 from tk_shot_script_gen import extract_json_object  # noqa: E402
 from tk_storyboard_video import (  # noqa: E402
-    build_reference_contact_sheet,
     build_reference_urls,
-    collect_parent_reference_images,
     compact_json,
     filter_existing_fields,
 )
@@ -67,11 +68,18 @@ from tk_shot_video import (  # noqa: E402
     upload_video_to_feishu,
 )
 import ai_routing  # noqa: E402
+from aitgenne_image import (  # noqa: E402
+    DEFAULT_AITGENNE_API_BASE,
+    save_aitgenne_image_result,
+    submit_aitgenne_image_generation,
+)
+from image_generation import run_image_generation  # noqa: E402
 
 
 PLAN_STAGE_NAME = "多图九宫格方案生成"
 IMAGE_STAGE_NAME = "多图九宫格图片生成"
 VIDEO_STAGE_NAME = "多图九宫格视频生成"
+REFERENCE_STAGE_NAME = "多图九宫格图片生成"
 DEFAULT_TEXT_PROVIDER = "AIHubMix"
 DEFAULT_TEXT_MODEL = "AIHubMix / gemini-3.1-pro-preview"
 DEFAULT_IMAGE_PROVIDER = "OTU"
@@ -83,6 +91,24 @@ DEFAULT_VIDEO_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
 BASE_WORK_DIR = Path(WORKSPACE) / "nine_grid_video_work"
 MAX_REFERENCE_IMAGES = 7
+REFERENCE_SOURCE_AI = "AI自动生成"
+REFERENCE_SOURCE_MANUAL = "手动上传"
+REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
+ASSET_RECORD_TYPE = "参考资产"
+ENVIRONMENT_EMPTY_SCENE_PREFIX = """
+EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
+Generate a clean empty scene master/background plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, lighting, camera angle, problem location, and non-character household props. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image.
+""".strip()
+ENVIRONMENT_FORBIDDEN_TERMS = {
+    "person", "people", "human", "woman", "man", "girl", "boy", "lady",
+    "dog", "cat", "pet", "animal", "bottle", "spray", "product", "hand",
+    "人物", "人像", "真人", "女人", "男人", "女孩", "男孩", "狗", "猫",
+    "宠物", "动物", "产品", "喷雾", "瓶", "手",
+}
+ENVIRONMENT_NEGATION_TERMS = {
+    "no ", "without", "forbidden", "do not", "don't", "must not",
+    "禁止", "不要", "不得", "不能", "无人物", "无人", "不出现", "严禁",
+}
 SECRET_FALLBACK_STAGES = {
     PLAN_STAGE_NAME: ("故事板图片提示词拆分-Gemini",),
     IMAGE_STAGE_NAME: ("图片生成-OTU", "故事板图片生成-OTU"),
@@ -103,6 +129,16 @@ def ensure_work_dir(record_id: str) -> Path:
 
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+def _attachment_tokens(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    tokens: List[str] = []
+    for item in value:
+        if isinstance(item, dict) and item.get("file_token"):
+            tokens.append(str(item["file_token"]).strip())
+    return [token for token in tokens if token]
 
 
 def _extract_link_ids(value: Any) -> List[str]:
@@ -226,6 +262,72 @@ def _parse_params(text: str) -> Dict[str, Any]:
     return parsed
 
 
+def _slug_asset_id(value: str, fallback: str) -> str:
+    text = extract_text(value).strip().lower()
+    text = re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]+", "_", text).strip("_")
+    return text or fallback
+
+
+def _reference_role_to_asset_type(role: str) -> str:
+    normalized = extract_text(role).strip().lower()
+    if normalized in {"character", "human", "person", "人物", "角色"}:
+        return "human"
+    if normalized in {"pet", "animal", "宠物"}:
+        return "pet"
+    if normalized in {"environment", "scene", "room", "场景", "环境"}:
+        return "environment"
+    return normalized
+
+
+def _environment_prompt_parts(prompt: str) -> List[str]:
+    parts: List[str] = []
+    for line in prompt.replace("\r\n", "\n").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts.extend(part.strip() for part in re.split(r"(?<=[.!?。！？])\s+", line) if part.strip())
+    return parts
+
+
+def sanitize_environment_reference_prompt(prompt: str) -> str:
+    source_prompt = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
+    cleaned_parts: List[str] = []
+    for text in _environment_prompt_parts(source_prompt):
+        lowered = text.lower()
+        has_forbidden = any(term in lowered for term in ENVIRONMENT_FORBIDDEN_TERMS)
+        has_negation = any(term in lowered for term in ENVIRONMENT_NEGATION_TERMS)
+        if has_forbidden and not has_negation:
+            continue
+        cleaned_parts.append(text)
+    cleaned = "\n".join(cleaned_parts).strip()
+    if cleaned:
+        return f"{ENVIRONMENT_EMPTY_SCENE_PREFIX}\n\nScene details to keep:\n{cleaned}"
+    return ENVIRONMENT_EMPTY_SCENE_PREFIX
+
+
+def build_reference_asset_prompt(reference: Dict[str, Any]) -> str:
+    asset_type = _reference_role_to_asset_type(reference.get("asset_type") or reference.get("role"))
+    name = extract_text(reference.get("asset_name") or reference.get("name")).strip()
+    purpose = extract_text(reference.get("purpose") or reference.get("asset_role_description")).strip()
+    if asset_type == "environment":
+        return sanitize_environment_reference_prompt(
+            "\n".join(part for part in [f"Scene: {name}" if name else "", purpose] if part).strip()
+        )
+    if asset_type == "pet":
+        return (
+            "Generate one clean full-body pet identity reference image for later video consistency. "
+            f"Pet name/role: {name or 'selected pet'}. "
+            f"Visual purpose: {purpose or 'lock breed, fur color, body shape, markings, expression, and scale'}. "
+            "Show only this pet, no product, no extra animals, no text, no watermark."
+        )
+    return (
+        "Generate one clean full-body human character identity reference image for later video consistency. "
+        f"Character name/role: {name or 'selected character'}. "
+        f"Visual purpose: {purpose or 'lock face, hair, outfit, body type, age impression, and everyday UGC style'}. "
+        "Show only this character, no product, no extra people, no pets, no text, no watermark."
+    )
+
+
 def build_plan_generation_request(fields: Dict[str, Any], *, system_prompt: str = "") -> str:
     script = extract_text(fields.get("脚本内容")).strip()
     product_links = _extract_link_ids(fields.get("关联产品记录"))
@@ -259,12 +361,101 @@ def build_plan_review_markdown(payload: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
+def _reference_manifest_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    manifest = payload.get("reference_manifest") if isinstance(payload, dict) else {}
+    items = _as_list((manifest or {}).get("required_references")) if isinstance(manifest, dict) else []
+    manifest_items = [item for item in items if isinstance(item, dict)]
+    analysis = payload.get("script_analysis") if isinstance(payload, dict) else {}
+    if not isinstance(analysis, dict):
+        return manifest_items
+    fallback_items: List[Dict[str, Any]] = []
+    for name in _as_list(analysis.get("characters")):
+        fallback_items.append({"role": "human", "name": name, "purpose": "lock character identity"})
+    for name in _as_list(analysis.get("pets")):
+        fallback_items.append({"role": "pet", "name": name, "purpose": "lock pet identity"})
+    environment = extract_text(analysis.get("environment")).strip()
+    if environment:
+        fallback_items.append({"role": "environment", "name": environment, "purpose": "lock empty scene layout"})
+    if not manifest_items:
+        return fallback_items
+
+    merged = list(manifest_items)
+    for asset_type in ("human", "pet", "environment"):
+        existing_count = sum(
+            1 for item in manifest_items
+            if _reference_role_to_asset_type(item.get("role") or item.get("asset_type")) == asset_type
+        )
+        fallback_for_type = [
+            item for item in fallback_items
+            if _reference_role_to_asset_type(item.get("role") or item.get("asset_type")) == asset_type
+        ]
+        if existing_count < len(fallback_for_type):
+            merged.extend(fallback_for_type[existing_count:])
+    return merged
+
+
+def build_reference_asset_records(
+    parent_fields: Dict[str, Any],
+    payload: Dict[str, Any],
+    *,
+    parent_record_id: str,
+    batch_id: str,
+) -> List[Dict[str, Dict[str, Any]]]:
+    records = []
+    seen: Dict[str, int] = {}
+    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"九宫格任务-{parent_record_id[-6:]}"
+    default_people_source = _field_with_default(parent_fields, "人物/宠物默认来源", REFERENCE_SOURCE_AI)
+    environment_source = _field_with_default(parent_fields, "环境图来源", REFERENCE_SOURCE_AI)
+    for raw in _reference_manifest_items(payload):
+        asset_type = _reference_role_to_asset_type(raw.get("role") or raw.get("asset_type"))
+        if asset_type == "product":
+            continue
+        if asset_type not in {"human", "pet", "environment"}:
+            continue
+        name = extract_text(raw.get("name") or raw.get("asset_name")).strip() or asset_type
+        base_asset_id = _slug_asset_id(name, f"{asset_type}_{len(records) + 1}")
+        count = seen.get(base_asset_id, 0) + 1
+        seen[base_asset_id] = count
+        asset_id = base_asset_id if count == 1 else f"{base_asset_id}_{count}"
+        source = environment_source if asset_type == "environment" else default_people_source
+        if asset_type == "environment" and source not in {REFERENCE_SOURCE_AI, REFERENCE_SOURCE_MANUAL}:
+            source = REFERENCE_SOURCE_AI
+        generation_status = "待生成" if source == REFERENCE_SOURCE_AI else "不触发"
+        fields = {
+            "记录类型": ASSET_RECORD_TYPE,
+            "任务名称": f"{task_name}-{asset_id}",
+            "父任务记录ID": parent_record_id,
+            "批次ID": batch_id,
+            "关联产品记录": _extract_link_ids(parent_fields.get("关联产品记录")),
+            "资产ID": asset_id,
+            "资产类型": asset_type,
+            "资产名称": name,
+            "资产角色说明": extract_text(raw.get("purpose")).strip(),
+            "参考提示词": build_reference_asset_prompt({
+                "asset_type": asset_type,
+                "asset_name": name,
+                "purpose": extract_text(raw.get("purpose")).strip(),
+            }),
+            "参考图来源": source,
+            "参考图AI供应商": _field_with_default(parent_fields, "参考图AI供应商", DEFAULT_IMAGE_PROVIDER),
+            "参考图AI模型": _field_with_default(parent_fields, "参考图AI模型", DEFAULT_IMAGE_MODEL),
+            "参考图AI参数JSON": extract_text(parent_fields.get("参考图AI参数JSON")).strip(),
+            "参考图生成状态": generation_status,
+            "参考图审核状态": "待确认",
+            "参考图操作": "不触发",
+            "错误信息": "",
+        }
+        records.append({"fields": fields})
+    return records
+
+
 def build_child_board_records(
     parent_fields: Dict[str, Any],
     payload: Dict[str, Any],
     *,
     parent_record_id: str,
     batch_id: str,
+    await_reference_assets: bool = False,
 ) -> List[Dict[str, Dict[str, Any]]]:
     records = []
     boards = payload.get("boards") or []
@@ -294,7 +485,7 @@ def build_child_board_records(
             "图片AI参数JSON": extract_text(parent_fields.get("图片AI参数JSON")).strip(),
             "图片画面尺寸": DEFAULT_IMAGE_SIZE,
             "图片画面比例": DEFAULT_ASPECT_RATIO,
-            "图片生成状态": "待生成",
+            "图片生成状态": "不触发" if await_reference_assets else "待生成",
             "视频提示词": extract_text(board.get("video_prompt")).strip(),
             "视频AI供应商": _field_with_default(parent_fields, "视频AI供应商", DEFAULT_VIDEO_PROVIDER),
             "视频AI模型": _field_with_default(parent_fields, "视频AI模型", DEFAULT_VIDEO_MODEL),
@@ -323,6 +514,48 @@ def create_records(token: str, table_id: str, records: List[Dict[str, Dict[str, 
         )
         created += len(batch)
     return created
+
+
+def list_reference_asset_records(token: str, parent_record_id: str) -> List[Dict[str, Any]]:
+    records = []
+    for rec in safe_list_records(token, TABLE_NINE_GRID_VIDEO):
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
+            continue
+        records.append(rec)
+    return records
+
+
+def upsert_reference_asset_records(token: str, parent_record_id: str, records: List[Dict[str, Dict[str, Any]]]) -> Dict[str, int]:
+    existing = {
+        extract_text((rec.get("fields") or {}).get("资产ID")).strip(): rec
+        for rec in list_reference_asset_records(token, parent_record_id)
+        if extract_text((rec.get("fields") or {}).get("资产ID")).strip()
+    }
+    created = 0
+    updated = 0
+    for item in records:
+        fields = dict(item["fields"])
+        asset_id = extract_text(fields.get("资产ID")).strip()
+        current = existing.get(asset_id)
+        if not current:
+            create_records(token, TABLE_NINE_GRID_VIDEO, [{"fields": filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, fields)}])
+            created += 1
+            continue
+        current_fields = current.get("fields") or {}
+        if _attachment_token(current_fields.get("参考图")) or extract_text(current_fields.get("参考图file_token")).strip():
+            fields.pop("参考图生成状态", None)
+            fields.pop("参考图审核状态", None)
+        safe_update_record(
+            token,
+            TABLE_NINE_GRID_VIDEO,
+            current["record_id"],
+            filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, fields),
+        )
+        updated += 1
+    return {"created": created, "updated": updated}
 
 
 def cleanup_child_boards(token: str, parent_record_id: str) -> int:
@@ -469,7 +702,15 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         raw_model_output = result.text
     payload = normalize_nine_grid_plan_payload(raw_model_output)
     batch_id = f"NINEGRID-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
-    child_records = build_child_board_records(fields, payload, parent_record_id=record_id, batch_id=batch_id)
+    asset_records = build_reference_asset_records(fields, payload, parent_record_id=record_id, batch_id=batch_id)
+    asset_upsert = upsert_reference_asset_records(token, record_id, asset_records)
+    child_records = build_child_board_records(
+        fields,
+        payload,
+        parent_record_id=record_id,
+        batch_id=batch_id,
+        await_reference_assets=bool(asset_records),
+    )
     deleted = cleanup_child_boards(token, record_id)
     create_records(token, TABLE_NINE_GRID_VIDEO, [
         {"fields": filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, item["fields"])}
@@ -487,6 +728,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
     summary.update({
         "status": "success",
         "batch_id": batch_id,
+        "reference_assets": asset_upsert,
+        "reference_asset_count": len(asset_records),
         "deleted_children": deleted,
         "board_count": len(child_records),
     })
@@ -500,6 +743,232 @@ def _attachment_token(value: Any) -> str:
         if isinstance(item, dict) and item.get("file_token"):
             return item["file_token"]
     return ""
+
+
+def _downloaded_path(downloaded: Any, fallback: Path) -> str:
+    if isinstance(downloaded, (str, os.PathLike)):
+        return str(downloaded)
+    return str(fallback)
+
+
+def _first_text(fields: Dict[str, Any], names: Iterable[str]) -> str:
+    for name in names:
+        value = extract_text(fields.get(name)).strip()
+        if value:
+            return value
+    return ""
+
+
+def _product_reference_items(
+    token: str,
+    parent_fields: Dict[str, Any],
+    *,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+) -> List[Dict[str, str]]:
+    product_ids = _extract_link_ids(parent_fields.get("关联产品记录"))
+    if not product_ids:
+        return []
+    product_fields = get_record_fn(token, TABLE_PRODUCT, product_ids[0])
+    product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
+    return [
+        {"role": f"product:{idx}", "file_token": token_value, "name": product_name or "selected product"}
+        for idx, token_value in enumerate(_attachment_tokens(product_fields.get("产品图片")), start=1)
+    ]
+
+
+def _asset_reference_file_token(
+    token: str,
+    fields: Dict[str, Any],
+    *,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+) -> str:
+    direct_token = _attachment_token(fields.get("参考图")) or extract_text(fields.get("参考图file_token")).strip()
+    if direct_token:
+        return direct_token
+    if extract_text(fields.get("参考图来源")).strip() != REFERENCE_SOURCE_MODEL_TABLE:
+        return ""
+    model_ids = _extract_link_ids(fields.get("选择模特"))
+    if not model_ids:
+        return ""
+    model_fields = get_record_fn(token, TABLE_MODEL, model_ids[0])
+    return _attachment_token(model_fields.get("模特照片"))
+
+
+def collect_nine_grid_reference_images(
+    token: str,
+    parent_fields: Dict[str, Any],
+    parent_record_id: str,
+    task_dir: Path,
+    *,
+    records: Optional[List[Dict[str, Any]]] = None,
+    max_count: int = MAX_REFERENCE_IMAGES,
+    download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+) -> List[Dict[str, str]]:
+    selected: List[Dict[str, str]] = []
+    selected.extend(_product_reference_items(token, parent_fields, get_record_fn=get_record_fn)[:1])
+    asset_records = records if records is not None else list_reference_asset_records(token, parent_record_id)
+    for rec in asset_records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
+            continue
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+            continue
+        asset_type = extract_text(fields.get("资产类型")).strip() or "asset"
+        asset_id = extract_text(fields.get("资产ID")).strip() or rec.get("record_id", "asset")
+        file_token = _asset_reference_file_token(token, fields, get_record_fn=get_record_fn)
+        if not file_token:
+            continue
+        selected.append({
+            "role": f"{asset_type}:{asset_id}",
+            "file_token": file_token,
+            "name": extract_text(fields.get("资产名称")).strip(),
+            "type": asset_type,
+        })
+    if len(selected) > max_count:
+        raise ValueError(f"参考图数量超过上限：产品图 + 已审核参考资产共 {len(selected)} 张，当前最多可用 {max_count} 张")
+    if not any(item["role"].startswith("environment:") for item in selected):
+        raise ValueError("缺少已审核通过的环境参考资产")
+
+    refs: List[Dict[str, str]] = []
+    for item in selected:
+        safe_role = item["role"].replace(":", "_")
+        local_path = task_dir / f"reference_{safe_role}.png"
+        downloaded = download_fn(token, item["file_token"], str(local_path))
+        refs.append({
+            "role": item["role"],
+            "path": _downloaded_path(downloaded, local_path),
+            "file_token": item["file_token"],
+            "name": item.get("name", ""),
+            "type": item.get("type", ""),
+        })
+    return refs
+
+
+def build_product_reference_lock_prompt(refs: List[Dict[str, str]]) -> str:
+    product_refs = [ref for ref in refs if ref.get("role", "").startswith("product:")]
+    if not product_refs:
+        return ""
+    roles = ", ".join(ref["role"] for ref in product_refs)
+    names = ", ".join(ref.get("name", "") for ref in product_refs if ref.get("name"))
+    name_line = f" Selected product name: {names}." if names else ""
+    return (
+        "PRODUCT REFERENCE LOCK:\n"
+        f"- The selected product reference role(s) are {roles}.{name_line}\n"
+        "- Treat product reference images as the highest-priority source for the product.\n"
+        "- Preserve the exact bottle/package silhouette, trigger or cap shape, label color blocks, animal illustration/logo area, text placement, and size ratio from product:*.\n"
+        "- Do not invent a generic spray bottle, do not replace the label, and do not use a different product package.\n"
+        "- If the script text conflicts with product:* visual details, product:* wins."
+    )
+
+
+def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
+    ensure_nine_grid_table()
+    token = get_feishu_token()
+    fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
+        raise ValueError("只有参考资产记录可以生成参考图")
+    source = extract_text(fields.get("参考图来源")).strip() or REFERENCE_SOURCE_AI
+    if source != REFERENCE_SOURCE_AI:
+        raise ValueError("只有参考图来源=AI自动生成 的资产可以自动生成参考图")
+    prompt = extract_text(fields.get("参考提示词")).strip()
+    if not prompt:
+        raise ValueError("参考提示词为空")
+    _, cfg = get_config_record(REFERENCE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
+    params = {
+        "size": DEFAULT_IMAGE_SIZE,
+        "aspect_ratio": DEFAULT_ASPECT_RATIO,
+    }
+    params.update(_parse_params(extract_text(fields.get("参考图AI参数JSON")).strip()))
+    route = _route_for_prefixed_fields(
+        fields,
+        "参考图",
+        cfg,
+        capability="图片",
+        task_type="文生图",
+        default_provider=DEFAULT_IMAGE_PROVIDER,
+        default_model=DEFAULT_IMAGE_MODEL,
+        config_records=_stage_config_records(token),
+    )
+    route.params.update(params)
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "prompt_chars": len(prompt),
+        "route": ai_routing.build_media_request_summary(route, prompt, reference_count=0),
+    }
+    if dry_run:
+        summary["status"] = "dry_run_ready"
+        return summary
+    if ai_routing.unified_route_dry_run_only(_stage_config_records(token)):
+        summary["status"] = "unified_ai_dry_run_ready"
+        return summary
+    work_dir = ensure_work_dir(record_id)
+    model_name = normalize_image_model_choice(ai_routing.parse_model_display(route.model)["model"] or route.model)
+    out_path = str(work_dir / f"{record_id}_reference.png")
+    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+        "参考图": [],
+        "参考图file_token": "",
+        "参考图本地路径": "",
+        "参考图任务ID": "",
+        "参考图错误信息": "",
+        "参考图生成时间": None,
+        "参考图生成状态": "生成中",
+        "错误信息": "",
+    }))
+    task_id = ""
+    if route.provider == "OTU":
+        task_id, submit_body = submit_otu_image_task(
+            {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
+            prompt,
+            input_mode="text-to-image",
+            metadata={"urls": [], "reference_roles": []},
+            size=params.get("size") or DEFAULT_IMAGE_SIZE,
+        )
+        if task_id:
+            safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+                "参考图任务ID": task_id,
+                "参考图错误信息": f"已提交参考图任务，正在轮询。task_id={task_id}",
+            }))
+        result = submit_body if not task_id else poll_otu_image_task(
+            {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
+            task_id,
+        )
+        result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
+        if not result_url:
+            raise RuntimeError("参考图任务完成但未返回图片地址")
+        download_otu_image_result(result_url, out_path)
+    elif route.provider == "Aitgenne":
+        result = submit_aitgenne_image_generation(
+            {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_AITGENNE_API_BASE, "model": model_name},
+            prompt,
+            size=params.get("size") or DEFAULT_IMAGE_SIZE,
+            aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+        )
+        save_aitgenne_image_result(result, out_path)
+    else:
+        raise NotImplementedError(f"当前参考图真实提交暂不支持供应商：{route.provider}")
+    file_token = with_retry(
+        lambda: upload_image_to_feishu(token, out_path, f"{record_id}_reference.png"),
+        max_attempts=3,
+        label="upload nine grid reference image",
+    )
+    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+        "参考图": [{"file_token": file_token, "name": Path(out_path).name}],
+        "参考图file_token": file_token,
+        "参考图本地路径": out_path,
+        "参考图任务ID": task_id,
+        "参考图生成状态": "成功",
+        "参考图审核状态": "待确认",
+        "参考图操作": "不触发",
+        "参考图生成时间": int(time.time() * 1000),
+        "参考图错误信息": "",
+        "错误信息": "",
+    }))
+    summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
+    return summary
 
 
 def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -539,21 +1008,20 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route.provider != "OTU":
-        raise NotImplementedError(f"当前仅 OTU 图片真实提交已接入；{route.provider} 请先使用 --dry-run 校验路由")
-
     work_dir = ensure_work_dir(record_id)
-    refs = collect_parent_reference_images(
+    refs = collect_nine_grid_reference_images(
         token,
         parent_fields,
+        parent_record_id,
         work_dir,
         max_count=MAX_REFERENCE_IMAGES,
         download_fn=safe_download_attachment,
     )
+    reference_image_paths = [ref["path"] for ref in refs]
     reference_urls = build_reference_urls(token, refs)
-    contact_sheet = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
-    prompt = f"{NINE_GRID_IMAGE_SYSTEM_PROMPT}\n\n{prompt}".strip()
-    model_name = normalize_image_model_choice(ai_routing.parse_model_display(route.model)["model"] or route.model)
+    product_lock_prompt = build_product_reference_lock_prompt(refs)
+    prompt = "\n\n".join(part for part in [NINE_GRID_IMAGE_SYSTEM_PROMPT, product_lock_prompt, prompt] if part).strip()
+    summary["route"] = ai_routing.build_media_request_summary(route, prompt, reference_count=len(refs))
     out_path = str(work_dir / f"{record_id}_nine_grid.png")
 
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
@@ -570,11 +1038,12 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         "图片生成状态": "生成中",
         "错误信息": "",
     }))
-    task_id, submit_body = submit_otu_image_task(
-        {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
+    image_result = run_image_generation(
+        route,
         prompt,
+        out_path,
         input_mode="image-to-image",
-        image_path=contact_sheet,
+        reference_image_paths=reference_image_paths,
         metadata={
             "urls": reference_urls,
             "reference_roles": [ref["role"] for ref in refs],
@@ -582,20 +1051,19 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
             "aspect_ratio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
         },
         size=params.get("size") or DEFAULT_IMAGE_SIZE,
+        aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
     )
+    task_id = image_result.task_id
+    submit_body = image_result.submit_body
     if task_id:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "图片任务ID": task_id,
-            "图片错误信息": f"已提交九宫格图片任务，正在轮询。task_id={task_id}",
+            "图片错误信息": f"已提交 {route.provider} 九宫格图片任务，正在轮询。task_id={task_id}",
         }))
-    result = submit_body if not task_id else poll_otu_image_task(
-        {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
-        task_id,
-    )
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise RuntimeError("九宫格图片任务完成但未返回图片地址")
-    download_otu_image_result(result_url, out_path)
+    result = image_result.result_body
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f"{record_id}_nine_grid.png"),
         max_attempts=3,
@@ -610,7 +1078,12 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         "视频生成状态": "待生成",
         "错误信息": "",
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": out_path, "reference_count": len(refs)})
+    summary.update({
+        "status": "success",
+        "file_token": file_token,
+        "output_path": out_path,
+        "reference_count": len(refs),
+    })
     return summary
 
 
@@ -705,7 +1178,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="多图九宫格视频生成")
-    parser.add_argument("action", choices=["plan", "image", "video"])
+    parser.add_argument("action", choices=["plan", "reference", "image", "video"])
     parser.add_argument("record_id")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -713,6 +1186,8 @@ def main() -> int:
     try:
         if args.action == "plan":
             result = split_nine_grid_plan(args.record_id, dry_run=args.dry_run)
+        elif args.action == "reference":
+            result = render_reference_asset(args.record_id, dry_run=args.dry_run)
         elif args.action == "image":
             result = render_nine_grid_image(args.record_id, dry_run=args.dry_run)
         else:
@@ -720,7 +1195,12 @@ def main() -> int:
         print(compact_json(result))
         return 0
     except Exception as exc:
-        stage = {"plan": "nine_grid_plan", "image": "nine_grid_image", "video": "nine_grid_video"}[args.action]
+        stage = {
+            "plan": "nine_grid_plan",
+            "reference": "nine_grid_reference",
+            "image": "nine_grid_image",
+            "video": "nine_grid_video",
+        }[args.action]
         payload = build_error_payload(exc, stage=stage)
         print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
         return 1
