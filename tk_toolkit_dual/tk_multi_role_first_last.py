@@ -518,6 +518,24 @@ def build_parse_prompt(parent_fields: Dict[str, Any], script: str, *, system_pro
 def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], payload: Dict[str, Any], *, batch_id: str) -> List[Dict[str, Dict[str, Any]]]:
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"多角色首尾帧-{parent_record_id[-6:]}"
     target_seconds = int(float(extract_text(parent_fields.get("目标时长秒")).strip() or 8))
+    inherited_route_fields = {
+        name: parent_fields.get(name)
+        for name in (
+            "使用统一AI路由",
+            "参考图AI模型",
+            "参考图AI参数JSON",
+            "关键帧AI模型",
+            "关键帧AI参数JSON",
+            "视频AI模型",
+            "视频AI参数JSON",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+        )
+        if parent_fields.get(name)
+    }
     records: List[Dict[str, Dict[str, Any]]] = []
     for asset in payload["assets"]:
         records.append({"fields": {
@@ -536,6 +554,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "参考图生成状态": "待生成",
             "参考图审核状态": "待确认",
             "错误信息": "",
+            **inherited_route_fields,
         }})
     for frame in payload["keyframes"]:
         refs = frame["reference_requirements"]
@@ -560,6 +579,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "关键帧生成状态": "不触发" if (waits_for_reference_assets or waits_for_previous_keyframe) else "待生成",
             "关键帧审核状态": "待确认",
             "错误信息": "",
+            **inherited_route_fields,
         }})
     for clip in payload["videos"]:
         records.append({"fields": {
@@ -579,6 +599,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "视频生成模型": f"OTU / {DEFAULT_OTU_MODEL}",
             "视频生成状态": "不触发",
             "错误信息": "",
+            **inherited_route_fields,
         }})
     return records
 
@@ -597,6 +618,7 @@ def get_stage_config(stage_name: str, *, default_model: str, default_api_base: s
             "aspect_ratio": extract_text(fields.get("画面比例")).strip() or DEFAULT_ASPECT_RATIO,
             "call_type": extract_text(fields.get("调用方式")).strip(),
             "prompt": extract_text(fields.get("提示词")).strip(),
+            "params": extract_text(fields.get("AI参数JSON")).strip(),
         }
         if not cfg["api_key"]:
             raise ValueError(f"{stage_name} 缺少 API Key")
@@ -612,6 +634,7 @@ def maybe_unified_media_summary(
     capability: str,
     task_type: str,
     model: str,
+    slot_name: str,
     prompt: str,
     params: Dict[str, Any],
     reference_count: int,
@@ -621,14 +644,14 @@ def maybe_unified_media_summary(
     config_records = safe_list_records(token, TABLE_CONFIG)
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
-    route = ai_routing.route_from_record(fields, {
+    route = ai_routing.route_from_slot(fields, slot_name, {
         **cfg,
         "provider": "OTU",
         "capability": capability,
         "task_type": task_type,
         "model": f"OTU / {model}",
-    })
-    route.params.update(params)
+        "params": params,
+    }, capability=capability, task_type=task_type)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
@@ -666,13 +689,13 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
     prompt = build_parse_prompt(fields, script, system_prompt=(cfg.get("prompt") or DEFAULT_PARSE_PROMPT) if cfg else DEFAULT_PARSE_PROMPT)
     unified_route = None
     if use_unified_route:
-        unified_route = ai_routing.route_from_record(fields, {
+        unified_route = ai_routing.route_from_slot(fields, "拆解", {
             **cfg,
             "provider": "AIHubMix",
             "capability": "文本",
             "task_type": "多角色首尾帧解析",
             "model": cfg.get("model") or "AIHubMix / gemini-2.5-flash",
-        })
+        }, capability="文本", task_type="多角色首尾帧解析")
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:
         summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
@@ -1012,6 +1035,7 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         capability="图片",
         task_type="文生图",
         model=model_name,
+        slot_name="参考图",
         prompt=prompt,
         params={"size": size, "aspect_ratio": "9:16"},
         reference_count=0,
@@ -1114,6 +1138,7 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         capability="图片",
         task_type="图生图/参考图重绘",
         model=model_name,
+        slot_name="关键帧",
         prompt=prompt,
         params={"size": size, "aspect_ratio": "9:16"},
         reference_count=len(refs),
@@ -1272,6 +1297,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         capability="视频",
         task_type="首尾帧视频",
         model=cfg.get("model") or DEFAULT_OTU_MODEL,
+        slot_name="视频",
         prompt=prompt,
         params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
         reference_count=2,

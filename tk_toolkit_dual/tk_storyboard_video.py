@@ -528,6 +528,22 @@ def build_child_storyboard_records(
     storyboards = payload.get("storyboards", [])
     total = len(storyboards)
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"故事板任务-{parent_record_id[-6:]}"
+    inherited_route_fields = {
+        name: parent_fields.get(name)
+        for name in (
+            "使用统一AI路由",
+            "故事板图片AI模型",
+            "故事板图片AI参数JSON",
+            "视频AI模型",
+            "视频AI参数JSON",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+        )
+        if parent_fields.get(name)
+    }
     for item in storyboards:
         no = int(item["storyboard_no"])
         fields = {
@@ -550,6 +566,7 @@ def build_child_storyboard_records(
             "Omni画面比例": DEFAULT_OMNI_ASPECT_RATIO,
             "视频生成状态": "不触发",
             "错误信息": "",
+            **inherited_route_fields,
         }
         if total:
             fields["总故事板数"] = total
@@ -623,13 +640,13 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
     use_unified_route = ai_routing.unified_route_enabled(fields, config_records)
     unified_route = None
     if use_unified_route:
-        unified_route = ai_routing.route_from_record(fields, {
+        unified_route = ai_routing.route_from_slot(fields, "拆分", {
             **cfg,
             "provider": "AIHubMix",
             "capability": "文本",
             "task_type": "故事板提示词拆分",
             "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
-        })
+        }, capability="文本", task_type="故事板提示词拆分")
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:
         summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
@@ -695,6 +712,7 @@ def get_stage_config(stage_name: str, *, default_model: str, default_api_base: s
             "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
             "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
             "prompt": extract_text(fields.get("提示词")).strip(),
+            "params": extract_text(fields.get("AI参数JSON")).strip(),
         }
         if not cfg["api_key"]:
             raise ValueError(f"{stage_name} 缺少 API Key")
@@ -710,6 +728,7 @@ def maybe_unified_media_summary(
     capability: str,
     task_type: str,
     model: str,
+    slot_name: str,
     prompt: str,
     params: Dict[str, Any],
     reference_count: int,
@@ -719,14 +738,14 @@ def maybe_unified_media_summary(
     config_records = safe_list_records(token, TABLE_CONFIG)
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
-    route = ai_routing.route_from_record(fields, {
+    route = ai_routing.route_from_slot(fields, slot_name, {
         **cfg,
         "provider": "OTU",
         "capability": capability,
         "task_type": task_type,
         "model": f"OTU / {model}",
-    })
-    route.params.update(params)
+        "params": params,
+    }, capability=capability, task_type=task_type)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
@@ -940,6 +959,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         capability="图片",
         task_type="图生图/参考图重绘",
         model=model_name,
+        slot_name="故事板图片",
         prompt=prompt,
         params={"size": size, "aspect_ratio": aspect_ratio},
         reference_count=len(refs),
@@ -1169,6 +1189,7 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         capability="视频",
         task_type="首帧图生视频",
         model=cfg["model"],
+        slot_name="视频",
         prompt=prompt,
         params={"size": size, "aspect_ratio": aspect_ratio},
         reference_count=len(refs),
@@ -1237,27 +1258,28 @@ def main() -> int:
         stage = {"split": "split_storyboard_prompts", "image": "generate_storyboard_image", "video": "generate_omni_video"}[args.action]
         payload = build_error_payload(exc, stage=stage)
         log_event("ERROR", "storyboard video task failed", action=args.action, record_id=args.record_id, error=payload["message"], error_code=payload["error_code"])
-        try:
-            token = get_feishu_token()
-            if args.action == "split" and TABLE_STORYBOARD_VIDEO:
-                safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
-                    "拆分状态": "失败",
-                    "错误信息": payload["message"][:1000],
-                }))
-            elif args.action == "image" and TABLE_STORYBOARD_VIDEO:
-                safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
-                    "故事板图片生成状态": "失败",
-                    "故事板图片错误信息": payload["message"][:1000],
-                    "错误信息": payload["message"][:1000],
-                }))
-            elif args.action == "video" and TABLE_STORYBOARD_VIDEO:
-                safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
-                    "视频生成状态": "失败",
-                    "视频错误信息": payload["message"][:1000],
-                    "错误信息": payload["message"][:1000],
-                }))
-        except Exception:
-            pass
+        if not args.dry_run:
+            try:
+                token = get_feishu_token()
+                if args.action == "split" and TABLE_STORYBOARD_VIDEO:
+                    safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+                        "拆分状态": "失败",
+                        "错误信息": payload["message"][:1000],
+                    }))
+                elif args.action == "image" and TABLE_STORYBOARD_VIDEO:
+                    safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+                        "故事板图片生成状态": "失败",
+                        "故事板图片错误信息": payload["message"][:1000],
+                        "错误信息": payload["message"][:1000],
+                    }))
+                elif args.action == "video" and TABLE_STORYBOARD_VIDEO:
+                    safe_update_record(token, TABLE_STORYBOARD_VIDEO, args.record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+                        "视频生成状态": "失败",
+                        "视频错误信息": payload["message"][:1000],
+                        "错误信息": payload["message"][:1000],
+                    }))
+            except Exception:
+                pass
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={payload['message']}")
         return 1
 

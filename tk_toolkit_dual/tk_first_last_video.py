@@ -587,6 +587,24 @@ def build_child_scene_records(
 ) -> List[Dict[str, Dict[str, Any]]]:
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"首尾帧任务-{parent_record_id[-6:]}"
     target_seconds = normalize_int(parent_fields.get("目标时长秒"), 8)
+    inherited_route_fields = {
+        name: parent_fields.get(name)
+        for name in (
+            "使用统一AI路由",
+            "首帧图AI模型",
+            "首帧图AI参数JSON",
+            "尾帧图AI模型",
+            "尾帧图AI参数JSON",
+            "视频AI模型",
+            "视频AI参数JSON",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+        )
+        if parent_fields.get(name)
+    }
     records: List[Dict[str, Dict[str, Any]]] = []
     for scene in scenes:
         scene_no = normalize_int(scene.get("scene_no"), len(records) + 1)
@@ -620,6 +638,7 @@ def build_child_scene_records(
             "视频生成模型": f"OTU / {DEFAULT_OTU_MODEL}",
             "视频生成状态": "不触发",
             "错误信息": "",
+            **inherited_route_fields,
         }
         if product_context:
             fields.update(product_reference_record_fields(product_context))
@@ -773,6 +792,7 @@ def get_stage_config(
             "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
             "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
             "aspect_ratio": extract_text(fields.get("画面比例")).strip() or DEFAULT_ASPECT_RATIO,
+            "params": extract_text(fields.get("AI参数JSON")).strip(),
         }
         if not cfg["api_key"]:
             raise ValueError(f"{stage_name} 缺少 API Key")
@@ -788,6 +808,7 @@ def maybe_unified_media_summary(
     capability: str,
     task_type: str,
     model: str,
+    slot_name: str,
     prompt: str,
     params: Dict[str, Any],
     reference_count: int,
@@ -797,14 +818,14 @@ def maybe_unified_media_summary(
     config_records = safe_list_records(token, TABLE_CONFIG)
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
-    route = ai_routing.route_from_record(fields, {
+    route = ai_routing.route_from_slot(fields, slot_name, {
         **cfg,
         "provider": "OTU",
         "capability": capability,
         "task_type": task_type,
         "model": f"OTU / {model}",
-    })
-    route.params.update(params)
+        "params": params,
+    }, capability=capability, task_type=task_type)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
@@ -898,6 +919,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         capability="图片",
         task_type="首帧图生图",
         model=model_name,
+        slot_name="首帧图",
         prompt=prompt,
         params={"size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE, "aspect_ratio": "9:16"},
         reference_count=summary["product_reference_count"],
@@ -1033,10 +1055,6 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "product_record_id": product_context["product_record_id"],
         "product_reference_count": len(product_context["product_tokens"]),
     }
-    if dry_run:
-        summary["status"] = "dry_run_ready"
-        return summary
-
     _, cfg = get_stage_config(
         IMAGE_STAGE_NAME,
         default_model=DEFAULT_OTU_IMAGE_MODEL,
@@ -1044,6 +1062,26 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         default_size=DEFAULT_OTU_IMAGE_SIZE,
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
+    route_summary = maybe_unified_media_summary(
+        token,
+        fields,
+        cfg,
+        capability="图片",
+        task_type="尾帧图生图",
+        model=model_name,
+        slot_name="尾帧图",
+        prompt=prompt,
+        params={"size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE, "aspect_ratio": "9:16"},
+        reference_count=1 + summary["product_reference_count"],
+    )
+    if route_summary:
+        summary["unified_ai_route"] = route_summary
+    if dry_run:
+        summary["status"] = "dry_run_ready"
+        return summary
+    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+        summary["status"] = "unified_ai_dry_run_ready"
+        return summary
     start_fields = last_frame_result_reset_fields("生成中")
     start_fields.update({
         "尾帧图版本": version,
@@ -1213,6 +1251,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         capability="视频",
         task_type="首尾帧视频",
         model=cfg.get("model") or DEFAULT_OTU_MODEL,
+        slot_name="视频",
         prompt=prompt,
         params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
         reference_count=2,
@@ -1371,7 +1410,7 @@ def main() -> int:
     except Exception as exc:
         payload = build_error_payload(exc, stage=f"first_last_video_{args.action}")
         log_event("ERROR", "first/last video task failed", action=args.action, record_id=args.record_id, error=payload["message"], error_code=payload["error_code"])
-        if not is_stale_writeback_error(exc):
+        if not args.dry_run and not is_stale_writeback_error(exc):
             try:
                 token = get_feishu_token()
                 if TABLE_FIRST_LAST_VIDEO:

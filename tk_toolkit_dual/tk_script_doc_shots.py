@@ -312,6 +312,24 @@ def build_child_shot_records(
     batch_id: str,
 ) -> List[Dict[str, Dict[str, Any]]]:
     total = len(payload.get("shots", []))
+    inherited_route_fields = {
+        name: parent_fields.get(name)
+        for name in (
+            "使用统一AI路由",
+            "分镜图AI模型",
+            "分镜图AI参数JSON",
+            "尾帧图AI模型",
+            "尾帧图AI参数JSON",
+            "视频AI模型",
+            "视频AI参数JSON",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+        )
+        if parent_fields.get(name)
+    }
     records = []
     for shot in payload.get("shots", []):
         refs = shot["reference_requirements"]
@@ -369,6 +387,7 @@ def build_child_shot_records(
             "发布文案": shot.get("publish_caption", ""),
             "发布状态": "未发布",
             "错误信息": "",
+            **inherited_route_fields,
         }
         if parent_fields.get("关联产品记录"):
             product_ids = _link_record_ids(parent_fields.get("关联产品记录"))
@@ -623,13 +642,13 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     use_unified_route = ai_routing.unified_route_enabled(fields, config_records)
     unified_route = None
     if use_unified_route:
-        unified_route = ai_routing.route_from_record(fields, {
+        unified_route = ai_routing.route_from_slot(fields, "解析", {
             **cfg,
             "provider": "AIHubMix",
             "capability": "文本",
             "task_type": "脚本解析拆分",
             "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
-        })
+        }, capability="文本", task_type="脚本解析拆分")
 
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:
@@ -764,20 +783,21 @@ def main() -> int:
     except Exception as exc:
         payload = build_error_payload(exc, stage=f"script_doc_shots_{args.command}")
         log_event("ERROR", "script doc shots task failed", command=args.command, error=payload["message"], error_code=payload["error_code"])
-        try:
-            token = get_feishu_token()
-            if args.command == "parse":
-                safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
-                    "解析状态": "失败",
-                    "解析错误信息": payload["message"],
-                }))
-            else:
-                safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
-                    "参考图生成状态": "失败",
-                    "错误信息": payload["message"],
-                }))
-        except Exception:
-            pass
+        if not args.dry_run:
+            try:
+                token = get_feishu_token()
+                if args.command == "parse":
+                    safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
+                        "解析状态": "失败",
+                        "解析错误信息": payload["message"],
+                    }))
+                else:
+                    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+                        "参考图生成状态": "失败",
+                        "错误信息": payload["message"],
+                    }))
+            except Exception:
+                pass
         print(f"ERROR_CODE={payload['error_code']} RETRYABLE={str(payload['retryable']).lower()} MESSAGE={payload['message']}")
         return 1
 
