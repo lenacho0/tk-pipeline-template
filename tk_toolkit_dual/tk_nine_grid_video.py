@@ -97,7 +97,7 @@ REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
 ASSET_RECORD_TYPE = "参考资产"
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate a clean empty scene master/background plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, lighting, camera angle, problem location, and non-character household props. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image.
+Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, problem location, and non-character household props. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image.
 """.strip()
 ENVIRONMENT_FORBIDDEN_TERMS = {
     "person", "people", "human", "woman", "man", "girl", "boy", "lady",
@@ -321,9 +321,12 @@ def build_reference_asset_prompt(reference: Dict[str, Any]) -> str:
             "Show only this pet, no product, no extra animals, no text, no watermark."
         )
     return (
-        "Generate one clean full-body human character identity reference image for later video consistency. "
+        "Generate one realistic full-body human identity reference image for later video consistency. "
         f"Character name/role: {name or 'selected character'}. "
         f"Visual purpose: {purpose or 'lock face, hair, outfit, body type, age impression, and everyday UGC style'}. "
+        "The person must look like an ordinary non-professional local person in a UGC phone snapshot, not a studio model, influencer ad model, beauty campaign, or polished catalog render. "
+        "Keep visible natural skin texture, pores, fine lines, minor blemishes, uneven skin tone, natural expression, casual posture, practical everyday clothing, and imperfect real-life grooming. "
+        "Use natural available light and a simple everyday background; avoid airbrushed skin, plastic-smooth face, heavy retouching, fashion editorial posing, perfect studio lighting, and luxury-ad styling. "
         "Show only this character, no product, no extra people, no pets, no text, no watermark."
     )
 

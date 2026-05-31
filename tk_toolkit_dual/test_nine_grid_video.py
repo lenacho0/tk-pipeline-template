@@ -377,6 +377,32 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("Do not include any people, pets, product bottles", prompt)
         self.assertNotIn("woman sprays product", prompt)
 
+    def test_human_reference_prompt_requires_ordinary_ugc_realism(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "human",
+            "asset_name": "young Thai owner",
+            "purpose": "lock face and outfit",
+        })
+
+        self.assertIn("ordinary non-professional local person", prompt)
+        self.assertIn("not a studio model", prompt)
+        self.assertIn("visible natural skin texture", prompt)
+        self.assertIn("minor blemishes", prompt)
+        self.assertIn("phone snapshot", prompt)
+
+    def test_environment_reference_prompt_requires_lived_in_local_clutter(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "Thai apartment living room",
+            "purpose": "lock room layout and sofa position",
+        })
+
+        self.assertIn("lived-in local home", prompt)
+        self.assertIn("everyday household clutter", prompt)
+        self.assertIn("wear marks", prompt)
+        self.assertIn("localized details", prompt)
+        self.assertIn("Do not include any people, pets, product bottles", prompt)
+
     def test_collect_reference_images_uses_only_approved_parent_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
