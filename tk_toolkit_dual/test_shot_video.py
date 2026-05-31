@@ -577,6 +577,71 @@ class ShotVideoTest(unittest.TestCase):
                     get_record_fn=lambda token, table, rid: fields,
                 )
 
+    def test_video_ai_model_is_ignored_when_unified_route_is_not_enabled(self):
+        fields = sample_fields()
+        fields["视频通道"] = "AIHubMix"
+        fields["视频生成模型"] = ""
+        fields["视频AI模型"] = "OTU / veo_3_1-fast-fl"
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref:
+            cfg.return_value = ("cfg1", {
+                "model": "veo-3.1-fast-generate-preview",
+                "api_key": "sk",
+                "api_base": "https://aihubmix.com/gemini",
+                "size": "720p",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+
+            result = video.run_shot_video_generation(
+                "rec1",
+                dry_run=True,
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+            )
+
+        self.assertFalse(result["unified_ai_route_enabled"])
+        self.assertEqual(result["video_channel"], "AIHubMix")
+        self.assertEqual(result["model"], "veo-3.1-fast-generate-preview")
+
+    def test_video_ai_model_is_blocked_by_global_dry_run_switch(self):
+        fields = sample_fields()
+        fields["使用统一AI路由"] = "是"
+        fields["视频通道"] = "AIHubMix"
+        fields["视频生成模型"] = ""
+        fields["视频AI模型"] = "OTU / veo_3_1-fast-fl"
+        submitter = Mock()
+        with patch("tk_shot_video.safe_list_records", return_value=[{
+                "fields": {"环节": "统一AI路由启用状态", "模型名称": "仅dry-run"}
+             }]), \
+             patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref:
+            cfg.return_value = ("cfg_otu", {
+                "model": "veo_3_1-fast-fl",
+                "api_key": "sk",
+                "api_base": "https://otuapi.com",
+                "size": "720x1280",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+
+            result = video.run_shot_video_generation(
+                "rec1",
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+                otu_submitter=submitter,
+            )
+
+        self.assertTrue(result["unified_ai_route_enabled"])
+        self.assertEqual(result["status"], "unified_ai_dry_run_ready")
+        self.assertEqual(result["video_channel"], "OTU")
+        self.assertEqual(result["model"], "veo_3_1-fast-fl")
+        submitter.assert_not_called()
+
     def test_run_defaults_chinese_default_record_model_to_native_veo(self):
         for model_value in ("默认（配置表）", "默认", "待确认"):
             with self.subTest(model_value=model_value):

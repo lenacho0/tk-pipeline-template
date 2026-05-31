@@ -9,6 +9,7 @@ import json, os, sys, time, base64
 from pathlib import Path
 from typing import List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ai_routing
 from common import *
 from otu_image import (
     DEFAULT_ASPECT_RATIO,
@@ -26,6 +27,41 @@ from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyb
 
 
 _TABLE_FIELDS_CACHE = {}
+
+
+def script_doc_unified_route_state(fields, token):
+    if not ai_routing.record_wants_unified_route(fields):
+        return False, False
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    enabled = ai_routing.unified_route_enabled(fields, config_records)
+    return enabled, enabled and ai_routing.unified_route_dry_run_only(config_records)
+
+
+def selected_slot_model(fields, slot_name, default_model, *, route_enabled=False):
+    if not route_enabled:
+        return normalize_image_model_choice(default_model)
+    raw = extract_text(fields.get(f'{slot_name}AI模型')).strip()
+    if ' / ' in raw:
+        provider, model = raw.split(' / ', 1)
+        if provider.strip() != 'OTU':
+            raise ValueError(f'{slot_name}AI模型 当前图片生成只支持 OTU 图片模型，当前选择：{raw}')
+        return normalize_image_model_choice(model)
+    return normalize_image_model_choice(raw or default_model)
+
+
+def slot_params(fields, slot_name, *, route_enabled=False):
+    if not route_enabled:
+        return {}
+    raw = extract_text(fields.get(f'{slot_name}AI参数JSON')).strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'{slot_name}AI参数JSON 不是合法 JSON: {exc}') from exc
+    if not isinstance(data, dict):
+        raise ValueError(f'{slot_name}AI参数JSON 顶层必须是对象')
+    return data
 
 
 def get_table_field_names(token, table_id):
@@ -564,7 +600,7 @@ def _upload_reference_image_parts(client, refs):
     return parts
 
 
-def render_script_doc_shot(token, record_id):
+def render_script_doc_shot(token, record_id, *, dry_run=False):
     if not TABLE_SCRIPT_DOC_TASKS or not TABLE_SCRIPT_DOC_REFERENCE_ASSETS or not TABLE_SCRIPT_DOC_SHOTS:
         raise Exception('config.json 尚未配置脚本文档拆分表 ID')
 
@@ -591,6 +627,26 @@ def render_script_doc_shot(token, record_id):
         "- 不要文字/字幕/贴纸/水印\n"
     )
 
+    route_enabled, route_dry_run_only = script_doc_unified_route_state(shot_fields, token)
+    model_choice = selected_slot_model(shot_fields, '分镜图', config['model'] or DEFAULT_OTU_IMAGE_MODEL, route_enabled=route_enabled)
+    image_params = slot_params(shot_fields, '分镜图', route_enabled=route_enabled)
+    prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
+    summary = {
+        'record_id': record_id,
+        'dry_run': dry_run,
+        'model': model_choice,
+        'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
+        'aspect_ratio': image_params.get('aspect_ratio') or '9:16',
+        'prompt_chars': len(prompt),
+        'unified_ai_route_enabled': route_enabled,
+    }
+    if dry_run:
+        summary['status'] = 'dry_run_ready'
+        return summary
+    if route_dry_run_only:
+        summary['status'] = 'unified_ai_dry_run_ready'
+        return summary
+
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
         '分镜图生成状态': '生成中',
         '分镜图错误信息': '',
@@ -605,12 +661,10 @@ def render_script_doc_shot(token, record_id):
         Path(task_dir),
     )
 
-    model_choice = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = config['api_key']
     api_base = config['api_base'] or DEFAULT_OTU_API_BASE
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
-    prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
     prompt = f"{build_shot_reference_prompt_note(refs)}\n\n{prompt}".strip()
     out_path = os.path.join(task_dir, f'{record_id}_shot.png')
     ref_paths = [ref.get('path') for ref in refs if ref.get('path')]
@@ -624,8 +678,8 @@ def render_script_doc_shot(token, record_id):
         prompt,
         input_mode='image-to-image' if ref_paths else 'text-to-image',
         image_path=ref_paths[0] if ref_paths else '',
-        metadata={'urls': reference_urls, 'reference_roles': [ref.get('role', 'reference') for ref in refs], 'aspectRatio': '9:16'},
-        size=DEFAULT_OTU_IMAGE_SIZE,
+        metadata={'urls': reference_urls, 'reference_roles': [ref.get('role', 'reference') for ref in refs], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
+        size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
     )
     result = submit_body if not submit_task_id else poll_otu_image_task({
         'api_key': api_key,
@@ -729,7 +783,7 @@ def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
     return "\n".join(parts)
 
 
-def render_script_doc_last_frame(token, record_id):
+def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     if not TABLE_SCRIPT_DOC_SHOTS:
         raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
 
@@ -740,6 +794,31 @@ def render_script_doc_last_frame(token, record_id):
     if not first_frame_token:
         raise Exception('缺少分镜图附件，无法生成尾帧图')
 
+    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
+    route_enabled, route_dry_run_only = script_doc_unified_route_state(fields, token)
+    model_name = selected_slot_model(fields, '尾帧图', config['model'] or DEFAULT_OTU_IMAGE_MODEL, route_enabled=route_enabled)
+    image_params = slot_params(fields, '尾帧图', route_enabled=route_enabled)
+    prompt = build_script_doc_last_frame_prompt(
+        fields,
+        extract_text(fields.get('图片提示词') or fields.get('提示词')).strip(),
+    )
+    summary = {
+        'record_id': record_id,
+        'dry_run': dry_run,
+        'model': model_name,
+        'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
+        'aspect_ratio': image_params.get('aspect_ratio') or '9:16',
+        'prompt_chars': len(prompt),
+        'first_frame_file_token_present': bool(first_frame_token),
+        'unified_ai_route_enabled': route_enabled,
+    }
+    if dry_run:
+        summary['status'] = 'dry_run_ready'
+        return summary
+    if route_dry_run_only:
+        summary['status'] = 'unified_ai_dry_run_ready'
+        return summary
+
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
         '尾帧图生成状态': '生成中',
         '尾帧图错误信息': '',
@@ -748,25 +827,18 @@ def render_script_doc_last_frame(token, record_id):
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
     first_frame_tmp_url = get_tmp_download_url_for_attachment(token, first_frame_token)
-    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
-    model_name = normalize_image_model_choice(config['model'] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = config['api_key']
     api_base = config['api_base'] or DEFAULT_OTU_API_BASE
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
-
-    prompt = build_script_doc_last_frame_prompt(
-        fields,
-        extract_text(fields.get('图片提示词') or fields.get('提示词')).strip(),
-    )
     out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
     submit_task_id, submit_body = submit_otu_image_task(
         {'api_key': api_key, 'api_base': api_base, 'model': model_name},
         prompt,
         input_mode='image-to-image',
         image_path=str(first_frame_path),
-        metadata={'urls': [first_frame_tmp_url] if first_frame_tmp_url else [], 'reference_roles': ['first_frame'], 'aspectRatio': '9:16'},
-        size=DEFAULT_OTU_IMAGE_SIZE,
+        metadata={'urls': [first_frame_tmp_url] if first_frame_tmp_url else [], 'reference_roles': ['first_frame'], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
+        size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
     )
     result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
     result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
@@ -793,9 +865,9 @@ def render_script_doc_last_frame(token, record_id):
     print(f'✅ 脚本文档尾帧图生成完成: {record_id}')
 
 
-def render_shot(token, record_id, table='script_doc'):
+def render_shot(token, record_id, table='script_doc', *, dry_run=False):
     if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
-        return render_script_doc_shot(token, record_id)
+        return render_script_doc_shot(token, record_id, dry_run=dry_run)
 
     raise Exception('不再支持旧 shot_storyboard 表，请使用 script_doc')
 
@@ -806,6 +878,7 @@ def main():
     parser.add_argument('action', choices=['render', 'last-frame'])
     parser.add_argument('record_id')
     parser.add_argument('--table', default='script_doc', choices=['script_doc'])
+    parser.add_argument('--dry-run', action='store_true', help='只验证输入和配置，不提交图片任务')
     args = parser.parse_args()
     action = args.action
     record_id = args.record_id
@@ -813,18 +886,22 @@ def main():
 
     try:
         if action == 'render':
-            render_shot(token, record_id, table=args.table)
+            result = render_shot(token, record_id, table=args.table, dry_run=args.dry_run)
         elif action == 'last-frame':
             if args.table != 'script_doc':
                 raise Exception('last-frame 仅支持 --table script_doc')
-            render_script_doc_last_frame(token, record_id)
+            result = render_script_doc_last_frame(token, record_id, dry_run=args.dry_run)
         else:
             raise Exception(f'未知 action: {action}')
+        if isinstance(result, dict):
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     except Exception as e:
         payload = build_error_payload(e, stage='generate_last_frame_image' if action == 'last-frame' else ('generate_shot_image' if action == 'render' else action))
         err = payload['message']
         log_event('ERROR', 'shot storyboard task failed', action=action, record_id=record_id, error=err, error_code=payload['error_code'], retryable=payload['retryable'])
-        if action == 'last-frame':
+        if args.dry_run:
+            pass
+        elif action == 'last-frame':
             fail_fields = {
                 '尾帧图生成状态': '失败',
                 '尾帧图错误信息': err,

@@ -215,6 +215,82 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertIn("ending frame instruction", prompt.lower())
         self.assertNotIn("product reference wins", prompt.lower())
 
+    def test_slot_model_ignores_new_field_when_unified_route_is_disabled(self):
+        model = storyboard.selected_slot_model(
+            {"分镜图AI模型": "OTU / gpt-image-2-4K"},
+            "分镜图",
+            "gpt-image-2",
+            route_enabled=False,
+        )
+
+        self.assertEqual(model, "gpt-image-2")
+
+    def test_slot_params_reports_invalid_json_with_field_name(self):
+        with self.assertRaisesRegex(ValueError, "分镜图AI参数JSON 不是合法 JSON"):
+            storyboard.slot_params(
+                {"分镜图AI参数JSON": "{bad json"},
+                "分镜图",
+                route_enabled=True,
+            )
+
+    def test_render_script_doc_last_frame_dry_run_does_not_submit_or_write(self):
+        shot_fields = {
+            "首尾帧视频模式": "启用",
+            "尾帧画面描述": "same sofa, stain removed",
+            "分镜图": [{"file_token": "ft_first"}],
+            "图片提示词": "[Starting Frame] stained sofa\n\n[Ending Frame] same sofa, stain removed",
+            "使用统一AI路由": "是",
+            "尾帧图AI模型": "OTU / gpt-image-2-2K",
+            "尾帧图AI参数JSON": '{"size": "2K", "aspect_ratio": "9:16"}',
+        }
+        with patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", return_value=shot_fields), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[{
+                 "fields": {"环节": "统一AI路由启用状态", "模型名称": "仅dry-run"}
+             }]), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
+             patch("tk_shot_storyboard.safe_update_record") as updater, \
+             patch("tk_shot_storyboard.download_feishu_media") as downloader, \
+             patch("tk_shot_storyboard.submit_otu_image_task") as submitter:
+            result = storyboard.render_script_doc_last_frame("t", "rec1", dry_run=False)
+
+        self.assertEqual(result["status"], "unified_ai_dry_run_ready")
+        self.assertTrue(result["unified_ai_route_enabled"])
+        self.assertEqual(result["model"], "gpt-image-2-2K")
+        self.assertEqual(result["size"], "2K")
+        updater.assert_not_called()
+        downloader.assert_not_called()
+        submitter.assert_not_called()
+
+    def test_render_script_doc_shot_dry_run_does_not_submit_or_write(self):
+        shot_fields = {
+            "父文档记录ID": "parent1",
+            "图片提示词": "clean the sofa with product visible",
+            "画面描述": "cleaning demo",
+            "使用统一AI路由": "是",
+            "分镜图AI模型": "OTU / gpt-image-2-4K",
+            "分镜图AI参数JSON": '{"size": "4K", "aspect_ratio": "9:16"}',
+        }
+        parent_fields = {"分镜风格": "写实", "解析结果JSON": ""}
+        with patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", side_effect=[shot_fields, parent_fields]), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[{
+                 "fields": {"环节": "统一AI路由启用状态", "模型名称": "仅dry-run"}
+             }]), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": "base prompt"}), \
+             patch("tk_shot_storyboard.safe_update_record") as updater, \
+             patch("tk_shot_storyboard.submit_otu_image_task") as submitter:
+            result = storyboard.render_script_doc_shot("t", "rec1", dry_run=True)
+
+        self.assertEqual(result["status"], "dry_run_ready")
+        self.assertTrue(result["unified_ai_route_enabled"])
+        self.assertEqual(result["model"], "gpt-image-2-4K")
+        self.assertEqual(result["size"], "4K")
+        updater.assert_not_called()
+        submitter.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

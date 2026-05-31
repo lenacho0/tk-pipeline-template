@@ -26,6 +26,7 @@ from google import genai
 from google.genai import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ai_routing  # noqa: E402
 from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
@@ -232,6 +233,27 @@ def resolve_model_config_stage(channel: str, provider: str) -> str:
     if provider == "seeddance2.0":
         return STAGE_NAME
     return STAGE_NAME
+
+
+def slot_params(fields: Dict[str, Any], slot_name: str) -> Dict[str, Any]:
+    raw = extract_text(fields.get(f"{slot_name}AI参数JSON")).strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{slot_name}AI参数JSON 不是合法 JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{slot_name}AI参数JSON 顶层必须是对象")
+    return data
+
+
+def unified_route_state(fields: Dict[str, Any], token: str) -> Tuple[bool, bool]:
+    if not ai_routing.record_wants_unified_route(fields):
+        return False, False
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    enabled = ai_routing.unified_route_enabled(fields, config_records)
+    return enabled, enabled and ai_routing.unified_route_dry_run_only(config_records)
 
 
 def resolve_image_model_config_stage(channel: str) -> str:
@@ -1017,8 +1039,16 @@ def run_shot_video_generation(
         raise ValueError(f"003-3 {record_id} 已成功生成视频，拒绝重复生成")
     force_new_task = status == "待生成"
 
-    channel = normalize_video_channel(fields.get("视频通道"))
-    model_choice = extract_text(fields.get("视频生成模型")).strip()
+    route_enabled, route_dry_run_only = unified_route_state(fields, token)
+    legacy_model_choice = extract_text(fields.get("视频生成模型")).strip()
+    route_model_choice = extract_text(fields.get("视频AI模型")).strip()
+    model_choice = route_model_choice if route_enabled and route_model_choice else legacy_model_choice
+    choice_channel, _ = split_prefixed_model_choice(model_choice)
+    explicit_channel = extract_text(fields.get("视频通道")).strip()
+    if route_enabled:
+        channel = normalize_video_channel(choice_channel or explicit_channel)
+    else:
+        channel = normalize_video_channel(explicit_channel or choice_channel)
     provider = normalize_video_provider(model_choice)
     cfg_record_id, config = get_model_config(resolve_model_config_stage(channel, provider))
     runtime_config = dict(config)
@@ -1029,9 +1059,10 @@ def run_shot_video_generation(
     if last_frame_path and provider != "veo3.1":
         raise ValueError("首尾帧视频模式仅支持 Veo 视频模型")
     prompt, prompt_rebuilt = resolve_model_prompt(fields, provider)
-    seconds = normalize_seconds(fields.get("目标时长秒"))
-    size = config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
-    aspect_ratio = config.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
+    params = slot_params(fields, "视频") if route_enabled else {}
+    seconds = normalize_seconds(params.get("seconds") or params.get("视频时长") or fields.get("目标时长秒"))
+    size = params.get("size") or params.get("画面尺寸") or config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
+    aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or config.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
     output_filename = resolve_shot_video_filename(record_id, fields)
     output_path = str(work_dir / output_filename)
     voiceover_dependency = resolve_voiceover_audio_dependency(fields, provider)
@@ -1056,9 +1087,13 @@ def run_shot_video_generation(
         "size": size,
         "aspect_ratio": aspect_ratio,
         "output_path": output_path,
+        "unified_ai_route_enabled": route_enabled,
     }
     if dry_run:
         summary["status"] = "dry_run_ready"
+        return summary
+    if route_dry_run_only:
+        summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
     field_types = get_table_field_types(token, table_id) if update_record_fn is safe_update_record else {}
