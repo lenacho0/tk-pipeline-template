@@ -72,7 +72,7 @@
       "type": 1
     }
   ],
-  "generated_at": "2026-05-31 10:38:55",
+  "generated_at": "2026-05-31 12:47:35",
   "records": [
     {
       "AI任务类型": "",
@@ -787,6 +787,26 @@
     {
       "view_id": "vewrNfefvt",
       "view_name": "00-生产运行配置",
+      "view_type": "grid"
+    },
+    {
+      "view_id": "vew92G4kaZ",
+      "view_name": "01-统一AI Catalog",
+      "view_type": "grid"
+    },
+    {
+      "view_id": "vewmTUMguM",
+      "view_name": "02-链路提示词配置",
+      "view_type": "grid"
+    },
+    {
+      "view_id": "vewXo3wD4u",
+      "view_name": "90-归档-旧预设",
+      "view_type": "grid"
+    },
+    {
+      "view_id": "vewQY4Qy2U",
+      "view_name": "99-全字段排错",
       "view_type": "grid"
     }
   ]

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
+import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import requests
@@ -124,13 +125,26 @@ def build_field_option_updates(config: Dict[str, Any]) -> List[FieldOptionUpdate
         ("nine_grid_video", "方案AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("nine_grid_video", "图片AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("nine_grid_video", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
-        ("storyboard_video", "AI模型", ai_model_catalog.AI_MODEL_OPTIONS),
-        ("first_last_video", "AI模型", ai_model_catalog.AI_MODEL_OPTIONS),
+        ("storyboard_video", "拆分AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("storyboard_video", "故事板图片AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("storyboard_video", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
+        ("first_last_video", "拆分AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("first_last_video", "首帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("first_last_video", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("first_last_video", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
         ("first_last_video", "视频生成模型", ai_model_catalog.VIDEO_MODEL_OPTIONS),
-        ("script_doc_tasks", "AI模型", ai_model_catalog.AI_MODEL_OPTIONS),
-        ("script_doc_shots", "AI模型", ai_model_catalog.AI_MODEL_OPTIONS),
+        ("script_doc_tasks", "解析AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("script_doc_tasks", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("script_doc_tasks", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("script_doc_tasks", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
+        ("script_doc_shots", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("script_doc_shots", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("script_doc_shots", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
         ("script_doc_shots", "视频生成模型", ai_model_catalog.VIDEO_MODEL_OPTIONS),
-        ("multi_role_first_last", "AI模型", ai_model_catalog.AI_MODEL_OPTIONS),
+        ("multi_role_first_last", "拆解AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("multi_role_first_last", "参考图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("multi_role_first_last", "关键帧AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
+        ("multi_role_first_last", "视频AI模型", ai_model_catalog.VIDEO_AI_MODEL_OPTIONS),
         ("multi_role_first_last", "视频生成模型", ai_model_catalog.VIDEO_MODEL_OPTIONS),
     ]
     updates: List[FieldOptionUpdate] = []
@@ -296,14 +310,22 @@ def write_field_options(base_token: str, update: FieldOptionUpdate, field_item: 
     fid = field_id(field_item)
     if not fid:
         raise RuntimeError(f"字段缺少 field_id: table={update.table_key}, field={update.field_name}")
-    run_json([
+    argv = [
         "lark-cli", "base", "+field-update",
         "--base-token", base_token,
         "--table-id", update.table_id,
         "--field-id", fid,
         "--json", json.dumps(select_field_payload(update.field_name, update.options), ensure_ascii=False),
         "--yes",
-    ])
+    ]
+    for attempt in range(5):
+        try:
+            run_json(argv)
+            return
+        except RuntimeError as exc:
+            if "800004135" not in str(exc) or attempt == 4:
+                raise
+            time.sleep(2 + attempt * 2)
 
 
 def create_select_field(base_token: str, update: FieldOptionUpdate) -> None:

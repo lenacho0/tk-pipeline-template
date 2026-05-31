@@ -80,20 +80,19 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         views = cleanup.build_view_definitions(field_names)
 
         self.assertEqual(list(views), [
-            "00-生产运行配置",
-            "01-统一AI Catalog",
-            "02-链路提示词配置",
-            "90-归档-旧预设",
-            "99-全字段排错",
+            "模型目录",
+            "供应商密钥-管理员",
+            "归档-候选旧模型",
+            "排错-全字段",
         ])
-        self.assertNotIn("API Key", views["00-生产运行配置"]["visible_fields"])
-        self.assertNotIn("提示词", views["00-生产运行配置"]["visible_fields"])
+        self.assertNotIn("API Key", views["模型目录"]["visible_fields"])
+        self.assertNotIn("提示词", views["模型目录"]["visible_fields"])
         self.assertEqual(
-            views["01-统一AI Catalog"]["filter"],
+            views["模型目录"]["filter"],
             {"logic": "and", "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]]},
         )
-        self.assertIn("API Key", views["99-全字段排错"]["visible_fields"])
-        self.assertIn("提示词", views["99-全字段排错"]["visible_fields"])
+        self.assertIn("API Key", views["排错-全字段"]["visible_fields"])
+        self.assertIn("提示词", views["排错-全字段"]["visible_fields"])
 
     def test_ensure_view_falls_back_to_listing_after_create_without_id(self):
         existing = {}

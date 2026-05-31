@@ -47,6 +47,10 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
         self.assertEqual(by_key[("nine_grid_video", "方案AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("文本")])
         self.assertEqual(by_key[("nine_grid_video", "图片AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertEqual(by_key[("nine_grid_video", "视频AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("视频")])
+        self.assertEqual(by_key[("first_last_video", "拆分AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("文本")])
+        self.assertEqual(by_key[("first_last_video", "首帧图AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
+        self.assertEqual(by_key[("script_doc_tasks", "视频AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("视频")])
+        self.assertEqual(by_key[("multi_role_first_last", "关键帧AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertIn("默认（配置表）", by_key[("first_last_video", "视频生成模型")])
         self.assertIn("Aitgenne / happyhorse-1.0-i2v", by_key[("multi_role_first_last", "视频生成模型")])
 

@@ -36,6 +36,13 @@ CONFIG_PROMPT_STAGES = {
 ROUTE_SWITCH_STAGE = "统一AI路由启用状态"
 ARCHIVE_PREFIX = "归档："
 SECRET_FIELD_NAMES = {"API Key"}
+OBSOLETE_VIEW_NAMES = {
+    "00-生产运行配置",
+    "01-统一AI Catalog",
+    "02-链路提示词配置",
+    "90-归档-旧预设",
+    "99-全字段排错",
+}
 
 
 @dataclass(frozen=True)
@@ -198,29 +205,25 @@ def build_backup_snapshot(
 def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, Any]]:
     all_fields = list(field_names)
     return {
-        "00-生产运行配置": {
-            "visible_fields": ["环节", "状态", "模型名称", "API 代理地址", "应用表格", "备注"],
-            "filter": {
-                "logic": "or",
-                "conditions": [["API Key", "non_empty"], ["环节", "intersects", [ROUTE_SWITCH_STAGE]]],
-            },
-        },
-        "01-统一AI Catalog": {
-            "visible_fields": ["环节", "AI供应商", "AI能力类型", "AI任务类型", "模型名称", "AI参数JSON", "调用方式", "状态", "备注"],
+        "模型目录": {
+            "visible_fields": ["AI供应商", "AI能力类型", "模型名称", "AI任务类型", "AI参数JSON", "状态", "备注"],
             "filter": {
                 "logic": "and",
                 "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]],
             },
         },
-        "02-链路提示词配置": {
-            "visible_fields": ["环节", "状态", "AI供应商", "AI能力类型", "AI任务类型", "模型名称", "API 代理地址", "AI参数JSON", "调用方式", "提示词", "备注"],
-            "filter": {"logic": "and", "conditions": [["环节", "intersects", sorted(CONFIG_PROMPT_STAGES)]]},
+        "供应商密钥-管理员": {
+            "visible_fields": ["环节", "状态", "模型名称", "API 代理地址", "调用方式", "应用表格", "备注"],
+            "filter": {
+                "logic": "or",
+                "conditions": [["API Key", "non_empty"], ["环节", "intersects", [ROUTE_SWITCH_STAGE]]],
+            },
         },
-        "90-归档-旧预设": {
+        "归档-候选旧模型": {
             "visible_fields": ["环节", "是否统一AI预设", "AI供应商", "AI能力类型", "AI任务类型", "模型名称", "状态", "备注"],
             "filter": {"logic": "and", "conditions": [["状态", "intersects", ["停用"]]]},
         },
-        "99-全字段排错": {
+        "排错-全字段": {
             "visible_fields": all_fields,
             "filter": {"conditions": []},
         },
@@ -350,6 +353,29 @@ def apply_view_definitions(base_token: str, views: Mapping[str, Mapping[str, Any
     return results
 
 
+def delete_obsolete_views(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
+    existing = existing_view_map(list_views(get_feishu_token()))
+    results = []
+    for view_name in sorted(OBSOLETE_VIEW_NAMES):
+        view_id = existing.get(view_name)
+        if not view_id:
+            continue
+        if not dry_run:
+            run_json([
+                "lark-cli", "base", "+view-delete",
+                "--base-token", base_token,
+                "--table-id", TABLE_CONFIG,
+                "--view-id", view_id,
+                "--yes",
+            ])
+        results.append({
+            "view_name": view_name,
+            "view_id": view_id,
+            "status": "dry_run" if dry_run else "deleted",
+        })
+    return results
+
+
 def write_backup(path: Path, snapshot: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(redacted_json(snapshot) + "\n", encoding="utf-8")
@@ -381,12 +407,14 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     write_backup(backup_path, backup)
     record_results = apply_record_updates(token, plan.record_updates, dry_run=not write)
     view_results = apply_view_definitions(APP_TOKEN, view_definitions, dry_run=not write)
+    obsolete_view_results = delete_obsolete_views(APP_TOKEN, dry_run=not write)
     return {
         "mode": "write" if write else "dry_run",
         "backup_path": str(backup_path),
         "summary": plan.summary,
         "record_updates": record_results,
         "views": view_results,
+        "obsolete_views": obsolete_view_results,
         "business_tables_touched": [],
     }
 
