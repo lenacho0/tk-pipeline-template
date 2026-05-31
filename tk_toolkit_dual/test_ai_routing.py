@@ -94,10 +94,62 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(route.provider, "Aitgenne")
         self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
         self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_key, "")
         self.assertEqual(route.params["temperature"], 0.1)
         summary = ai_routing.build_dry_run_summary(route, "hello")
         self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
-        self.assertEqual(summary["api_key"], "[REDACTED]")
+        self.assertEqual(summary["api_key"], "")
+
+    def test_prefixed_model_provider_overrides_stale_provider_field(self):
+        route = ai_routing.route_from_record(
+            {
+                "AI供应商": "AIHubMix",
+                "AI能力类型": "文本",
+                "AI任务类型": "多图九宫格方案生成",
+                "AI模型": "Aitgenne / gpt-5.5",
+            },
+            {
+                "provider": "AIHubMix",
+                "model": "AIHubMix / gemini-3.1-pro-preview",
+                "call_type": "Gemini 原生 SDK",
+                "api_key": "sk-aihubmix",
+                "api_base": "https://aihubmix.com/gemini",
+            },
+            config_records=[
+                {"fields": {"AI供应商": "AIHubMix", "API 代理地址": "https://aihubmix.com/gemini", "API Key": "sk-aihubmix"}},
+                {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+            ],
+        )
+
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
+        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_key, "sk-aitgenne")
+        self.assertEqual(ai_routing.build_dry_run_summary(route, "hello")["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_provider_switch_does_not_reuse_wrong_provider_key(self):
+        route = ai_routing.route_from_record(
+            {
+                "AI能力类型": "文本",
+                "AI任务类型": "多图九宫格方案生成",
+                "AI模型": "Aitgenne / gpt-5.5",
+            },
+            {
+                "provider": "AIHubMix",
+                "model": "AIHubMix / gemini-3.1-pro-preview",
+                "call_type": "Gemini 原生 SDK",
+                "api_key": "sk-aihubmix",
+                "api_base": "https://aihubmix.com/gemini",
+            },
+            config_records=[
+                {"fields": {"AI供应商": "AIHubMix", "API 代理地址": "https://aihubmix.com/gemini", "API Key": "sk-aihubmix"}},
+            ],
+        )
+
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.api_key, "")
+        with self.assertRaisesRegex(ValueError, "缺少 API Key"):
+            ai_routing.call_text_model(route, "hello", post=Mock())
 
     def test_route_from_slot_uses_task_model_and_params_over_defaults(self):
         route = ai_routing.route_from_slot(

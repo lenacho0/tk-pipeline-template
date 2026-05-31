@@ -208,9 +208,11 @@ def _field_with_default(fields: Dict[str, Any], name: str, default: str) -> str:
 
 
 def _prefixed_route_fields(fields: Dict[str, Any], prefix: str, *, default_provider: str, default_model: str) -> Dict[str, str]:
+    model = _field_with_default(fields, f"{prefix}AI模型", default_model)
+    model_provider = ai_routing.parse_model_display(model)["provider"]
     return {
-        "provider": _field_with_default(fields, f"{prefix}AI供应商", default_provider),
-        "model": _field_with_default(fields, f"{prefix}AI模型", default_model),
+        "provider": model_provider or _field_with_default(fields, f"{prefix}AI供应商", default_provider),
+        "model": model,
         "params": extract_text(fields.get(f"{prefix}AI参数JSON")).strip(),
     }
 
@@ -355,10 +357,14 @@ def get_config_record(stage_name: str, *, default_model: str, default_api_base: 
         if extract_text(fields.get("环节")).strip() != stage_name:
             continue
         cfg = {
+            "provider": extract_text(fields.get("AI供应商")).strip(),
+            "capability": extract_text(fields.get("AI能力类型")).strip(),
+            "task_type": extract_text(fields.get("AI任务类型")).strip(),
             "model": extract_text(fields.get("模型名称")).strip() or default_model,
             "api_key": extract_text(fields.get("API Key")).strip(),
             "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
             "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
+            "call_type": extract_text(fields.get("调用方式")).strip(),
             "prompt": extract_text(fields.get("提示词")).strip(),
         }
         if not cfg["api_key"]:
@@ -378,10 +384,14 @@ def get_config_record(stage_name: str, *, default_model: str, default_api_base: 
                     break
         return rec.get("record_id") or rec.get("id") or "", cfg
     return "", {
+        "provider": "",
+        "capability": "",
+        "task_type": "",
         "model": default_model,
         "api_key": "",
         "api_base": default_api_base,
         "size": default_size,
+        "call_type": "",
         "prompt": "",
     }
 
@@ -395,18 +405,25 @@ def _route_for_prefixed_fields(
     task_type: str,
     default_provider: str,
     default_model: str,
+    config_records: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> ai_routing.AiRoute:
     route_fields = _prefixed_route_fields(fields, prefix, default_provider=default_provider, default_model=default_model)
-    route = ai_routing.AiRoute(
-        provider=route_fields["provider"],
-        capability=capability,
-        task_type=task_type,
-        model=route_fields["model"],
-        api_base=extract_text(cfg.get("api_base")).strip(),
-        api_key=extract_text(cfg.get("api_key")).strip(),
-        params=_parse_params(route_fields["params"]),
+    config = dict(cfg)
+    config["provider"] = extract_text(config.get("provider")).strip() or default_provider
+    config["capability"] = capability
+    config["task_type"] = task_type
+    route = ai_routing.route_from_record(
+        {
+            ai_routing.AI_PROVIDER_FIELD: route_fields["provider"],
+            ai_routing.AI_CAPABILITY_FIELD: capability,
+            ai_routing.AI_TASK_TYPE_FIELD: task_type,
+            ai_routing.AI_MODEL_FIELD: route_fields["model"],
+            ai_routing.AI_PARAMS_FIELD: route_fields["params"],
+        },
+        config,
+        config_records=config_records,
     )
-    return ai_routing.validate_route(route)
+    return route
 
 
 def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_output: Any = None) -> Dict[str, Any]:
@@ -418,6 +435,7 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         raise ValueError("脚本内容为空")
     _, cfg = get_config_record(PLAN_STAGE_NAME, default_model="gemini-3.1-pro-preview", default_api_base="https://aihubmix.com/gemini")
     prompt = build_plan_generation_request(fields, system_prompt=cfg.get("prompt") or NINE_GRID_PLAN_SYSTEM_PROMPT)
+    config_records = _stage_config_records(token)
     route = _route_for_prefixed_fields(
         fields,
         "方案",
@@ -426,6 +444,7 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         task_type="多图九宫格方案生成",
         default_provider=DEFAULT_TEXT_PROVIDER,
         default_model=DEFAULT_TEXT_MODEL,
+        config_records=config_records,
     )
     summary = {
         "record_id": record_id,
@@ -437,7 +456,6 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         summary["status"] = "dry_run_ready"
         return summary
 
-    config_records = _stage_config_records(token)
     if ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
@@ -509,6 +527,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         task_type="图生图/参考图重绘",
         default_provider=DEFAULT_IMAGE_PROVIDER,
         default_model=DEFAULT_IMAGE_MODEL,
+        config_records=_stage_config_records(token),
     )
     route.params.update(params)
     summary = {
@@ -617,6 +636,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         task_type="首帧图生视频",
         default_provider=DEFAULT_VIDEO_PROVIDER,
         default_model=DEFAULT_VIDEO_MODEL,
+        config_records=_stage_config_records(token),
     )
     route.params.update(params)
     summary = {

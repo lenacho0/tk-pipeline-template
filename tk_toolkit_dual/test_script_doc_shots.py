@@ -214,6 +214,79 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["record_id"], "recParent")
 
+    def test_parse_parent_record_unified_route_uses_prefixed_model_provider(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档正文": "0-4s: hook",
+            "视频时长": "8s",
+            "使用统一AI路由": "是",
+            "解析AI模型": "Aitgenne / gpt-5.5",
+        }
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.dict(doc_shots.CONFIG_RECORDS, {"script_doc_text_split": "rec_script_split"}, clear=True), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=parent_fields), \
+             patch.object(doc_shots, "safe_list_records", return_value=config_records), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "CONFIGURED SCRIPT DOC PROMPT",
+             }):
+            result = doc_shots.parse_parent_record("recParent", dry_run=True)
+
+        route = result["unified_ai_route"]
+        self.assertEqual(route["provider"], "Aitgenne")
+        self.assertEqual(route["call_type"], "OpenAI兼容 chat/completions")
+        self.assertEqual(route["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_parse_parent_record_real_unified_call_uses_prefixed_route(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档正文": "0-4s: hook",
+            "视频时长": "8s",
+            "使用统一AI路由": "是",
+            "解析AI模型": "Aitgenne / gpt-5.5",
+        }
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.dict(doc_shots.CONFIG_RECORDS, {"script_doc_text_split": "rec_script_split"}, clear=True), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=parent_fields), \
+             patch.object(doc_shots, "safe_list_records", return_value=config_records), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "CONFIGURED SCRIPT DOC PROMPT",
+             }), \
+             patch.object(doc_shots.ai_routing, "call_text_model", return_value=Mock(text=json.dumps(self.sample_payload()))) as call_text, \
+             patch.object(doc_shots, "safe_update_record"), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, f: f), \
+             patch.object(doc_shots, "cleanup_children", return_value=0), \
+             patch.object(doc_shots, "create_records", return_value=5):
+            result = doc_shots.parse_parent_record("recParent")
+
+        route = call_text.call_args.args[0]
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
+        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_key, "sk-aitgenne")
+
     def test_build_parse_prompt_uses_configured_system_prompt(self):
         prompt = doc_shots.build_parse_prompt(
             {"视频时长": "8s", "分镜风格": "写实", "产品名": "Pet Spray"},

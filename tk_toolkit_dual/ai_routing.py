@@ -29,6 +29,11 @@ AI_SLOT_PARAMS_SUFFIX = "AI参数JSON"
 
 YES_VALUES = {"是", "yes", "true", "1", "启用", "开启", "使用"}
 NO_VALUES = {"否", "no", "false", "0", "关闭", "不使用", ""}
+PROVIDER_API_BASE_MARKERS = {
+    "AIHubMix": "aihubmix",
+    "Aitgenne": "aitgenne",
+    "OTU": "otuapi",
+}
 
 
 @dataclass
@@ -145,12 +150,39 @@ def _config_params(config: Dict[str, Any]) -> Dict[str, Any]:
     return _parse_params_json(config.get(AI_PARAMS_FIELD), field_name=AI_PARAMS_FIELD)
 
 
-def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] = None) -> AiRoute:
+def config_record_matches_provider(fields: Dict[str, Any], provider: str) -> bool:
+    provider_text = _norm(fields.get(AI_PROVIDER_FIELD))
+    if provider_text == provider:
+        return True
+    marker = PROVIDER_API_BASE_MARKERS.get(provider, "").lower()
+    api_base = _norm(fields.get("API 代理地址") or fields.get("api_base")).lower()
+    return bool(marker and marker in api_base)
+
+
+def api_key_for_provider(config_records: Iterable[Dict[str, Any]], provider: str) -> str:
+    for rec in config_records or []:
+        fields = rec.get("fields") if isinstance(rec, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        if not config_record_matches_provider(fields, provider):
+            continue
+        api_key = _norm(fields.get("API Key") or fields.get("api_key"))
+        if api_key:
+            return api_key
+    return ""
+
+
+def route_from_record(
+    fields: Dict[str, Any],
+    config: Optional[Dict[str, str]] = None,
+    *,
+    config_records: Optional[Iterable[Dict[str, Any]]] = None,
+) -> AiRoute:
     config = config or {}
     explicit_model = _norm(fields.get(AI_MODEL_FIELD))
     raw_model = explicit_model or _norm(config.get("model"))
     model_bits = parse_model_display(raw_model)
-    provider = _norm(fields.get(AI_PROVIDER_FIELD)) or model_bits["provider"] or _norm(config.get("provider"))
+    provider = model_bits["provider"] or _norm(fields.get(AI_PROVIDER_FIELD)) or _norm(config.get("provider"))
     capability = _norm(fields.get(AI_CAPABILITY_FIELD)) or _norm(config.get("capability")) or "文本"
     task_type = _norm(fields.get(AI_TASK_TYPE_FIELD)) or _norm(config.get("task_type"))
     model = raw_model
@@ -161,8 +193,10 @@ def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] =
     params.update(_parse_params_json(fields.get(AI_PARAMS_FIELD), field_name=AI_PARAMS_FIELD))
     config_provider = _norm(config.get("provider"))
     api_base = _norm(config.get("api_base"))
+    api_key = _norm(config.get("api_key"))
     if explicit_model and config_provider and config_provider != provider:
         api_base = ""
+        api_key = api_key_for_provider(config_records or [], provider)
     return validate_route(AiRoute(
         provider=provider,
         capability=capability,
@@ -170,7 +204,7 @@ def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] =
         model=model,
         call_type=call_type,
         api_base=api_base,
-        api_key=_norm(config.get("api_key")),
+        api_key=api_key,
         params=params,
     ))
 
@@ -190,6 +224,7 @@ def route_from_slot(
     *,
     capability: str,
     task_type: str,
+    config_records: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> AiRoute:
     """Build a route from a task-specific model slot, falling back to legacy fields."""
     config = dict(config or {})
@@ -212,7 +247,7 @@ def route_from_slot(
         route_fields[AI_PROVIDER_FIELD] = fields.get(AI_PROVIDER_FIELD)
         route_fields[AI_MODEL_FIELD] = legacy_model
         route_fields[AI_PARAMS_FIELD] = legacy_params
-    return route_from_record(route_fields, config)
+    return route_from_record(route_fields, config, config_records=config_records)
 
 
 def redact_secret(value: Any) -> Any:

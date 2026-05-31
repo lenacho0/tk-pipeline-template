@@ -157,6 +157,99 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(deps["S01_TAIL_SHARED_S02_FIRST"], "S01_FIRST")
         self.assertEqual(deps["S02_TAIL"], "S01_TAIL_SHARED_S02_FIRST")
 
+    def test_parse_task_unified_route_uses_prefixed_model_provider(self):
+        fields = {
+            "记录类型": "母任务",
+            "输入脚本": "0-8s multi role hook",
+            "使用统一AI路由": "是",
+            "拆解AI模型": "Aitgenne / gpt-5.5",
+        }
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=config_records), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "configured parse prompt",
+             })):
+            result = multi_role.parse_task("recParent", dry_run=True)
+
+        route = result["unified_ai_route"]
+        self.assertEqual(route["provider"], "Aitgenne")
+        self.assertEqual(route["call_type"], "OpenAI兼容 chat/completions")
+        self.assertEqual(route["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_parse_task_real_unified_call_uses_prefixed_route(self):
+        fields = {
+            "记录类型": "母任务",
+            "输入脚本": "0-8s multi role hook",
+            "使用统一AI路由": "是",
+            "拆解AI模型": "Aitgenne / gpt-5.5",
+        }
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=config_records), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "configured parse prompt",
+             })), \
+             patch.object(multi_role.ai_routing, "call_text_model", return_value=type("Result", (), {"text": json.dumps(sample_plan())})()) as call_text, \
+             patch.object(multi_role, "safe_update_record"), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, f: f), \
+             patch.object(multi_role, "deprecate_existing_children", return_value=0), \
+             patch.object(multi_role, "create_records", return_value=8):
+            result = multi_role.parse_task("recParent")
+
+        route = call_text.call_args.args[0]
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
+        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_key, "sk-aitgenne")
+
+    def test_multi_role_media_summary_uses_prefixed_video_provider(self):
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(multi_role, "safe_list_records", return_value=config_records):
+            summary = multi_role.maybe_unified_media_summary(
+                "token",
+                {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-r2v"},
+                {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
+                capability="视频",
+                task_type="首尾帧图生视频",
+                model="veo_3_1-fast-fl",
+                slot_name="视频",
+                prompt="video prompt",
+                params={"size": "720x1280", "aspect_ratio": "9:16"},
+                reference_count=2,
+            )
+
+        self.assertEqual(summary["provider"], "Aitgenne")
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(summary["api_key"], "[REDACTED]")
+
     def test_build_child_records_creates_assets_keyframes_and_video_clips(self):
         records = multi_role.build_child_records("parent", {"任务名称": "Hook", "目标时长秒": 8}, sample_plan(role_count=4), batch_id="batch1")
         by_type = {}

@@ -234,13 +234,55 @@ class NineGridVideoTests(unittest.TestCase):
         with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
              patch.object(nine_grid, "get_feishu_token", return_value="token"), \
              patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, {"记录类型": "母任务"}]), \
-             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2"})):
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]):
             result = nine_grid.render_nine_grid_image("recBoard", dry_run=True)
 
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["route"]["capability"], "图片")
         self.assertEqual(result["route"]["payload"]["model"], "gpt-image-2")
         self.assertEqual(result["route"]["payload"]["size"], "1080x1920")
+
+    def test_plan_dry_run_infers_provider_from_prefixed_model(self):
+        parent_fields = {
+            "记录类型": "母任务",
+            "脚本内容": "A short nine-grid script.",
+            "方案AI模型": "Aitgenne / gpt-5.5",
+        }
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=parent_fields), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "AIHubMix",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "model": "gemini-3.1-pro-preview",
+                 "call_type": "Gemini 原生 SDK",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[
+                 {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}}
+             ]):
+            result = nine_grid.split_nine_grid_plan("recParent", dry_run=True)
+
+        self.assertEqual(result["status"], "dry_run_ready")
+        self.assertEqual(result["route"]["provider"], "Aitgenne")
+        self.assertEqual(result["route"]["model"], "gpt-5.5")
+        self.assertEqual(result["route"]["call_type"], "OpenAI兼容 chat/completions")
+        self.assertEqual(result["route"]["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_dispatcher_parses_json_error_after_warning_lines(self):
+        stderr = (
+            "/Users/ryanlynn/Library/Python/3.9/lib/python/site-packages/google/auth/__init__.py:54: "
+            "FutureWarning: You are using a Python version 3.9 past its end of life.\n"
+            "  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
+            '{"stage": "nine_grid_plan", "status": "failed_terminal", "error_code": "RUNTIME_BUG", '
+            '"retryable": false, "message": "AI模型供应商不匹配: AI供应商=AIHubMix, AI模型=Aitgenne / gpt-5.5"}\n'
+        )
+
+        payload = dispatcher.parse_subprocess_error_payload("", stderr, "tk_nine_grid_video.py")
+
+        self.assertEqual(payload["message"], "AI模型供应商不匹配: AI供应商=AIHubMix, AI模型=Aitgenne / gpt-5.5")
 
     def test_video_dry_run_uses_video_prefixed_route_fields(self):
         child_fields = {
@@ -257,7 +299,8 @@ class NineGridVideoTests(unittest.TestCase):
         with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
              patch.object(nine_grid, "get_feishu_token", return_value="token"), \
              patch.object(nine_grid, "safe_get_record", return_value=child_fields), \
-             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"})):
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]):
             result = nine_grid.render_nine_grid_video("recBoard", dry_run=True)
 
         self.assertEqual(result["status"], "dry_run_ready")

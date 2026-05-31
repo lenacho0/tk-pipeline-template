@@ -825,7 +825,7 @@ def maybe_unified_media_summary(
         "task_type": task_type,
         "model": f"OTU / {model}",
         "params": params,
-    }, capability=capability, task_type=task_type)
+    }, capability=capability, task_type=task_type, config_records=config_records)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 

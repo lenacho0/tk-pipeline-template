@@ -646,7 +646,7 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
             "capability": "文本",
             "task_type": "故事板提示词拆分",
             "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
-        }, capability="文本", task_type="故事板提示词拆分")
+        }, capability="文本", task_type="故事板提示词拆分", config_records=config_records)
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:
         summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)
@@ -745,7 +745,7 @@ def maybe_unified_media_summary(
         "task_type": task_type,
         "model": f"OTU / {model}",
         "params": params,
-    }, capability=capability, task_type=task_type)
+    }, capability=capability, task_type=task_type, config_records=config_records)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 

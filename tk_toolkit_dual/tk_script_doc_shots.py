@@ -648,7 +648,7 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
             "capability": "文本",
             "task_type": "脚本解析拆分",
             "model": cfg.get("model") or "AIHubMix / gemini-3.1-pro-preview",
-        }, capability="文本", task_type="脚本解析拆分")
+        }, capability="文本", task_type="脚本解析拆分", config_records=config_records)
 
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:

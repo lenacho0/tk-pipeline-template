@@ -651,7 +651,7 @@ def maybe_unified_media_summary(
         "task_type": task_type,
         "model": f"OTU / {model}",
         "params": params,
-    }, capability=capability, task_type=task_type)
+    }, capability=capability, task_type=task_type, config_records=config_records)
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 
@@ -695,7 +695,7 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
             "capability": "文本",
             "task_type": "多角色首尾帧解析",
             "model": cfg.get("model") or "AIHubMix / gemini-2.5-flash",
-        }, capability="文本", task_type="多角色首尾帧解析")
+        }, capability="文本", task_type="多角色首尾帧解析", config_records=config_records)
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt)}
     if unified_route:
         summary["unified_ai_route"] = ai_routing.build_dry_run_summary(unified_route, prompt)

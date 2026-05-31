@@ -666,6 +666,24 @@ def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
     for block in combined_parts:
         lines.extend(block.splitlines())
 
+    for line in reversed(lines):
+        text = line.strip()
+        if not (text.startswith('{') and text.endswith('}')):
+            continue
+        try:
+            payload = json.loads(text)
+        except Exception:
+            continue
+        if not isinstance(payload, dict) or 'message' not in payload:
+            continue
+        return {
+            'stage': payload.get('stage') or stage,
+            'status': payload.get('status') or 'failed_terminal',
+            'error_code': payload.get('error_code') or 'RUNTIME_BUG',
+            'retryable': bool(payload.get('retryable')),
+            'message': extract_text(payload.get('message'))[:500],
+        }
+
     structured_line = None
     for line in reversed(lines):
         text = line.strip()

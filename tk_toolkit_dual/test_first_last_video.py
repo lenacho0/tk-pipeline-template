@@ -132,6 +132,30 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
         self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
 
+    def test_first_last_media_summary_uses_prefixed_video_provider(self):
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(first_last, "safe_list_records", return_value=config_records):
+            summary = first_last.maybe_unified_media_summary(
+                "token",
+                {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-i2v"},
+                {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
+                capability="视频",
+                task_type="首帧图生视频",
+                model="veo_3_1-fast-fl",
+                slot_name="视频",
+                prompt="video prompt",
+                params={"size": "720x1280", "aspect_ratio": "9:16"},
+                reference_count=1,
+            )
+
+        self.assertEqual(summary["provider"], "Aitgenne")
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(summary["api_key"], "[REDACTED]")
+
     def test_prune_obsolete_views_deletes_only_legacy_first_last_views(self):
         calls = []
 

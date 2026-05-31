@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -159,6 +160,107 @@ class StoryboardVideoTests(unittest.TestCase):
 
         self.assertEqual(cfg["prompt"], storyboard_video.STORYBOARD_PROMPT_RULES)
         self.assertEqual(cfg["prompt_record_id"], "")
+
+    def test_split_storyboards_unified_route_uses_prefixed_model_provider(self):
+        fields = dict(parent_fields(), **{
+            "使用统一AI路由": "是",
+            "拆分AI模型": "Aitgenne / gpt-5.5",
+        })
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+             patch.object(storyboard_video, "safe_get_record", return_value=fields), \
+             patch.object(storyboard_video, "resolve_parent_reference_context", return_value={}), \
+             patch.object(storyboard_video, "apply_parent_reference_snapshots", side_effect=lambda f, ctx: f), \
+             patch.object(storyboard_video, "get_text_generation_config", return_value={
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "configured split prompt",
+             }), \
+             patch.object(storyboard_video, "safe_list_records", return_value=config_records):
+            result = storyboard_video.split_storyboards("recParent", dry_run=True)
+
+        route = result["unified_ai_route"]
+        self.assertEqual(route["provider"], "Aitgenne")
+        self.assertEqual(route["call_type"], "OpenAI兼容 chat/completions")
+        self.assertEqual(route["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_split_storyboards_real_unified_call_uses_prefixed_route(self):
+        fields = dict(parent_fields(), **{
+            "使用统一AI路由": "是",
+            "拆分AI模型": "Aitgenne / gpt-5.5",
+        })
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+        payload = {
+            "storyboards": [
+                {
+                    "storyboard_no": 1,
+                    "time_range": "0-10s",
+                    "image_prompt": complete_storyboard_prompt(1),
+                    "video_prompt": "Animate as one clean vertical video.",
+                }
+            ]
+        }
+
+        with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+             patch.object(storyboard_video, "safe_get_record", return_value=fields), \
+             patch.object(storyboard_video, "resolve_parent_reference_context", return_value={}), \
+             patch.object(storyboard_video, "apply_parent_reference_snapshots", side_effect=lambda f, ctx: f), \
+             patch.object(storyboard_video, "get_text_generation_config", return_value={
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "configured split prompt",
+             }), \
+             patch.object(storyboard_video, "safe_list_records", return_value=config_records), \
+             patch.object(storyboard_video.ai_routing, "call_text_model", return_value=Mock(text=json.dumps(payload))) as call_text, \
+             patch.object(storyboard_video, "safe_update_record"), \
+             patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, f: f), \
+             patch.object(storyboard_video, "cleanup_child_storyboards", return_value=0), \
+             patch.object(storyboard_video, "create_records", return_value=1):
+            result = storyboard_video.split_storyboards("recParent")
+
+        route = call_text.call_args.args[0]
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
+        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_key, "sk-aitgenne")
+
+    def test_storyboard_media_summary_uses_prefixed_video_provider(self):
+        config_records = [
+            {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+
+        with patch.object(storyboard_video, "safe_list_records", return_value=config_records):
+            summary = storyboard_video.maybe_unified_media_summary(
+                "token",
+                {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-i2v"},
+                {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "omni_flash-10s"},
+                capability="视频",
+                task_type="首帧图生视频",
+                model="omni_flash-10s",
+                slot_name="视频",
+                prompt="video prompt",
+                params={"size": "720x1280", "aspect_ratio": "9:16"},
+                reference_count=1,
+            )
+
+        self.assertEqual(summary["provider"], "Aitgenne")
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(summary["api_key"], "[REDACTED]")
 
     def test_normalize_storyboard_payload_requires_final_image_prompt_and_adds_numbers(self):
         payload = storyboard_video.normalize_storyboard_payload({
