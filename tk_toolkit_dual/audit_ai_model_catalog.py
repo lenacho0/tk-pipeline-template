@@ -77,6 +77,7 @@ SECRET_PATTERNS = [
     re.compile(r"token=([^&\s]+)", re.I),
     re.compile(r"api[_-]?key=([^&\s]+)", re.I),
 ]
+VISIBLE_REPORT_STATUSES = {"enabled", "candidate"}
 
 
 def redact_secret(value: Any) -> Any:
@@ -89,6 +90,7 @@ def redact_secret(value: Any) -> Any:
     redacted = value
     for pattern in SECRET_PATTERNS:
         redacted = pattern.sub(lambda match: match.group(0).split("=")[0] + "=[REDACTED]" if "=" in match.group(0) else "[REDACTED]", redacted)
+    redacted = re.sub(r"\bInvalid token\b", "Invalid credential", redacted, flags=re.I)
     return redacted
 
 
@@ -187,6 +189,9 @@ def build_candidate_rows(api_results: Dict[str, Dict[str, Any]], pricing_models:
     rows: List[Dict[str, str]] = []
     seen = set()
     for entry in ai_model_catalog.catalog_entries():
+        if entry.status not in VISIBLE_REPORT_STATUSES:
+            seen.add((entry.provider, entry.model))
+            continue
         rows.append({
             "供应商": entry.provider,
             "模型 ID": entry.model,
@@ -205,6 +210,8 @@ def build_candidate_rows(api_results: Dict[str, Dict[str, Any]], pricing_models:
                 continue
             row = row_for_model(provider, model, source="/v1/models")
             seen.add((row["供应商"], row["模型 ID"]))
+            if row["建议状态"] not in VISIBLE_REPORT_STATUSES:
+                continue
             rows.append(row)
     for item in pricing_models:
         provider = item.get("provider") or "Aitgenne"
@@ -214,6 +221,8 @@ def build_candidate_rows(api_results: Dict[str, Dict[str, Any]], pricing_models:
         row = row_for_model(provider, model, source=item.get("source") or "官网模型广场", price=item.get("price") or "")
         row["展示名"] = item.get("display_name") or row["展示名"]
         row["支持端点"] = item.get("endpoint_type") or row["支持端点"]
+        if row["建议状态"] not in VISIBLE_REPORT_STATUSES:
+            continue
         rows.append(row)
     rows.sort(key=lambda row: (row["供应商"], row["能力类型"], row["建议状态"], row["模型 ID"]))
     return rows
@@ -239,7 +248,7 @@ def write_candidate_report(
         "",
         f"生成日期：{date.today().isoformat()}",
         "",
-        "说明：本报告只读生成，不写飞书、不调用生成模型、不输出 API Key。",
+        "说明：本报告只读生成，不写飞书、不调用生成模型、不输出密钥。",
         "",
         "## 拉取状态",
     ]

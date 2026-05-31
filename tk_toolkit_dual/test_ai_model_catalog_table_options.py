@@ -20,6 +20,7 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
 
         self.assertIn("OTU / veo_3_1-fast-fl-hd", options)
         self.assertIn("AIHubMix / veo-3.1-fast-generate-preview", options)
+        self.assertNotIn("AIHubMix / seeddance2.0", options)
         self.assertNotIn("AIHubMix / sora-2-pro", options)
 
     def test_first_last_video_model_options_come_from_catalog(self):

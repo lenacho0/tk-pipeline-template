@@ -14,6 +14,7 @@ STATUS_DISCARD = "discard"
 PRODUCTION_STATUSES = {STATUS_ENABLED}
 LOOKUP_STATUSES = {STATUS_ENABLED}
 INSPECTABLE_STATUSES = {STATUS_ENABLED, STATUS_CANDIDATE}
+UNIFIED_AI_CAPABILITIES = ("文本", "图片", "视频")
 
 
 @dataclass(frozen=True)
@@ -173,13 +174,13 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
     _entry("OTU", "视频", "veo_3_1-fast", "OTU /v1/videos multipart", STATUS_DISCARD, "本轮 OTU /v1/models 未返回"),
     _entry("OTU", "视频", "sora-2-12s", "OTU /v1/videos multipart", STATUS_DISCARD, "本轮 OTU /v1/models 未返回/用户不接 Sora"),
     _entry("AIHubMix", "视频", "veo-3.1-fast-generate-preview", "Gemini native Veo", STATUS_ENABLED, "现有适配器/smoke test", nine_grid_fit="单首帧视频"),
-    _entry("AIHubMix", "视频", "seeddance2.0", "AIHubMix 视频适配器", STATUS_ENABLED, "现有适配器", notes="平台曾有参数覆盖问题，保留但谨慎使用。"),
+    _entry("AIHubMix", "视频", "seeddance2.0", "AIHubMix 视频适配器", STATUS_CANDIDATE, "现有适配器/通道待恢复", notes="Smoke 复测返回 no_valid_channel_error，当前账号/通道不可生产使用。"),
     _entry("AIHubMix", "视频", "sora-2-pro", "AIHubMix 视频", STATUS_DISCARD, "用户明确不接"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-r2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合多参考图九宫格"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-i2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合单张九宫格图转视频"),
     _entry("Aitgenne", "视频", "omni-flash", "视频统一格式", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合 Omni 视频候选"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-t2v", "happyhorse视频", STATUS_CANDIDATE, "官网模型广场", notes="文生视频，不适合当前九宫格主链路。"),
-    _entry("Aitgenne", "视频", "happyhorse-1.0-video-edit", "happyhorse视频", STATUS_CANDIDATE, "官网模型广场", notes="视频编辑，不适合生成主链路。"),
+    _entry("Aitgenne", "视频", "happyhorse-1.0-video-edit", "happyhorse视频", STATUS_DISCARD, "用户明确不接", notes="视频编辑，不适合生成主链路。"),
     _entry("Aitgenne", "视频", "veo-3.1-fast", "Google 音视频待验证", STATUS_CANDIDATE, "官网模型广场待确认", notes="Aitgenne /v1/models 未返回，先不进生产下拉。"),
     _entry("Aitgenne", "视频", "kling-video", "视频统一格式", STATUS_DISCARD, "用户明确不接"),
     _entry("Aitgenne", "视频", "pixverse-video", "视频统一格式", STATUS_DISCARD, "用户明确不接"),
@@ -246,6 +247,14 @@ def production_model_options(capability: Optional[str] = None) -> List[Dict[str,
     return [option_for_model(entry) for entry in production_models(capability)]
 
 
+def unified_ai_model_options() -> List[Dict[str, str]]:
+    return [
+        option_for_model(entry)
+        for entry in production_models()
+        if entry.capability in UNIFIED_AI_CAPABILITIES
+    ]
+
+
 def select_options_for_capability(capability: str) -> List[Dict[str, str]]:
     return production_model_options(capability)
 
@@ -265,7 +274,7 @@ AI_TASK_TYPE_OPTIONS = [
     opt("首尾帧视频", "Blue"),
     opt("TTS", "Purple"),
 ]
-AI_MODEL_OPTIONS = production_model_options()
+AI_MODEL_OPTIONS = unified_ai_model_options()
 TEXT_MODEL_OPTIONS = select_options_for_capability("文本")
 IMAGE_MODEL_OPTIONS = select_options_for_capability("图片")
 VIDEO_AI_MODEL_OPTIONS = select_options_for_capability("视频")
