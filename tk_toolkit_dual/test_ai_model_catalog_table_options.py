@@ -24,19 +24,24 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
         self.assertNotIn("AIHubMix / sora-2-pro", options)
 
     def test_first_last_video_model_options_come_from_catalog(self):
-        options = field_options(first_last_table.FIRST_LAST_VIDEO_FIELDS, "视频生成模型")
+        options = field_options(first_last_table.FIRST_LAST_VIDEO_FIELDS, "视频AI模型")
 
         self.assertIn("OTU / veo_3_1-fast-fl-hd", options)
         self.assertIn("Aitgenne / happyhorse-1.0-i2v", options)
         self.assertNotIn("OTU / sora-2-12s", options)
+        image_options = field_options(first_last_table.FIRST_LAST_VIDEO_FIELDS, "首帧图AI模型")
+        self.assertIn("OTU / gpt-image-2-4K", image_options)
+        self.assertNotIn("AIHubMix / gpt-image-2", image_options)
 
     def test_multi_role_ai_and_video_model_options_come_from_catalog(self):
         ai_options = field_options(multi_role_table.MULTI_ROLE_FIRST_LAST_FIELDS, "AI模型")
         video_options = field_options(multi_role_table.MULTI_ROLE_FIRST_LAST_FIELDS, "视频生成模型")
+        slot_video_options = field_options(multi_role_table.MULTI_ROLE_FIRST_LAST_FIELDS, "视频AI模型")
 
         self.assertIn("Aitgenne / gpt-5.5", ai_options)
         self.assertIn("OTU / gpt-image-2-4K", ai_options)
         self.assertIn("OTU / veo_3_1-fast-fl-hd", video_options)
+        self.assertIn("OTU / veo_3_1-fast-fl-hd", slot_video_options)
         self.assertNotIn("Aitgenne / gemini-3.1-pro-preview", ai_options)
         self.assertNotIn("OTU / nano_banana_pro-4K", ai_options)
 

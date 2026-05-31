@@ -913,7 +913,7 @@ Omni Video Prompt:
         self.assertLess(omni_view.index("Omni画面比例"), omni_view.index("视频生成状态"))
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "storyboard_video")
         self.assertEqual(create_table.TABLE_DEFINITION["views"]["01-母任务入口"], [
-            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分状态", "错误信息",
+            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分AI模型", "拆分AI参数JSON", "拆分状态", "错误信息",
         ])
         self.assertIn("02-故事板图片", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-Omni视频", create_table.TABLE_DEFINITION["views"])

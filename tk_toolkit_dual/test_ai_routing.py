@@ -99,6 +99,47 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
         self.assertEqual(summary["api_key"], "[REDACTED]")
 
+    def test_route_from_slot_uses_task_model_and_params_over_defaults(self):
+        route = ai_routing.route_from_slot(
+            {
+                "生图AI模型": "OTU / gpt-image-2-2K",
+                "生图AI参数JSON": '{"size":"1080x1920"}',
+            },
+            "生图",
+            {
+                "provider": "OTU",
+                "model": "OTU / gpt-image-2",
+                "api_key": "sk-image",
+                "api_base": "https://otuapi.com",
+                "params": {"size": "720x1280", "aspect_ratio": "9:16"},
+            },
+            capability="图片",
+            task_type="首帧图生图",
+        )
+
+        self.assertEqual(route.provider, "OTU")
+        self.assertEqual(route.model, "OTU / gpt-image-2-2K")
+        self.assertEqual(route.capability, "图片")
+        self.assertEqual(route.task_type, "首帧图生图")
+        self.assertEqual(route.params["size"], "1080x1920")
+        self.assertEqual(route.params["aspect_ratio"], "9:16")
+
+    def test_route_from_slot_falls_back_to_legacy_ai_model(self):
+        route = ai_routing.route_from_slot(
+            {
+                "AI模型": "Aitgenne / gpt-5.5",
+                "AI参数JSON": '{"temperature":0.2}',
+            },
+            "拆分",
+            {"api_key": "sk-text", "api_base": "https://api.aitgenne.com"},
+            capability="文本",
+            task_type="脚本解析拆分",
+        )
+
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.model, "Aitgenne / gpt-5.5")
+        self.assertEqual(route.params["temperature"], 0.2)
+
     def test_text_openai_compatible_call_redacts_key_from_summary(self):
         response = Mock(status_code=200)
         response.json.return_value = {"choices": [{"message": {"content": "OK JSON"}}]}

@@ -130,7 +130,7 @@ class NineGridVideoTests(unittest.TestCase):
             self.assertIn(name, field_names)
         self.assertEqual(
             create_table.TABLE_DEFINITION["views"]["01-任务入口"],
-            ["任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "方案生成状态", "错误信息"],
+            ["任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "方案AI模型", "方案AI参数JSON", "方案生成状态", "错误信息"],
         )
         self.assertIn("02-方案审核", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-九宫格生成", create_table.TABLE_DEFINITION["views"])

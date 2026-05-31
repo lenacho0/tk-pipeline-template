@@ -24,6 +24,8 @@ AI_CAPABILITY_FIELD = "AI能力类型"
 AI_TASK_TYPE_FIELD = "AI任务类型"
 AI_MODEL_FIELD = "AI模型"
 AI_PARAMS_FIELD = "AI参数JSON"
+AI_SLOT_MODEL_SUFFIX = "AI模型"
+AI_SLOT_PARAMS_SUFFIX = "AI参数JSON"
 
 YES_VALUES = {"是", "yes", "true", "1", "启用", "开启", "使用"}
 NO_VALUES = {"否", "no", "false", "0", "关闭", "不使用", ""}
@@ -121,6 +123,28 @@ def validate_route(route: AiRoute) -> AiRoute:
     return route
 
 
+def _parse_params_json(raw: Any, *, field_name: str) -> Dict[str, Any]:
+    params_text = _norm(raw)
+    if not params_text:
+        return {}
+    try:
+        parsed_params = json.loads(params_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 不是合法 JSON: {exc}") from exc
+    if not isinstance(parsed_params, dict):
+        raise ValueError(f"{field_name} 顶层必须是对象")
+    return parsed_params
+
+
+def _config_params(config: Dict[str, Any]) -> Dict[str, Any]:
+    raw_params = config.get("params")
+    if isinstance(raw_params, dict):
+        return dict(raw_params)
+    if raw_params:
+        return _parse_params_json(raw_params, field_name="配置参数JSON")
+    return _parse_params_json(config.get(AI_PARAMS_FIELD), field_name=AI_PARAMS_FIELD)
+
+
 def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] = None) -> AiRoute:
     config = config or {}
     explicit_model = _norm(fields.get(AI_MODEL_FIELD))
@@ -133,16 +157,8 @@ def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] =
     call_type = "" if explicit_model else _norm(config.get("call_type") or config.get("调用方式"))
     if capability == "文本" and (not call_type or explicit_model):
         call_type = "Gemini 原生 SDK" if "gemini" in model.lower() else "OpenAI兼容 chat/completions"
-    params_text = _norm(fields.get(AI_PARAMS_FIELD))
-    params: Dict[str, Any] = {}
-    if params_text:
-        try:
-            parsed_params = json.loads(params_text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"AI参数JSON 不是合法 JSON: {exc}") from exc
-        if not isinstance(parsed_params, dict):
-            raise ValueError("AI参数JSON 顶层必须是对象")
-        params = parsed_params
+    params: Dict[str, Any] = _config_params(config)
+    params.update(_parse_params_json(fields.get(AI_PARAMS_FIELD), field_name=AI_PARAMS_FIELD))
     config_provider = _norm(config.get("provider"))
     api_base = _norm(config.get("api_base"))
     if explicit_model and config_provider and config_provider != provider:
@@ -157,6 +173,46 @@ def route_from_record(fields: Dict[str, Any], config: Optional[Dict[str, str]] =
         api_key=_norm(config.get("api_key")),
         params=params,
     ))
+
+
+def slot_model_field(slot_name: str) -> str:
+    return f"{slot_name}{AI_SLOT_MODEL_SUFFIX}"
+
+
+def slot_params_field(slot_name: str) -> str:
+    return f"{slot_name}{AI_SLOT_PARAMS_SUFFIX}"
+
+
+def route_from_slot(
+    fields: Dict[str, Any],
+    slot_name: str,
+    config: Optional[Dict[str, Any]] = None,
+    *,
+    capability: str,
+    task_type: str,
+) -> AiRoute:
+    """Build a route from a task-specific model slot, falling back to legacy fields."""
+    config = dict(config or {})
+    config["capability"] = capability
+    config["task_type"] = task_type
+    model_field = slot_model_field(slot_name)
+    params_field = slot_params_field(slot_name)
+    slot_model = _norm(fields.get(model_field))
+    slot_params = fields.get(params_field)
+    legacy_model = _norm(fields.get(AI_MODEL_FIELD))
+    legacy_params = fields.get(AI_PARAMS_FIELD)
+    route_fields: Dict[str, Any] = {
+        AI_CAPABILITY_FIELD: capability,
+        AI_TASK_TYPE_FIELD: task_type,
+    }
+    if slot_model:
+        route_fields[AI_MODEL_FIELD] = slot_model
+        route_fields[AI_PARAMS_FIELD] = slot_params
+    else:
+        route_fields[AI_PROVIDER_FIELD] = fields.get(AI_PROVIDER_FIELD)
+        route_fields[AI_MODEL_FIELD] = legacy_model
+        route_fields[AI_PARAMS_FIELD] = legacy_params
+    return route_from_record(route_fields, config)
 
 
 def redact_secret(value: Any) -> Any:

@@ -35,6 +35,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
 )
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, VIDEO_AI_MODEL_OPTIONS
 from common import extract_text, get_feishu_token, safe_list_records, safe_update_record
 
 
@@ -88,6 +89,12 @@ STORYBOARD_VIDEO_FIELDS = [
     link("选择模特", "__MODEL_TABLE_ID__"),
     attachment("环境图"),
     select("使用统一AI路由", YES_NO_OPTIONS),
+    select("拆分AI模型", TEXT_MODEL_OPTIONS),
+    text("拆分AI参数JSON"),
+    select("故事板图片AI模型", IMAGE_MODEL_OPTIONS),
+    text("故事板图片AI参数JSON"),
+    select("视频AI模型", VIDEO_AI_MODEL_OPTIONS),
+    text("视频AI参数JSON"),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),
     select("AI任务类型", AI_TASK_TYPE_OPTIONS),
@@ -126,27 +133,32 @@ TABLE_DEFINITION = {
     "fields": STORYBOARD_VIDEO_FIELDS,
     "views": {
         "01-母任务入口": [
-            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分状态", "错误信息",
+            "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图",
+            "拆分AI模型", "拆分AI参数JSON", "拆分状态", "错误信息",
         ],
         "02-故事板图片": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range",
-            "故事板图片提示词", "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
+            "故事板图片提示词", "故事板图片AI模型", "故事板图片AI参数JSON",
+            "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
             "故事板图片生成状态", "故事板图", "故事板图片错误信息",
         ],
         "03-Omni视频": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range", "故事板图",
-            "视频提示词", "Omni模型", "Omni画面尺寸", "Omni画面比例",
+            "视频提示词", "视频AI模型", "视频AI参数JSON", "Omni模型", "Omni画面尺寸", "Omni画面比例",
             "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频生成时间",
         ],
         "高级AI参数": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号",
-            "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
+            "使用统一AI路由", "拆分AI模型", "拆分AI参数JSON",
+            "故事板图片AI模型", "故事板图片AI参数JSON", "视频AI模型", "视频AI参数JSON",
             "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
             "Omni模型", "Omni画面尺寸", "Omni画面比例",
         ],
         "99-排错": [
             "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
             "拆分状态", "拆分结果JSON", "故事板图片提示词",
+            "使用统一AI路由", "拆分AI模型", "拆分AI参数JSON",
+            "故事板图片AI模型", "故事板图片AI参数JSON", "视频AI模型", "视频AI参数JSON",
             "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
             "故事板图片任务ID", "故事板图片错误信息", "故事板图片生成时间",
             "视频提示词", "Omni模型", "Omni画面尺寸", "Omni画面比例",

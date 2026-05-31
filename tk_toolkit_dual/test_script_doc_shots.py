@@ -141,11 +141,11 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(video_model_options[0], "默认（配置表）")
         for option in [
             "AIHubMix / veo-3.1-fast-generate-preview",
-            "AIHubMix / seeddance2.0",
             "OTU / veo_3_1-fast-fl",
             "OTU / veo_3_1-fast-fl-hd",
         ]:
             self.assertIn(option, video_model_options)
+        self.assertNotIn("AIHubMix / seeddance2.0", video_model_options)
         self.assertEqual(fields["视频生成时间"]["type"], "datetime")
         self.assertEqual(fields["生成时间"]["type"], "datetime")
 
@@ -158,20 +158,21 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("视频生成模型", views["03-分镜视频"])
         self.assertEqual(
             views["03-分镜视频"],
-            ["任务名称", "关联任务", "分镜序号", "目标时长秒", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "尾帧图错误信息", "视频提示词", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间"],
+            ["任务名称", "关联任务", "分镜序号", "目标时长秒", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "尾帧图错误信息", "视频提示词", "视频AI模型", "视频AI参数JSON", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间"],
         )
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
 
     def test_unified_ai_route_fields_are_optional_and_visible_in_advanced_view(self):
         fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
-        for name in ["使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"]:
+        for name in ["使用统一AI路由", "分镜图AI模型", "分镜图AI参数JSON", "尾帧图AI模型", "视频AI模型", "视频AI参数JSON"]:
             self.assertIn(name, fields)
 
         views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_shots")["views"]
         self.assertIn("高级AI参数", views)
         self.assertIn("使用统一AI路由", views["高级AI参数"])
-        self.assertIn("AI参数JSON", views["高级AI参数"])
+        self.assertIn("分镜图AI参数JSON", views["高级AI参数"])
+        self.assertIn("视频AI模型", views["高级AI参数"])
 
     def test_split_table_records_omit_mixed_record_type_field(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)

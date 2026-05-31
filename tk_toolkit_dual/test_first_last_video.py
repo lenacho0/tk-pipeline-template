@@ -87,6 +87,8 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "首尾帧文档",
             "首尾帧文档附件",
             "目标时长秒",
+            "拆分AI模型",
+            "拆分AI参数JSON",
             "拆分状态",
             "场景拆分操作",
             "总场景数",
@@ -124,7 +126,9 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertIn("尾帧图操作", views["04-尾帧审核"])
         self.assertIn("视频操作", views["05-视频结果"])
         self.assertIn("使用统一AI路由", views["高级AI参数"])
-        self.assertIn("AI参数JSON", views["高级AI参数"])
+        self.assertIn("拆分AI参数JSON", views["高级AI参数"])
+        self.assertIn("首帧图AI模型", views["高级AI参数"])
+        self.assertIn("视频AI模型", views["高级AI参数"])
         self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
         self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
 
