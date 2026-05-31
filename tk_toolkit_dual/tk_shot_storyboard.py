@@ -225,6 +225,17 @@ def _voice_style_text(content_type, emotion):
     return f"{base}; emotional performance: {emotion}" if emotion else base
 
 
+def _spoken_audio_line(voiceover_text, speaker, speaker_visible, pet_speaker):
+    text = extract_text(voiceover_text).strip()
+    if not text:
+        return "No speech. Natural ambient sound only."
+    speaker_name = extract_text(speaker).strip()
+    speaker_key = speaker_name.lower()
+    if pet_speaker or (speaker_visible and speaker_name and speaker_key not in {'none', 'narrator'}):
+        return f"The {speaker_name} says in Thai: {text}"
+    return f"Thai voiceover: {text}"
+
+
 def build_image_to_video_prompt(shot, *, idx, total_shots, product_name, voiceover_text, voice_id='', video_model='', screen_text='', screen_text_zh='', video_prompt_notes=''):
     duration = shot.get('duration_sec', '')
     visual = extract_text(shot.get('visual', '')).strip()
@@ -250,8 +261,8 @@ def build_image_to_video_prompt(shot, *, idx, total_shots, product_name, voiceov
         motion_parts.append("只做轻微自然动作，保持首帧构图稳定")
 
     model_choice = normalize_video_model_choice(video_model)
-    thai_dialogue = voiceover_text or "无口播 / no spoken dialogue"
     pet_speaker = speaker_key in {'dog', 'cat', 'pet', 'puppy', 'kitten', 'สัตว์เลี้ยง', 'หมา', 'แมว'}
+    spoken_audio_line = _spoken_audio_line(voiceover_text, speaker, speaker_visible, pet_speaker)
     if voiceover_text:
         if pet_speaker:
             speaker_rule = f"Visible speaking subject: {speaker}. Only the pet/dog/cat may lip-sync. The owner or other characters must stay silent, mouth closed or naturally still, and only react with eyes, brows, head, hands, or body. 不要改成画外旁白。"
@@ -273,7 +284,7 @@ def build_image_to_video_prompt(shot, *, idx, total_shots, product_name, voiceov
     else:
         if voiceover_text:
             audio_line = (
-                f"Veo must directly generate the final local-language spoken audio during image-to-video generation: {voiceover_text}. "
+                f"Veo must directly generate the final local-language spoken audio during image-to-video generation. {spoken_audio_line}. "
                 "This is the final video audio; do not rely on later TTS or reference voiceover audio."
             )
         else:
@@ -293,7 +304,7 @@ def build_image_to_video_prompt(shot, *, idx, total_shots, product_name, voiceov
     lines = [
         "Use the uploaded image as the first frame. Keep the character, product, composition, lighting, and background consistent with the first frame. Do not redesign or re-render the scene.",
         f"Action: {'; '.join(motion_parts)}. Start from the exact first-frame state; only continue 1-2 natural actions already implied by the image.",
-        f"Thai dialogue: \"{thai_dialogue}\".",
+        spoken_audio_line,
         f"Voice style: {_voice_style_text('spoken' if voiceover_text else 'silent', emotion)}.",
         f"Voice identity: {_voice_identity_text(voice_id, speaker)}.",
         f"Camera: {camera or 'subtle handheld or very slight push-in; keep the first-frame composition stable; no big transition'}.",

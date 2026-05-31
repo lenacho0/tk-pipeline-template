@@ -210,7 +210,8 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         )
 
         self.assertIn("Use the uploaded image as the first frame.", prompt)
-        self.assertIn("Thai dialogue:", prompt)
+        self.assertIn("The dog says in Thai: เลือกให้ถูก", prompt)
+        self.assertNotIn('Thai dialogue: "', prompt)
         self.assertIn("Voice style:", prompt)
         self.assertIn("Voice identity:", prompt)
         self.assertIn("Global voice anchor:", prompt)
@@ -236,7 +237,8 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         )
 
         self.assertIn("Use the uploaded image as the first frame.", prompt)
-        self.assertIn("Thai dialogue:", prompt)
+        self.assertIn("The dog says in Thai: เลือกให้ถูก", prompt)
+        self.assertNotIn('Thai dialogue: "', prompt)
         self.assertIn("使用参考音频作为最终口播内容", prompt)
         self.assertIn("reference voiceover audio", prompt)
         self.assertIn("Global voice anchor:", prompt)
@@ -310,6 +312,26 @@ class HandwrittenShotScriptGenTests(unittest.TestCase):
         self.assertIn("不要改成画外旁白", prompt)
         self.assertNotIn("画外口播", prompt)
         self.assertNotIn("图生视频提示词｜", prompt)
+
+    def test_image_to_video_prompt_uses_voiceover_label_without_quotes_for_invisible_speaker(self):
+        prompt = shot_storyboard.build_image_to_video_prompt(
+            {
+                "duration_sec": 4,
+                "voiceover_text": "กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย",
+                "speaker": "narrator",
+                "speaker_visible": False,
+                "action": "owner looks at the sofa",
+            },
+            idx=1,
+            total_shots=1,
+            product_name="odor spray",
+            voiceover_text="กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย",
+            video_model="veo3.1",
+        )
+
+        self.assertIn("Thai voiceover: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย", prompt)
+        self.assertNotIn('Thai dialogue: "', prompt)
+        self.assertNotIn('"กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย"', prompt)
 
     def test_load_shots_payload_prefers_full_memory_payload_over_truncated_field(self):
         fields = {

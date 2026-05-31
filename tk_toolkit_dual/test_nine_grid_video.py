@@ -80,6 +80,11 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("MULTI_IMAGE_NINE_GRID_PLAN", prompts.NINE_GRID_PLAN_SYSTEM_PROMPT)
         self.assertIn("不要提具体供应商或模型名", prompts.NINE_GRID_IMAGE_SYSTEM_PROMPT)
         self.assertIn("不要提具体供应商或模型名", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("Use a colon after the speaker action", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("Sound effects", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("Ambient noise", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("Dialogue", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("do not wrap spoken lines in quotation marks", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
         self.assertNotIn("OTU", prompts.NINE_GRID_IMAGE_SYSTEM_PROMPT)
         self.assertNotIn("Omni", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
 

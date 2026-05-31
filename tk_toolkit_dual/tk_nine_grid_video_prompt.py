@@ -105,6 +105,9 @@ JSON Schema：
 - 每个 board.cells 必须正好 9 个。
 - 多 Board 时，Board N 的 handoff_anchor 必须与 Board N+1 的 start_frame 一致。
 - 产品演示型如缺少 before/during/after 任一环节，必须在 continuity_check 中标记 false，并说明原因。
+- 如果某格包含人物或宠物说话，dialogue_or_voiceover 必须使用冒号直接承接台词，不得用英文引号包住台词，例如：The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
+- 如果某格是画外旁白，dialogue_or_voiceover 使用：Thai voiceover: [泰语口播]
+- 如果某格无口播，dialogue_or_voiceover 留空或写 No speech.
 """.strip()
 
 
@@ -197,7 +200,16 @@ NINE_GRID_VIDEO_SYSTEM_PROMPT = """
 - 动作自然连贯，不要突然换场景、换人、换产品。
 - 如果有产品使用动作，要完整呈现使用前、使用中、使用后。
 - 如果有口播或对白，按输入提示词中的目标语言自然说出；不要生成屏幕字幕。
+- Use a colon after the speaker action and do not wrap spoken lines in quotation marks. Correct: The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
+- 如果是画外旁白，使用 Thai voiceover: [泰语口播]，不要强制画面人物张嘴。
 - 如果没有口播，就保持自然环境声或无明显语音，不要自行编写新台词。
+
+音频要求：
+- Dialogue: write the exact spoken Thai line with a colon after the speaker or voiceover label; never put the spoken line inside English quotation marks.
+- Ambient noise: separately describe realistic room tone, handheld phone-video ambience, light fabric movement, footsteps, or quiet home background when relevant.
+- Sound effects: separately describe product-use sounds such as spray mist, bottle handling, wiping cloth, cap click, pet paw movement, or soft pet sounds when relevant.
+- Voice tone and timbre: specify natural local Thai TikTok delivery, conversational speed, emotion, age impression, and timbre consistency when speech exists.
+- No on-screen text: dialogue and voiceover are audio only; do not create subtitles, captions, labels, stickers, or visible Thai text.
 
 最终输出：
 只输出一段英文视频生成提示词。

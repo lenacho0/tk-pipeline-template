@@ -130,6 +130,13 @@ JSON 顶层格式：
     }
   ]
 }
+
+视频口播规则：
+- voiceover_text 只放最终要作为视频音频生成的本土语言口播，不得放中文翻译、解释或字幕文案。
+- video_prompt 如果包含人物/宠物画面内说话，必须使用冒号直接承接泰语台词，例如：The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
+- video_prompt 如果是画外旁白，必须使用：Thai voiceover: [泰语口播]
+- 不得用英文引号包住台词；台词是音频层，不得生成字幕、贴纸或任何画面文字。
+- video_prompt 应单独写清楚 dialogue、ambient noise、sound effects、voice tone/timbre；没有口播时写 No speech. Natural ambient sound only.
 """.strip()
 
 

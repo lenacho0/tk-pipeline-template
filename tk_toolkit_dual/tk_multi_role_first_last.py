@@ -151,6 +151,12 @@ DEFAULT_PARSE_PROMPT = """
   ]
 }
 
+视频口播与音频规则：
+- videos[].prompt 如果包含人物/宠物画面内说话，必须用冒号直接承接泰语台词，例如：The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
+- 画外旁白使用：Thai voiceover: [泰语口播]
+- 不得用英文引号包住台词；台词只作为音频层，不得生成字幕、贴纸或画面文字。
+- 单独写清楚 dialogue、ambient noise、sound effects、voice tone/timbre；没有口播时写 No speech. Natural ambient sound only.
+
 参考资产规则：
 - human / pet / object 资产只生成该资产本身，不要混入其他角色、产品或完整剧情。
 - environment 资产必须是空场景底图，只能描述房间、家具、材质、光线、机位、可行动空间和生活道具。
