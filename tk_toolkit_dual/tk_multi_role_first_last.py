@@ -84,6 +84,11 @@ KEYFRAME_RECORD_TYPE = "关键帧"
 VIDEO_RECORD_TYPE = "视频片段"
 ACTIVE_RECORD_STATES = {"", "有效"}
 KEYFRAME_TYPES = ["S01_FIRST", "S01_TAIL_SHARED_S02_FIRST", "S02_TAIL"]
+CANONICAL_KEYFRAME_DEPENDENCIES = {
+    "S01_FIRST": "",
+    "S01_TAIL_SHARED_S02_FIRST": "S01_FIRST",
+    "S02_TAIL": "S01_TAIL_SHARED_S02_FIRST",
+}
 VIDEO_CLIP_TYPES = ["S01", "S02"]
 BASE_WORK_DIR = Path(WORKSPACE) / "multi_role_first_last_work"
 SUBMIT_TIMEOUT = 180
@@ -157,7 +162,12 @@ DEFAULT_PARSE_PROMPT = """
 2. S01_TAIL_SHARED_S02_FIRST
 3. S02_TAIL
 
-但每张关键帧使用哪些产品/角色/环境/前序帧参考图，必须根据脚本画面内容决定，不按帧位硬编码。
+关键帧依赖关系固定：
+- S01_FIRST 的 depends_on_keyframe_type 必须为空。
+- S01_TAIL_SHARED_S02_FIRST 的 depends_on_keyframe_type 必须是 S01_FIRST。
+- S02_TAIL 的 depends_on_keyframe_type 必须是 S01_TAIL_SHARED_S02_FIRST。
+
+但每张关键帧使用哪些产品/角色/环境参考图，必须根据脚本画面内容决定，不按帧位硬编码。
 """.strip()
 
 
@@ -388,6 +398,13 @@ def normalize_keyframe(frame: Dict[str, Any], idx: int) -> Dict[str, Any]:
     }
 
 
+def enforce_keyframe_dependency_chain(frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    for frame in frames:
+        refs = frame["reference_requirements"]
+        refs["depends_on_keyframe_type"] = CANONICAL_KEYFRAME_DEPENDENCIES[frame["keyframe_type"]]
+    return frames
+
+
 def normalize_video_clip(clip: Dict[str, Any], idx: int) -> Dict[str, Any]:
     clip_type = extract_text(clip.get("clip_type") or clip.get("type")).strip() or VIDEO_CLIP_TYPES[idx - 1]
     if clip_type not in VIDEO_CLIP_TYPES:
@@ -457,7 +474,7 @@ def normalize_plan_payload(payload: Any) -> Dict[str, Any]:
     missing_frames = [frame_type for frame_type in KEYFRAME_TYPES if frame_type not in by_frame_type]
     if missing_frames:
         raise ValueError(f"解析结果缺少关键帧: {','.join(missing_frames)}")
-    normalized_keyframes = [by_frame_type[frame_type] for frame_type in KEYFRAME_TYPES]
+    normalized_keyframes = enforce_keyframe_dependency_chain([by_frame_type[frame_type] for frame_type in KEYFRAME_TYPES])
     for frame in normalized_keyframes:
         refs = frame["reference_requirements"]
         missing_assets = [asset_id for asset_id in refs["asset_ids"] if asset_id not in asset_ids]

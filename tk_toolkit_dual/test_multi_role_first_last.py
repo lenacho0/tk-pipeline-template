@@ -142,6 +142,21 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(shared_refs["depends_on_keyframe_type"], "S01_FIRST")
         self.assertIn("role_5", tail_refs["asset_ids"])
 
+    def test_normalize_plan_enforces_keyframe_dependency_chain(self):
+        plan = sample_plan()
+        plan["keyframes"][1]["reference_requirements"]["depends_on_keyframe_type"] = ""
+        plan["keyframes"][2]["reference_requirements"]["depends_on_keyframe_type"] = ""
+
+        payload = multi_role.normalize_plan_payload(plan)
+
+        deps = {
+            frame["keyframe_type"]: frame["reference_requirements"]["depends_on_keyframe_type"]
+            for frame in payload["keyframes"]
+        }
+        self.assertEqual(deps["S01_FIRST"], "")
+        self.assertEqual(deps["S01_TAIL_SHARED_S02_FIRST"], "S01_FIRST")
+        self.assertEqual(deps["S02_TAIL"], "S01_TAIL_SHARED_S02_FIRST")
+
     def test_build_child_records_creates_assets_keyframes_and_video_clips(self):
         records = multi_role.build_child_records("parent", {"任务名称": "Hook", "目标时长秒": 8}, sample_plan(role_count=4), batch_id="batch1")
         by_type = {}

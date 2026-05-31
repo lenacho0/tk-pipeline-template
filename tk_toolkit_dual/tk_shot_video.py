@@ -13,6 +13,8 @@ import base64
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -588,6 +590,9 @@ def extract_video_url(result: Dict[str, Any]) -> str:
 
 
 def download_video(video_url: str, save_path: str) -> str:
+    def _assert_playable_video_file() -> None:
+        assert_playable_video_file(save_path)
+
     def _download_once() -> str:
         resp = requests.get(video_url, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
         if resp.status_code != 200:
@@ -598,6 +603,7 @@ def download_video(video_url: str, save_path: str) -> str:
                     f.write(chunk)
         if os.path.getsize(save_path) < 10000:
             raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
+        _assert_playable_video_file()
         return save_path
 
     return with_retry(_download_once, max_attempts=4, label=f"download video {video_url[:120]}")
@@ -617,9 +623,40 @@ def download_video_content(config: Dict[str, str], task_id: str, save_path: str)
                     f.write(chunk)
         if os.path.getsize(save_path) < 10000:
             raise RuntimeError(f"视频 content 下载成功但文件过小: {save_path}")
+        assert_playable_video_file(save_path)
         return save_path
 
     return with_retry(_download_once, max_attempts=4, label=f"download video content {task_id}")
+
+
+def assert_playable_video_file(file_path: str) -> None:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,codec_name:format=duration,size,format_name",
+            "-of",
+            "json",
+            file_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"视频下载后 ffprobe 校验失败: {result.stderr.strip()[:500] or file_path}")
+    try:
+        data = json.loads(result.stdout or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"视频下载后 ffprobe 输出无法解析: {exc}") from exc
+    streams = data.get("streams") or []
+    if not any((stream or {}).get("codec_type") == "video" for stream in streams):
+        raise RuntimeError(f"视频下载后缺少 video stream: {file_path}")
 
 
 def native_veo_api_base(config: Dict[str, str]) -> str:

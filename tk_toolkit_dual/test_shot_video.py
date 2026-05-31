@@ -332,6 +332,7 @@ class ShotVideoTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(video.requests, "get", side_effect=[first_error, response]) as getter, \
+             patch.object(video, "assert_playable_video_file"), \
              patch("common.sleep_backoff"):
             out_path = os.path.join(tmp, "out.mp4")
             result = video.download_video("https://x.test/video.mp4", out_path)
@@ -341,6 +342,28 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(getter.call_count, 2)
         self.assertEqual(getter.call_args.kwargs["timeout"], video.DOWNLOAD_REQUEST_TIMEOUT)
         self.assertGreater(output_size, 10000)
+
+    def test_download_video_retries_invalid_mp4_probe(self):
+        invalid_response = Mock()
+        invalid_response.status_code = 200
+        invalid_response.iter_content.return_value = [b"x" * 12000]
+        valid_response = Mock()
+        valid_response.status_code = 200
+        valid_response.iter_content.return_value = [b"y" * 12000]
+        bad_probe = SimpleNamespace(returncode=1, stderr="moov atom not found", stdout="")
+        good_probe = SimpleNamespace(returncode=0, stderr="", stdout='{"streams":[{"codec_type":"video"}]}')
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(video.requests, "get", side_effect=[invalid_response, valid_response]) as getter, \
+             patch.object(video.shutil, "which", return_value="/usr/bin/ffprobe"), \
+             patch.object(video.subprocess, "run", side_effect=[bad_probe, good_probe]) as probe, \
+             patch("common.sleep_backoff"):
+            out_path = os.path.join(tmp, "out.mp4")
+            result = video.download_video("https://x.test/video.mp4", out_path)
+
+        self.assertEqual(result, out_path)
+        self.assertEqual(getter.call_count, 2)
+        self.assertEqual(probe.call_count, 2)
 
     def test_success_fields_include_video_attachment_and_status(self):
         fields = video.build_success_fields(
