@@ -163,7 +163,9 @@ DEFAULT_PARSE_PROMPT = """
 - human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄、自然光、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
 - human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
 - human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
-- environment 资产必须是空场景底图，只能描述房间、家具、材质、光线、机位、可行动空间和生活道具。
+- environment 资产必须是无人无产品的事故现场环境底图，只能描述房间、家具、材质、光线、机位、可行动空间、生活道具和脚本明确写出的固定问题发生点。
+- environment 资产如果脚本提到 urine stain、pee stain、污渍、尿渍、wet patch、湿痕、破损、脏污区域、visible problem area、accident point、问题区域、事故点或异味来源位置，prompt 必须写清楚位置、大小、所在材质表面和可见状态。
+- environment 资产不要删除尿渍/污渍/湿痕/事故点；不能因为“空场景”而删除问题痕迹；不能把尿渍改成普通干净地面、沙发或地毯。
 - environment 资产严禁出现任何人物、宠物、产品包装、喷雾瓶、手、身体局部、倒影、海报/屏幕中的人物或动物。
 - 如果脚本文档要求“场景图不要出现人物/产品/宠物”，必须完全遵守；不要把角色站位规划写进 environment prompt。
 
@@ -294,7 +296,7 @@ def normalize_role(role: Dict[str, Any], idx: int) -> Dict[str, Any]:
 
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate a clean empty scene master/background plate for later compositing. Show only the room, furniture, surfaces, lighting, camera angle, and non-character household props. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image.
+Generate an empty scene master/background plate for later compositing, with the fixed visible problem anchor preserved when required by the source script. Show only the room, furniture, surfaces, lighting, camera angle, non-character household props, and any explicit accident point such as a urine stain, pee stain, wet patch, visible problem area, damaged spot, dirty area, or odor source location. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing as a visible subject in this environment reference image, but do not remove the visible problem mark itself.
 """.strip()
 
 ENVIRONMENT_FORBIDDEN_TERMS = {
@@ -320,6 +322,23 @@ ENVIRONMENT_ALLOWED_NEGATIVE_PHRASES = {
     "不要出现宠物", "不要出现产品", "不得出现人物", "不得出现宠物", "不得出现产品",
 }
 
+ENVIRONMENT_PROBLEM_ANCHOR_TERMS = {
+    "urine stain", "pee stain", "wet patch", "visible problem area", "accident point",
+    "problem area", "dirty area", "damaged spot", "damaged area", "broken spot",
+    "broken area", "odor source", "smell source", "污渍", "尿渍", "湿痕",
+    "湿斑", "破损", "损坏", "脏污", "问题区域", "事故点", "异味来源",
+}
+
+ENVIRONMENT_PROBLEM_ANCHOR_PATTERNS = [
+    re.compile(r"\bstains?\b", re.IGNORECASE),
+]
+
+ENVIRONMENT_PROBLEM_SUBJECT_CLEANUP_PATTERNS = [
+    (re.compile(r"\b(cat|dog|pet|puppy|animal)\s+(urine stain|pee stain|wet patch|stain)\b", re.IGNORECASE), r"\2"),
+    (re.compile(r"\b(person|people|human|woman|man|girl|boy|lady|landlord|renter|roommate|child|kid|cat|dog|pet|puppy|animal|product|spray|bottle)\b", re.IGNORECASE), ""),
+    (re.compile(r"(人物|人像|真人|女人|男人|女孩|男孩|房东|租客|室友|孩子|小孩|小狗|狗狗|猫|宠物|动物|产品|喷雾|瓶)"), ""),
+]
+
 
 def _environment_prompt_parts(prompt: str) -> List[str]:
     parts: List[str] = []
@@ -329,6 +348,14 @@ def _environment_prompt_parts(prompt: str) -> List[str]:
             continue
         parts.extend(part.strip() for part in re.split(r"(?<=[.!?。！？])\s+", line) if part.strip())
     return parts
+
+
+def _has_environment_problem_anchor(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        any(term in lowered for term in ENVIRONMENT_PROBLEM_ANCHOR_TERMS)
+        or any(pattern.search(text) for pattern in ENVIRONMENT_PROBLEM_ANCHOR_PATTERNS)
+    )
 
 
 def sanitize_environment_prompt(prompt: str) -> str:
@@ -341,10 +368,20 @@ def sanitize_environment_prompt(prompt: str) -> str:
             continue
         lowered = text.lower()
         has_forbidden_positive = any(term in lowered for term in ENVIRONMENT_FORBIDDEN_TERMS)
+        has_problem_anchor = _has_environment_problem_anchor(text)
         has_negation = (
             any(term in lowered for term in ENVIRONMENT_NEGATION_TERMS)
             or any(phrase in lowered for phrase in ENVIRONMENT_ALLOWED_NEGATIVE_PHRASES)
         )
+        if has_forbidden_positive and has_problem_anchor:
+            for pattern, replacement in ENVIRONMENT_PROBLEM_SUBJECT_CLEANUP_PATTERNS:
+                text = pattern.sub(replacement, text)
+            text = re.sub(r"\s{2,}", " ", text)
+            text = re.sub(r"\s+([,.;:!?。！？])", r"\1", text).strip(" ,")
+            if not text:
+                continue
+            lowered = text.lower()
+            has_forbidden_positive = any(term in lowered for term in ENVIRONMENT_FORBIDDEN_TERMS)
         if has_forbidden_positive and not has_negation:
             continue
         if has_forbidden_positive and not any(phrase in lowered for phrase in ENVIRONMENT_ALLOWED_NEGATIVE_PHRASES) and "forbidden" not in lowered:

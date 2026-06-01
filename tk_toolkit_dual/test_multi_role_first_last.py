@@ -146,6 +146,18 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         ]:
             self.assertIn(phrase, prompt)
 
+    def test_default_parse_prompt_preserves_environment_problem_anchor(self):
+        prompt = multi_role.DEFAULT_PARSE_PROMPT
+
+        for phrase in [
+            "urine stain",
+            "pee stain",
+            "visible problem area",
+            "accident point",
+            "不要删除尿渍",
+        ]:
+            self.assertIn(phrase, prompt)
+
     def test_normalize_plan_supports_dynamic_role_counts_and_per_frame_references(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=5))
         self.assertEqual(len(payload["roles"]), 5)
@@ -303,6 +315,22 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(multi_role.sanitize_environment_prompt(env_prompt).count("EMPTY ENVIRONMENT REFERENCE PLATE ONLY"), 1)
         duplicated = f"{env_prompt}\nScene details to keep:\nEMPTY ENVIRONMENT REFERENCE PLATE ONLY."
         self.assertEqual(multi_role.sanitize_environment_prompt(duplicated).count("EMPTY ENVIRONMENT REFERENCE PLATE ONLY"), 1)
+
+    def test_environment_asset_prompt_preserves_problem_anchor_without_pet_subject(self):
+        payload = sample_plan(role_count=4)
+        payload["assets"][-1]["prompt"] = "\n".join([
+            "Vertical 9:16 Bangkok rental living room with beige sofa and rug.",
+            "A cat urine stain on the left sofa corner, visible wet patch on gray fabric.",
+            "No people, no pets, no product bottle.",
+        ])
+        normalized = multi_role.normalize_plan_payload(payload)
+        env_prompt = next(asset["prompt"] for asset in normalized["assets"] if asset["asset_type"] == "environment")
+
+        self.assertIn("urine stain", env_prompt)
+        self.assertIn("left sofa corner", env_prompt)
+        self.assertIn("visible wet patch", env_prompt)
+        self.assertNotIn("cat urine", env_prompt)
+        self.assertNotRegex(env_prompt.lower(), r"\bcat\b")
 
     def test_keyframe_reference_collection_requires_urls_for_non_primary_references(self):
         fields = {
