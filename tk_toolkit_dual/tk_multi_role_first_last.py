@@ -579,6 +579,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "关键帧AI参数JSON",
             "关键帧画面尺寸",
             "关键帧画面比例",
+            "视频生成模型",
             "视频AI模型",
             "视频AI参数JSON",
             "视频画面尺寸",
@@ -720,6 +721,35 @@ def resolve_media_dimensions(
             or default_aspect_ratio
         ),
     }
+
+
+def _usable_model_choice(value: Any) -> str:
+    raw = extract_text(value).strip()
+    normalized = raw.lower().replace("_", "-").replace(" ", "")
+    if normalized in {"", "默认", "默认（配置表）", "默认(配置表)", "配置表默认", "待确认", "pending", "default"}:
+        return ""
+    return raw
+
+
+def resolve_video_generation_model(fields: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, str]:
+    raw = (
+        _usable_model_choice(fields.get("视频生成模型"))
+        or _usable_model_choice(fields.get("视频AI模型"))
+        or _usable_model_choice(cfg.get("model"))
+        or DEFAULT_OTU_MODEL
+    )
+    source = "视频生成模型" if _usable_model_choice(fields.get("视频生成模型")) else (
+        "视频AI模型" if _usable_model_choice(fields.get("视频AI模型")) else (
+            "配置表" if _usable_model_choice(cfg.get("model")) else "代码默认值"
+        )
+    )
+    bits = ai_routing.parse_model_display(raw)
+    provider = bits["provider"] or "OTU"
+    model = bits["model"] or raw
+    display = raw if bits["provider"] else f"{provider} / {model}"
+    if not ai_model_catalog.is_first_last_video_model(display, provider):
+        raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {display}")
+    return {"model": model, "provider": provider, "display": display, "source": source}
 
 
 def maybe_unified_media_summary(
@@ -1398,8 +1428,10 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     version = current_version(fields, "视频版本")
     work_dir = ensure_stage_work_dir(record_id, "video", version)
     _, cfg = get_stage_config(VIDEO_STAGE_NAME, default_model=DEFAULT_OTU_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_SIZE)
+    video_model = resolve_video_generation_model(fields, cfg)
+    runtime_cfg = {**cfg, "model": video_model["model"]}
     seconds = normalize_seconds(fields.get("目标时长秒") or 8)
-    video_params = resolve_media_dimensions(fields, "视频", cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
+    video_params = resolve_media_dimensions(fields, "视频", runtime_cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
     size = video_params["size"]
     aspect_ratio = video_params["aspect_ratio"]
     output_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
@@ -1408,7 +1440,8 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "dry_run": dry_run,
         "first_keyframe": first_type,
         "last_keyframe": last_type,
-        "model": cfg.get("model") or DEFAULT_OTU_MODEL,
+        "model": video_model["model"],
+        "model_source": video_model["source"],
         "seconds": seconds,
         "size": size,
         "aspect_ratio": aspect_ratio,
@@ -1417,10 +1450,10 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     route_summary = maybe_unified_media_summary(
         token,
         fields,
-        cfg,
+        runtime_cfg,
         capability="视频",
         task_type="首尾帧视频",
-        model=cfg.get("model") or DEFAULT_OTU_MODEL,
+        model=video_model["model"],
         slot_name="视频",
         prompt=prompt,
         params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
@@ -1451,26 +1484,27 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
             "首关键帧file_token": first["file_token"],
             "尾关键帧file_token": last["file_token"],
             "视频通道": "OTU",
-            "视频生成模型": f"OTU / {cfg.get('model') or DEFAULT_OTU_MODEL}",
+            "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频版本": version,
             "视频错误信息": "",
             "错误信息": "",
         }))
-        task_id, submit_body = submit_otu_video_task(cfg, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
+        task_id, submit_body = submit_otu_video_task(runtime_cfg, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "视频任务ID": task_id,
             "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
             "视频错误信息": f"已提交 OTU 视频任务，正在轮询。task_id={task_id}",
         }))
-    result = poll_otu_video_task(cfg, task_id)
-    video_url = extract_video_url(result) or (video_item_url(cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content")
+    result = poll_otu_video_task(runtime_cfg, task_id)
+    video_url = extract_video_url(result) or (video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content")
     download_video(video_url, output_path)
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_multi_role_clip.mp4")
     success_fields: Dict[str, Any] = {
         "视频通道": "OTU",
-        "视频生成模型": f"OTU / {cfg.get('model') or DEFAULT_OTU_MODEL}",
+        "视频生成模型": video_model["display"],
         "视频生成状态": "成功",
+        "视频操作": "不触发",
         "视频片段": [{"file_token": file_token, "name": Path(output_path).name}],
         "视频任务ID": task_id,
         "视频版本": version,

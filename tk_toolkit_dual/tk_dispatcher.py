@@ -586,6 +586,17 @@ WATCH_LIST = [
         'max_retries': 1,
         'required_field_values': {'记录类型': ['视频片段']},
         'skip_deprecated_records': True,
+        'claim_clear_fields_by_trigger_value': {
+            '待生成': [
+                '视频任务ID',
+                '视频片段',
+                '视频片段URL',
+                '视频片段file_token',
+                '视频本地路径',
+                '视频原始响应JSON',
+                '视频错误信息',
+            ],
+        },
     },
     {
         'name': '脚本文档解析拆分',
@@ -1088,8 +1099,10 @@ def update_record_state_cache(watch, record_id, status):
     save_record_state_cache(cleaned)
 
 
-def apply_claim_clear_fields(claim_fields, watch):
+def apply_claim_clear_fields(claim_fields, watch, trigger_value=None):
     for field_name in watch.get('claim_clear_fields') or []:
+        claim_fields[field_name] = ''
+    for field_name in (watch.get('claim_clear_fields_by_trigger_value') or {}).get(trigger_value, []):
         claim_fields[field_name] = ''
     for field_name, value in (watch.get('claim_clear_values') or {}).items():
         claim_fields[field_name] = value
@@ -1125,7 +1138,7 @@ def try_claim_task(token, watch, record_id):
             update_record_state_cache(watch, record_id, latest_status)
             return False
         claim_fields = {watch['status_field']: watch['running_value']}
-        apply_claim_clear_fields(claim_fields, watch)
+        apply_claim_clear_fields(claim_fields, watch, latest_status)
         safe_update_record(token, watch['table'], record_id, claim_fields)
         update_record_state_cache(watch, record_id, watch['running_value'])
         return True

@@ -61,6 +61,37 @@ class ShotVideoTest(unittest.TestCase):
             "视频生成原始响应JSON": "",
         })
 
+    def test_dispatcher_clears_claim_fields_only_for_matching_trigger_value(self):
+        watch = {
+            "table": "tbl1",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "claim_clear_fields_by_trigger_value": {
+                "待生成": ["视频任务ID", "视频片段file_token"],
+            },
+        }
+        updates = []
+
+        with patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "待生成"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"):
+            self.assertTrue(dispatcher.try_claim_task("t", watch, "rec1"))
+
+        self.assertEqual(updates[0], {
+            "视频生成状态": "生成中",
+            "视频任务ID": "",
+            "视频片段file_token": "",
+        })
+
+        updates.clear()
+        with patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "生成中"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"):
+            self.assertTrue(dispatcher.try_claim_task("t", {**watch, "trigger_values": ["待生成", "生成中"]}, "rec1"))
+
+        self.assertEqual(updates[0], {"视频生成状态": "生成中"})
+
     def test_dispatcher_has_script_doc_last_frame_watch(self):
         watch = next(item for item in dispatcher.WATCH_LIST if item["name"] == "脚本文档尾帧图生成")
         self.assertEqual(watch["table"], dispatcher.TABLE_SCRIPT_DOC_SHOTS)
