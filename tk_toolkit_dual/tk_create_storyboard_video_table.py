@@ -35,7 +35,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
 )
-from ai_model_catalog import IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, VIDEO_AI_MODEL_OPTIONS
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_OPTIONS, TEXT_MODEL_OPTIONS
 from common import extract_text, get_feishu_token, safe_list_records, safe_update_record
 
 
@@ -93,7 +93,7 @@ STORYBOARD_VIDEO_FIELDS = [
     text("拆分AI参数JSON"),
     select("故事板图片AI模型", IMAGE_MODEL_OPTIONS),
     text("故事板图片AI参数JSON"),
-    select("视频AI模型", VIDEO_AI_MODEL_OPTIONS),
+    select("视频AI模型", REFERENCE_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),

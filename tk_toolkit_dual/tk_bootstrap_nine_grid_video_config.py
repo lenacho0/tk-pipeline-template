@@ -61,7 +61,7 @@ def build_wanted_config_records() -> List[Dict[str, Any]]:
         },
         {
             "环节": VIDEO_STAGE_NAME,
-            "模型名称": "veo_3_1-fast-fl",
+            "模型名称": "omni_flash-10s",
             "AI供应商": "OTU",
             "AI能力类型": "视频",
             "AI任务类型": "首帧图生视频",

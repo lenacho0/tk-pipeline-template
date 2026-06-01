@@ -23,9 +23,9 @@ from ai_model_catalog import (
     AI_PROVIDER_OPTIONS,
     AI_TASK_TYPE_OPTIONS,
     IMAGE_MODEL_OPTIONS,
+    FIRST_LAST_VIDEO_MODEL_OPTIONS,
+    FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS,
     TEXT_MODEL_OPTIONS,
-    VIDEO_AI_MODEL_OPTIONS,
-    VIDEO_MODEL_OPTIONS,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -102,7 +102,7 @@ TASK_FIELDS = [
     text("分镜图AI参数JSON"),
     select("尾帧图AI模型", IMAGE_MODEL_OPTIONS),
     text("尾帧图AI参数JSON"),
-    select("视频AI模型", VIDEO_AI_MODEL_OPTIONS),
+    select("视频AI模型", FIRST_LAST_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),
@@ -165,7 +165,7 @@ SHOT_FIELDS = [
     text("分镜图AI参数JSON"),
     select("尾帧图AI模型", IMAGE_MODEL_OPTIONS),
     text("尾帧图AI参数JSON"),
-    select("视频AI模型", VIDEO_AI_MODEL_OPTIONS),
+    select("视频AI模型", FIRST_LAST_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),
@@ -191,7 +191,7 @@ SHOT_FIELDS = [
     text("尾帧图错误信息"),
     datetime_field("尾帧图生成时间"),
     select("视频通道", VIDEO_CHANNEL_OPTIONS),
-    select("视频生成模型", VIDEO_MODEL_OPTIONS),
+    select("视频生成模型", FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),
     attachment("分镜视频"),
     text("视频任务ID"),

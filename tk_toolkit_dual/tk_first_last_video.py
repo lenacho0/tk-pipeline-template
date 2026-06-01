@@ -75,6 +75,7 @@ from tk_shot_video import (  # noqa: E402
     videos_url,
 )
 import ai_routing  # noqa: E402
+import ai_model_catalog  # noqa: E402
 
 
 IMAGE_STAGE_NAME = "图片生成-OTU"
@@ -826,6 +827,8 @@ def maybe_unified_media_summary(
         "model": f"OTU / {model}",
         "params": params,
     }, capability=capability, task_type=task_type, config_records=config_records)
+    if capability == "视频" and not ai_model_catalog.is_first_last_video_model(route.model, route.provider):
+        raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {route.model}")
     return ai_routing.build_media_request_summary(route, prompt, reference_count=reference_count)
 
 

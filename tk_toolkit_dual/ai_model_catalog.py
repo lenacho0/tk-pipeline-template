@@ -153,10 +153,10 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
         "Aitgenne",
         "图片",
         "gpt-image-2",
-        "image-generation/openai编辑图片待验证",
-        STATUS_CANDIDATE,
-        "Aitgenne /v1/models 元数据待端点确认",
-        notes="确认 generations/edits 端点前不进入生产下拉。",
+        "OpenAI兼容 /v1/images/generations",
+        STATUS_ENABLED,
+        "Aitgenne 图片端点验证/现有统一路由",
+        notes="用于参考图文生图；参考图真实提交已接入。",
     ),
     _entry("OTU", "图片", "nano_banana_2", "OTU /v1/videos", STATUS_DISCARD, "用户明确不接"),
     _entry("OTU", "图片", "nano_banana_pro-1K", "OTU /v1/videos", STATUS_DISCARD, "用户明确不接"),
@@ -259,6 +259,50 @@ def select_options_for_capability(capability: str) -> List[Dict[str, str]]:
     return production_model_options(capability)
 
 
+REFERENCE_VIDEO_MODEL_NAMES = (
+    "OTU / omni_flash-10s",
+    "Aitgenne / happyhorse-1.0-r2v",
+    "Aitgenne / omni-flash",
+)
+
+FIRST_LAST_VIDEO_MODEL_NAMES = (
+    "AIHubMix / veo-3.1-fast-generate-preview",
+    "OTU / veo_3_1-fast-fl",
+    "OTU / veo_3_1-fast-fl-hd",
+    "OTU / veo_3_1-fl",
+    "OTU / veo_3_1-hd-fl",
+)
+
+
+def _options_for_display_names(names: Sequence[str]) -> List[Dict[str, str]]:
+    by_name = {entry.display_name: entry for entry in production_models("视频")}
+    options: List[Dict[str, str]] = []
+    for name in names:
+        entry = by_name.get(name)
+        if not entry:
+            raise ValueError(f"生产视频模型不存在或未启用: {name}")
+        options.append(option_for_model(entry))
+    return options
+
+
+def _display_name_for_value(value: str, provider: str = "") -> str:
+    value = (value or "").strip()
+    bits = value.split(" / ", 1)
+    if len(bits) == 2:
+        return value
+    model = value
+    return display_name(provider, model) if provider and model else model
+
+
+def is_reference_video_model(value: str, provider: str = "") -> bool:
+    return _display_name_for_value(value, provider) in REFERENCE_VIDEO_MODEL_NAMES
+
+
+def is_first_last_video_model(value: str, provider: str = "") -> bool:
+    name = _display_name_for_value(value, provider)
+    return not name or name in {"默认（配置表）", "默认", "待确认"} or name in FIRST_LAST_VIDEO_MODEL_NAMES
+
+
 AI_PROVIDER_OPTIONS = [opt("AIHubMix"), opt("Aitgenne", "Purple"), opt("OTU", "Green")]
 AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("语音", "Purple")]
 AI_TASK_TYPE_OPTIONS = [
@@ -278,5 +322,9 @@ AI_MODEL_OPTIONS = unified_ai_model_options()
 TEXT_MODEL_OPTIONS = select_options_for_capability("文本")
 IMAGE_MODEL_OPTIONS = select_options_for_capability("图片")
 VIDEO_AI_MODEL_OPTIONS = select_options_for_capability("视频")
+REFERENCE_VIDEO_MODEL_OPTIONS = _options_for_display_names(REFERENCE_VIDEO_MODEL_NAMES)
+FIRST_LAST_VIDEO_MODEL_OPTIONS = _options_for_display_names(FIRST_LAST_VIDEO_MODEL_NAMES)
 VOICE_MODEL_OPTIONS = select_options_for_capability("语音")
 VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), *VIDEO_AI_MODEL_OPTIONS]
+REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *REFERENCE_VIDEO_MODEL_OPTIONS]
+FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *FIRST_LAST_VIDEO_MODEL_OPTIONS]

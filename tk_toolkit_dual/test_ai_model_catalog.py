@@ -46,6 +46,27 @@ class AiModelCatalogTests(unittest.TestCase):
         self.assertIn("gpt-image-2-2K", models)
         self.assertIn("gpt-image-2-4K", models)
 
+    def test_video_model_options_are_split_by_generation_mode(self):
+        reference_names = [item["name"] for item in ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS]
+        first_last_names = [item["name"] for item in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS]
+        first_last_with_default = [item["name"] for item in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS]
+
+        self.assertEqual(reference_names, [
+            "OTU / omni_flash-10s",
+            "Aitgenne / happyhorse-1.0-r2v",
+            "Aitgenne / omni-flash",
+        ])
+        self.assertEqual(first_last_names, [
+            "AIHubMix / veo-3.1-fast-generate-preview",
+            "OTU / veo_3_1-fast-fl",
+            "OTU / veo_3_1-fast-fl-hd",
+            "OTU / veo_3_1-fl",
+            "OTU / veo_3_1-hd-fl",
+        ])
+        self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", reference_names)
+        self.assertNotIn("Aitgenne / happyhorse-1.0-r2v", first_last_names)
+        self.assertEqual(first_last_with_default[0], "默认（配置表）")
+
 
 if __name__ == "__main__":
     unittest.main()

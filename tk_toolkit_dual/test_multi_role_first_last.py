@@ -254,29 +254,26 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(route.api_base, "")
         self.assertEqual(route.api_key, "sk-aitgenne")
 
-    def test_multi_role_media_summary_uses_prefixed_video_provider(self):
+    def test_multi_role_media_summary_rejects_reference_video_model(self):
         config_records = [
             {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
             {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
         ]
 
         with patch.object(multi_role, "safe_list_records", return_value=config_records):
-            summary = multi_role.maybe_unified_media_summary(
-                "token",
-                {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-r2v"},
-                {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
-                capability="视频",
-                task_type="首尾帧图生视频",
-                model="veo_3_1-fast-fl",
-                slot_name="视频",
-                prompt="video prompt",
-                params={"size": "720x1280", "aspect_ratio": "9:16"},
-                reference_count=2,
-            )
-
-        self.assertEqual(summary["provider"], "Aitgenne")
-        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/videos")
-        self.assertEqual(summary["api_key"], "[REDACTED]")
+            with self.assertRaisesRegex(ValueError, "首尾帧视频模型不支持参考图视频模型"):
+                multi_role.maybe_unified_media_summary(
+                    "token",
+                    {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-r2v"},
+                    {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
+                    capability="视频",
+                    task_type="首尾帧图生视频",
+                    model="veo_3_1-fast-fl",
+                    slot_name="视频",
+                    prompt="video prompt",
+                    params={"size": "720x1280", "aspect_ratio": "9:16"},
+                    reference_count=2,
+                )
 
     def test_build_child_records_creates_assets_keyframes_and_video_clips(self):
         records = multi_role.build_child_records("parent", {"任务名称": "Hook", "目标时长秒": 8}, sample_plan(role_count=4), batch_id="batch1")

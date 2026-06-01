@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+import requests
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     APP_TOKEN,
@@ -67,6 +69,7 @@ from tk_shot_video import (  # noqa: E402
     get_table_field_types,
     upload_video_to_feishu,
 )
+import ai_model_catalog  # noqa: E402
 import ai_routing  # noqa: E402
 from aitgenne_image import (  # noqa: E402
     DEFAULT_AITGENNE_API_BASE,
@@ -91,6 +94,11 @@ DEFAULT_VIDEO_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
 BASE_WORK_DIR = Path(WORKSPACE) / "nine_grid_video_work"
 MAX_REFERENCE_IMAGES = 7
+REFERENCE_VIDEO_MAX_IMAGES = 9
+NINE_GRID_VIDEO_TRANSLATION_INSTRUCTION = (
+    "Faithfully translate any Chinese visual/action directions into English while preserving all Thai dialogue exactly. "
+    "Do not rewrite, soften, add, remove, or sanitize story details."
+)
 REFERENCE_SOURCE_AI = "AI自动生成"
 REFERENCE_SOURCE_MANUAL = "手动上传"
 REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
@@ -237,6 +245,129 @@ def build_board_video_prompt(board: Dict[str, Any]) -> str:
         f"Action sequence: {cells}. "
         "No grid layout, no split screen, no panel borders, no subtitles, no stickers, no watermarks, no UI, no poster text."
     )
+
+
+def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
+    if not refs:
+        return ""
+    lines = ["Reference image order (highest priority first):"]
+    for idx, ref in enumerate(refs, start=1):
+        role = ref.get("role", "")
+        name = ref.get("name", "").strip()
+        name_note = f" ({name})" if name else ""
+        if role == "nine_grid":
+            lines.append(
+                f"Reference image {idx} = current Board nine-grid storyboard. "
+                "Use it as the highest-priority visual/action sequence and character-position reference; "
+                "do not render it as a split-screen grid, panel layout, border, or UI."
+            )
+        elif role.startswith("product:"):
+            lines.append(
+                f"Reference image {idx} = exact product reference{name_note}. "
+                "Keep the product packaging, label, color, shape, nozzle, logo area, text placement, and proportions unchanged."
+            )
+        elif role.startswith("human:"):
+            lines.append(
+                f"Reference image {idx} = human character reference{name_note}. "
+                "Use this image to lock the character identity, face, hairstyle, body type, outfit, and visual style when that character appears in the nine-grid sequence."
+            )
+    lines.append("Do not reinterpret later reference images as storyboard panels; use them only for identity and product consistency.")
+    return "\n".join(lines)
+
+
+def build_video_model_prompt_for_route(raw_prompt: str, route: ai_routing.AiRoute, refs: Optional[List[Dict[str, str]]] = None) -> str:
+    del route
+    reference_note = build_nine_grid_video_reference_note(refs or [])
+    return "\n\n".join(
+        part
+        for part in [NINE_GRID_VIDEO_SYSTEM_PROMPT, reference_note, NINE_GRID_VIDEO_TRANSLATION_INSTRUCTION, raw_prompt]
+        if part
+    ).strip()
+
+
+def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
+    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+
+
+def submit_reference_video_task(
+    route: ai_routing.AiRoute,
+    prompt: str,
+    refs: List[Dict[str, str]],
+    *,
+    size: str = DEFAULT_VIDEO_SIZE,
+    aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    seconds: str = "10",
+) -> Tuple[str, Dict[str, Any]]:
+    if not refs:
+        raise ValueError("参考图生视频至少需要 1 张参考图")
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    opened = []
+    files: List[Tuple[str, Tuple[Any, ...]]] = []
+    try:
+        for ref in refs[:REFERENCE_VIDEO_MAX_IMAGES]:
+            path = ref.get("path", "")
+            if not path or not os.path.exists(path):
+                raise ValueError(f"参考图不存在: {ref.get('role')}")
+            handle = open(path, "rb")
+            opened.append(handle)
+            files.append(("input_reference[]", (os.path.basename(path), handle, "image/png")))
+        resp = requests.post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}"},
+            data={
+                "model": model_name,
+                "prompt": prompt,
+                "seconds": str(seconds or "10"),
+                "size": size or DEFAULT_VIDEO_SIZE,
+                "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+            },
+            files=files,
+            timeout=180,
+        )
+    finally:
+        for handle in opened:
+            handle.close()
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"raw_text": resp.text[:1000]}
+    if resp.status_code >= 400:
+        raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+    task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+    if not task_id:
+        raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
+    return task_id, body
+
+
+def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[str, Any]:
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    url = reference_video_item_url(route, task_id)
+    headers = {"Authorization": f"Bearer {route.api_key}"}
+    start = time.time()
+    last_body: Dict[str, Any] = {}
+    while time.time() - start < 2400:
+        resp = requests.get(url, headers=headers, timeout=45)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        last_body = body if isinstance(body, dict) else {"raw": body}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 参考图视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+        status = extract_text(
+            last_body.get("status")
+            or (last_body.get("data") or {}).get("status")
+            or (last_body.get("result") or {}).get("status")
+        ).lower()
+        if status in {"completed", "succeeded", "success", "done"}:
+            return last_body
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"{route.provider} 参考图视频生成失败: {str(last_body)[:1500]}")
+        time.sleep(15)
+    raise TimeoutError(f"{route.provider} 参考图视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
 def _field_with_default(fields: Dict[str, Any], name: str, default: str) -> str:
@@ -818,6 +949,66 @@ def collect_nine_grid_video_product_reference(
     }
 
 
+def collect_nine_grid_video_human_reference_items(
+    token: str,
+    parent_record_id: str,
+    *,
+    records: Optional[List[Dict[str, Any]]] = None,
+    max_count: int = MAX_REFERENCE_IMAGES - 2,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+) -> List[Dict[str, str]]:
+    asset_records = records if records is not None else list_reference_asset_records(token, parent_record_id)
+    selected: List[Dict[str, str]] = []
+    for rec in asset_records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
+            continue
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+            continue
+        if extract_text(fields.get("资产类型")).strip() != "human":
+            continue
+        asset_id = extract_text(fields.get("资产ID")).strip() or rec.get("record_id", "human")
+        file_token = _asset_reference_file_token(token, fields, get_record_fn=get_record_fn)
+        if not file_token:
+            continue
+        selected.append({
+            "role": f"human:{asset_id}",
+            "file_token": file_token,
+            "name": extract_text(fields.get("资产名称")).strip(),
+            "type": "human",
+        })
+        if len(selected) >= max_count:
+            break
+    return selected
+
+
+def collect_nine_grid_video_human_references(
+    token: str,
+    parent_record_id: str,
+    task_dir: Path,
+    *,
+    items: Optional[List[Dict[str, str]]] = None,
+    download_fn: Callable[[str, str, str], Any] = safe_download_attachment,
+    get_record_fn: Callable[[str, str, str], Dict[str, Any]] = safe_get_record,
+) -> List[Dict[str, str]]:
+    selected = items if items is not None else collect_nine_grid_video_human_reference_items(token, parent_record_id, get_record_fn=get_record_fn)
+    refs: List[Dict[str, str]] = []
+    for item in selected[:MAX_REFERENCE_IMAGES - 2]:
+        safe_role = item["role"].replace(":", "_")
+        local_path = task_dir / f"reference_{safe_role}.png"
+        downloaded = download_fn(token, item["file_token"], str(local_path))
+        refs.append({
+            "role": item["role"],
+            "path": _downloaded_path(downloaded, local_path),
+            "file_token": item["file_token"],
+            "name": item.get("name", ""),
+            "type": "human",
+        })
+    return refs
+
+
 def _asset_reference_file_token(
     token: str,
     fields: Dict[str, Any],
@@ -904,6 +1095,24 @@ def build_product_reference_lock_prompt(refs: List[Dict[str, str]]) -> str:
         "- Do not invent a generic spray bottle, do not replace the label, and do not use a different product package.\n"
         "- If the script text conflicts with product:* visual details, product:* wins."
     )
+
+
+def ensure_nine_grid_record_current_generation(
+    token: str,
+    record_id: str,
+    status_field: str,
+    expected: str,
+    task_field: str = "",
+    task_id: str = "",
+) -> None:
+    latest = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    current = extract_text(latest.get(status_field)).strip()
+    if current != expected:
+        raise RuntimeError(f"记录状态已变更为 {current or '<empty>'}，停止写回，避免旧任务覆盖新结果")
+    if task_field and task_id:
+        current_task_id = extract_text(latest.get(task_field)).strip()
+        if current_task_id != task_id:
+            raise RuntimeError(f"{task_field} 已变更，停止写回，避免旧任务覆盖新结果")
 
 
 def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -1134,14 +1343,13 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
     prompt = extract_text(fields.get("视频提示词")).strip()
-    model_prompt = "\n\n".join(part for part in [NINE_GRID_VIDEO_SYSTEM_PROMPT, prompt] if part).strip()
     if not _attachment_token(fields.get("九宫格图")):
         raise ValueError("Board分段缺少九宫格图附件")
+    existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
         raise ValueError("Board分段缺少父任务记录ID")
     parent_fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, parent_record_id)
-    product_item = first_product_reference_item(token, parent_fields)
     _, cfg = get_config_record(VIDEO_STAGE_NAME, default_model="omni_flash-10s", default_api_base="https://otuapi.com", default_size=DEFAULT_VIDEO_SIZE)
     params = {
         "size": _field_with_default(fields, "视频画面尺寸", DEFAULT_VIDEO_SIZE),
@@ -1160,66 +1368,115 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         config_records=_stage_config_records(token),
     )
     route.params.update(params)
+    if not ai_model_catalog.is_reference_video_model(route.model, route.provider):
+        raise ValueError(f"九宫格视频只支持参考图生视频模型: {route.model}")
+    prompt_refs: List[Dict[str, str]] = []
+    model_prompt = prompt
+    if not existing_task_id:
+        product_item = first_product_reference_item(token, parent_fields)
+        human_items = collect_nine_grid_video_human_reference_items(token, parent_record_id)
+        prompt_refs = [{
+            "role": "nine_grid",
+            "name": "current Board nine-grid",
+            "type": "nine_grid",
+        }, {
+            **product_item,
+            "type": "product",
+        }, *human_items]
+        model_prompt = build_video_model_prompt_for_route(prompt, route, prompt_refs)
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
-        "route": ai_routing.build_media_request_summary(route, model_prompt, reference_count=2),
+        "route": ai_routing.build_media_request_summary(route, model_prompt, reference_count=len(prompt_refs)),
         "prompt_chars": len(model_prompt),
     }
+    if existing_task_id:
+        summary["existing_task_id"] = existing_task_id
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route.provider != "OTU":
-        raise NotImplementedError(f"当前仅 OTU 视频真实提交已接入；{route.provider} 请先使用 --dry-run 校验路由")
 
     work_dir = ensure_work_dir(record_id)
-    grid_token = _attachment_token(fields.get("九宫格图"))
-    grid_path = str(work_dir / "reference_nine_grid.png")
-    safe_download_attachment(token, grid_token, grid_path)
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
-    product_ref = collect_nine_grid_video_product_reference(
-        token,
-        parent_fields,
-        work_dir,
-        product_item=product_item,
-        download_fn=safe_download_attachment,
-    )
-    omni_refs = [{
-        "role": "nine_grid",
-        "path": grid_path,
-        "file_token": grid_token,
-        "name": "current Board nine-grid",
-    }, product_ref]
     output_path = str(work_dir / f"{record_id}_nine_grid_video.mp4")
     field_types = get_table_field_types(token, TABLE_NINE_GRID_VIDEO)
+    task_id = existing_task_id
 
-    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-        "分镜视频": [],
-        "分镜视频URL": None,
-        "视频任务ID": "",
-        "视频错误信息": "",
-        "视频生成时间": None,
-        "视频生成状态": "生成中",
-        "错误信息": "",
-    }))
     video_config = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
-    task_id, _submit_body = submit_omni_video_task(
-        video_config,
-        model_prompt,
-        omni_refs,
-        size=params.get("size") or DEFAULT_VIDEO_SIZE,
-        aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
-    )
-    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-        "视频任务ID": task_id,
-        "视频错误信息": f"已提交九宫格视频任务，正在轮询。task_id={task_id}",
-    }))
-    result = poll_omni_video_task(video_config, task_id)
+    if existing_task_id:
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "视频生成状态": "生成中",
+            "视频任务ID": task_id,
+            "视频错误信息": f"恢复轮询已有九宫格视频任务。task_id={task_id}",
+            "错误信息": "",
+        }))
+    else:
+        grid_token = _attachment_token(fields.get("九宫格图"))
+        grid_path = str(work_dir / "reference_nine_grid.png")
+        safe_download_attachment(token, grid_token, grid_path)
+        product_ref = collect_nine_grid_video_product_reference(
+            token,
+            parent_fields,
+            work_dir,
+            product_item=product_item,
+            download_fn=safe_download_attachment,
+        )
+        omni_refs = [{
+            "role": "nine_grid",
+            "path": grid_path,
+            "file_token": grid_token,
+            "name": "current Board nine-grid",
+        }, product_ref]
+        omni_refs.extend(collect_nine_grid_video_human_references(
+            token,
+            parent_record_id,
+            work_dir,
+            items=human_items,
+            download_fn=safe_download_attachment,
+        ))
+        submitted_refs = omni_refs
+        if route.provider == "Aitgenne" and model_name == "omni-flash":
+            submitted_refs = omni_refs[:2]
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "分镜视频": [],
+            "分镜视频URL": None,
+            "视频任务ID": "",
+            "视频错误信息": "",
+            "视频生成时间": None,
+            "视频生成状态": "生成中",
+            "错误信息": "",
+        }))
+        if route.provider == "OTU":
+            task_id, _submit_body = submit_omni_video_task(
+                video_config,
+                model_prompt,
+                submitted_refs,
+                size=params.get("size") or DEFAULT_VIDEO_SIZE,
+                aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+            )
+        else:
+            task_id, _submit_body = submit_reference_video_task(
+                route,
+                model_prompt,
+                submitted_refs,
+                size=params.get("size") or DEFAULT_VIDEO_SIZE,
+                aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+                seconds=str(params.get("seconds") or "10"),
+            )
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "视频任务ID": task_id,
+            "视频错误信息": f"已提交九宫格视频任务，正在轮询。task_id={task_id}",
+        }))
+    if route.provider == "OTU":
+        result = poll_omni_video_task(video_config, task_id)
+    else:
+        result = poll_reference_video_task(route, task_id)
     video_url = extract_video_url(result)
     if not video_url:
         raise RuntimeError(f"九宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
     download_video(video_url, output_path)
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_nine_grid_video.mp4")
+    ensure_nine_grid_record_current_generation(token, record_id, "视频生成状态", "生成中", "视频任务ID", task_id)
     success_fields = {
         "视频生成状态": "成功",
         "分镜视频": [{"file_token": file_token, "name": Path(output_path).name}],

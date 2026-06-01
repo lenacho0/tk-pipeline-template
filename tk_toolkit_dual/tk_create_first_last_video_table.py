@@ -34,7 +34,7 @@ from tk_create_script_doc_shots_table import (
     resolved_fields,
     YES_NO_OPTIONS,
 )
-from ai_model_catalog import IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, VIDEO_AI_MODEL_OPTIONS
+from ai_model_catalog import FIRST_LAST_VIDEO_MODEL_OPTIONS, FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS, IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS
 
 
 TABLE_NAME = "首尾帧视频生成表"
@@ -54,7 +54,7 @@ VIDEO_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成首尾帧�
 FIRST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发尾帧", "Blue")]
 LAST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发视频", "Blue")]
 VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
-VIDEO_MODEL_OPTIONS = VIDEO_AI_MODEL_OPTIONS
+VIDEO_MODEL_OPTIONS = FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS
 
 
 FIRST_LAST_VIDEO_FIELDS = [
@@ -79,7 +79,7 @@ FIRST_LAST_VIDEO_FIELDS = [
     text("首帧图AI参数JSON"),
     select("尾帧图AI模型", IMAGE_MODEL_OPTIONS),
     text("尾帧图AI参数JSON"),
-    select("视频AI模型", VIDEO_AI_MODEL_OPTIONS),
+    select("视频AI模型", FIRST_LAST_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),

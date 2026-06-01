@@ -642,6 +642,34 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(result["model"], "veo_3_1-fast-fl")
         submitter.assert_not_called()
 
+    def test_script_doc_rejects_reference_video_model_for_first_last_mode(self):
+        fields = sample_fields()
+        fields["使用统一AI路由"] = "是"
+        fields["视频AI模型"] = "Aitgenne / happyhorse-1.0-r2v"
+        with patch("tk_shot_video.safe_list_records", return_value=[
+                {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+                {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+             ]), \
+             patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref:
+            cfg.return_value = ("cfg1", {
+                "model": "veo-3.1-fast-generate-preview",
+                "api_key": "sk",
+                "api_base": "https://aihubmix.com/gemini",
+                "size": "720p",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+            with self.assertRaisesRegex(ValueError, "首尾帧视频模型不支持参考图视频模型"):
+                video.run_shot_video_generation(
+                    "rec1",
+                    dry_run=True,
+                    token="t",
+                    get_record_fn=lambda token, table, rid: fields,
+                )
+
     def test_run_defaults_chinese_default_record_model_to_native_veo(self):
         for model_value in ("默认（配置表）", "默认", "待确认"):
             with self.subTest(model_value=model_value):

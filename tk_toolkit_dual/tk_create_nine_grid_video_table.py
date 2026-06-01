@@ -31,7 +31,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
 )
-from ai_model_catalog import IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, VIDEO_AI_MODEL_OPTIONS
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_OPTIONS, TEXT_MODEL_OPTIONS
 
 
 TABLE_NAME = "多图九宫格视频生成表"
@@ -110,7 +110,7 @@ NINE_GRID_VIDEO_FIELDS = [
     text("图片错误信息"),
     datetime_field("图片生成时间"),
     text("视频提示词"),
-    *prefixed_field_group("视频", VIDEO_AI_MODEL_OPTIONS),
+    *prefixed_field_group("视频", REFERENCE_VIDEO_MODEL_OPTIONS),
     select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
     select("视频画面比例", VIDEO_ASPECT_RATIO_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),

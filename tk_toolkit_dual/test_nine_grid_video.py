@@ -175,11 +175,16 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("Aitgenne / gpt-5.5", plan_options)
         self.assertIn("OTU / gpt-image-2-4K", image_options)
         self.assertIn("Aitgenne / gpt-image-2", image_options)
-        self.assertIn("Aitgenne / happyhorse-1.0-r2v", video_options)
+        self.assertEqual(video_options, [
+            "OTU / omni_flash-10s",
+            "Aitgenne / happyhorse-1.0-r2v",
+            "Aitgenne / omni-flash",
+        ])
         self.assertNotIn("OTU / gpt-image-2", plan_options)
         self.assertNotIn("Aitgenne / gpt-5.5", image_options)
         self.assertNotIn("OTU / nano_banana_pro-4K", image_options)
-        self.assertNotIn("AIHubMix / sora-2-pro", video_options)
+        self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", video_options)
+        self.assertNotIn("OTU / veo_3_1-fast-fl", video_options)
 
     def test_dispatcher_registers_nine_grid_watches_by_record_type(self):
         watches = {
@@ -570,7 +575,7 @@ class NineGridVideoTests(unittest.TestCase):
             "九宫格图": [{"file_token": "ft_grid"}],
             "视频提示词": "Turn the nine-grid into one continuous video.",
             "视频AI供应商": "OTU",
-            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频AI模型": "OTU / omni_flash-10s",
             "视频AI参数JSON": '{"seconds":"10","size":"720x1280","aspect_ratio":"9:16"}',
             "视频画面尺寸": "720x1280",
             "视频画面比例": "9:16",
@@ -581,21 +586,57 @@ class NineGridVideoTests(unittest.TestCase):
         with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
              patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
              patch.object(nine_grid, "get_feishu_token", return_value="token"), \
-             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields]), \
-             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"})), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[
+                 child_fields,
+                 parent_fields,
+                 product_fields,
+                 {"视频生成状态": "生成中", "视频任务ID": "task_ref"},
+             ]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
              patch.object(nine_grid, "safe_list_records", return_value=[]):
             result = nine_grid.render_nine_grid_video("recBoard", dry_run=True)
 
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["route"]["capability"], "视频")
-        self.assertEqual(result["route"]["payload"]["model"], "veo_3_1-fast-fl")
+        self.assertEqual(result["route"]["payload"]["model"], "omni_flash-10s")
         self.assertEqual(result["route"]["payload"]["seconds"], "10")
 
-    def test_video_dry_run_requires_product_reference_and_reports_two_references(self):
+    def test_video_dry_run_rejects_first_last_video_model_for_nine_grid(self):
         child_fields = {
             "父任务记录ID": "recParent",
             "九宫格图": [{"file_token": "ft_grid"}],
             "视频提示词": "Turn the nine-grid into one continuous video.",
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+        }
+        parent_fields = {"关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[
+                 child_fields,
+                 parent_fields,
+                 product_fields,
+                 {"视频生成状态": "生成中", "视频任务ID": "task_ref"},
+             ]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "九宫格视频只支持参考图生视频模型"):
+                nine_grid.render_nine_grid_video("recBoard", dry_run=True)
+
+    def test_video_dry_run_requires_product_reference_and_reports_two_references(self):
+        raw_prompt = (
+            "0-7.5s，Non捏鼻后退，说 in Thai: อย่าเอาแมวมาใกล้ผม! "
+            "Pear拿出驱虫滴剂并安抚猫，猫尿味和冲突内容按原文保留。"
+        )
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": raw_prompt,
             "视频AI供应商": "OTU",
             "视频AI模型": "OTU / omni_flash-10s",
             "视频画面尺寸": "720x1280",
@@ -614,14 +655,22 @@ class NineGridVideoTests(unittest.TestCase):
 
         prompt = result["route"]["payload"]["prompt"]
         self.assertIn(prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT, prompt)
-        self.assertIn(child_fields["视频提示词"], prompt)
+        self.assertIn("Faithfully translate any Chinese visual/action directions into English", prompt)
+        self.assertIn("Do not rewrite, soften, add, remove, or sanitize story details.", prompt)
+        self.assertIn("Reference image 1 = current Board nine-grid storyboard", prompt)
+        self.assertIn("Reference image 2 = exact product reference", prompt)
+        self.assertIn(raw_prompt, prompt)
+        self.assertIn("อย่าเอาแมวมาใกล้ผม!", prompt)
+        self.assertIn("猫尿味", prompt)
+        self.assertNotIn("continuous vertical UGC home-cleaning video", prompt)
         self.assertEqual(result["route"]["reference_count"], 2)
 
-    def test_render_nine_grid_video_uses_nine_grid_and_product_references_only(self):
+    def test_render_nine_grid_video_appends_approved_human_references_after_product_only(self):
+        raw_prompt = "朋友捏鼻，Non says in Thai: อย่าเอาแมวมาใกล้ผม! 主人喷沙发，朋友惊喜。"
         child_fields = {
             "父任务记录ID": "recParent",
             "九宫格图": [{"file_token": "ft_grid"}],
-            "视频提示词": "朋友捏鼻，主人喷沙发，朋友惊喜。",
+            "视频提示词": raw_prompt,
             "视频AI供应商": "OTU",
             "视频AI模型": "OTU / omni_flash-10s",
             "视频画面尺寸": "720x1280",
@@ -629,13 +678,54 @@ class NineGridVideoTests(unittest.TestCase):
         }
         parent_fields = {"记录类型": "母任务", "关联产品记录": ["recProduct"]}
         product_fields = {"产品图片": [{"file_token": "ft_product"}, {"file_token": "ft_product_2"}]}
+        asset_records = [
+            {"record_id": "recPear", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "human",
+                "资产ID": "pear",
+                "资产名称": "Pear",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_pear"}],
+            }},
+            {"record_id": "recCat", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "pet",
+                "资产ID": "cat",
+                "资产名称": "orange cat",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_cat"}],
+            }},
+            {"record_id": "recRoom", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "environment",
+                "资产ID": "bedroom",
+                "资产名称": "Thai bedroom",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_room"}],
+            }},
+            {"record_id": "recNon", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "human",
+                "资产ID": "non",
+                "资产名称": "Non",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_non"}],
+            }},
+        ]
 
         with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
              patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
              patch.object(nine_grid, "get_feishu_token", return_value="token"), \
-             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields]), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields, {
+                 "视频生成状态": "生成中",
+                 "视频任务ID": "task_omni",
+             }]), \
              patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
-             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "safe_list_records", return_value=asset_records), \
              patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path) as download_attachment, \
              patch.object(nine_grid, "collect_nine_grid_reference_images") as collect_all_refs, \
              patch.object(nine_grid, "submit_omni_video_task", return_value=("task_omni", {"id": "task_omni"}), create=True) as omni_submitter, \
@@ -651,16 +741,209 @@ class NineGridVideoTests(unittest.TestCase):
         collect_all_refs.assert_not_called()
         self.assertEqual(
             [call.args[1] for call in download_attachment.call_args_list],
-            ["ft_grid", "ft_product"],
+            ["ft_grid", "ft_product", "ft_pear", "ft_non"],
         )
         args, kwargs = omni_submitter.call_args
         self.assertEqual(args[0]["model"], "omni_flash-10s")
         self.assertIn(prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT, args[1])
-        self.assertIn(child_fields["视频提示词"], args[1])
-        self.assertEqual([ref["role"] for ref in args[2]], ["nine_grid", "product:1"])
+        self.assertIn("Faithfully translate any Chinese visual/action directions into English", args[1])
+        self.assertIn("Reference image 1 = current Board nine-grid storyboard", args[1])
+        self.assertIn("Reference image 2 = exact product reference", args[1])
+        self.assertIn("Reference image 3 = human character reference (Pear)", args[1])
+        self.assertIn("Reference image 4 = human character reference (Non)", args[1])
+        self.assertNotIn("orange cat", args[1])
+        self.assertNotIn("Thai bedroom", args[1])
+        self.assertIn(raw_prompt, args[1])
+        self.assertIn("อย่าเอาแมวมาใกล้ผม!", args[1])
+        self.assertIn("捏鼻", args[1])
+        self.assertNotIn("continuous vertical UGC home-cleaning video", args[1])
+        self.assertEqual([ref["role"] for ref in args[2]], ["nine_grid", "product:1", "human:pear", "human:non"])
         self.assertEqual(kwargs["size"], "720x1280")
         self.assertEqual(kwargs["aspect_ratio"], "9:16")
         self.assertNotIn("seconds", kwargs)
+
+    def test_render_nine_grid_video_submits_aitgenne_r2v_with_grid_product_and_humans(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Turn the nine-grid into one continuous video.",
+            "视频AI模型": "Aitgenne / happyhorse-1.0-r2v",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+        }
+        parent_fields = {"记录类型": "母任务", "关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+        asset_records = [
+            {"record_id": "recPear", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "human",
+                "资产ID": "pear",
+                "资产名称": "Pear",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_pear"}],
+            }},
+        ]
+        latest_fields = {"视频生成状态": "生成中", "视频任务ID": "task_ref"}
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields, latest_fields]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "omni_flash-10s",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[
+                 {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+                 *asset_records,
+             ]), \
+             patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "submit_reference_video_task", return_value=("task_ref", {"id": "task_ref"}), create=True) as submitter, \
+             patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
+             patch.object(nine_grid, "download_video"), \
+             patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
+             patch.object(nine_grid, "safe_update_record"), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_nine_grid_video("recBoard")
+
+        self.assertEqual(result["status"], "success")
+        route, prompt, refs = submitter.call_args.args
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.model, "Aitgenne / happyhorse-1.0-r2v")
+        self.assertEqual([ref["role"] for ref in refs], ["nine_grid", "product:1", "human:pear"])
+        self.assertIn("Reference image 2 = exact product reference", prompt)
+        self.assertEqual(submitter.call_args.kwargs["seconds"], "10")
+
+    def test_render_nine_grid_video_submits_aitgenne_omni_with_grid_and_product_only(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Turn the nine-grid into one continuous video.",
+            "视频AI模型": "Aitgenne / omni-flash",
+        }
+        parent_fields = {"记录类型": "母任务", "关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+        asset_records = [
+            {"record_id": "recPear", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "human",
+                "资产ID": "pear",
+                "资产名称": "Pear",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": "ft_pear"}],
+            }},
+        ]
+        latest_fields = {"视频生成状态": "生成中", "视频任务ID": "task_ref"}
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields, latest_fields]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[
+                 {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+                 *asset_records,
+             ]), \
+             patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "submit_reference_video_task", return_value=("task_ref", {"id": "task_ref"}), create=True) as submitter, \
+             patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
+             patch.object(nine_grid, "download_video"), \
+             patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
+             patch.object(nine_grid, "safe_update_record"), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            nine_grid.render_nine_grid_video("recBoard")
+
+        refs = submitter.call_args.args[2]
+        self.assertEqual([ref["role"] for ref in refs], ["nine_grid", "product:1"])
+
+    def test_render_nine_grid_video_resumes_existing_task_without_resubmitting(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Use the existing task.",
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+            "视频生成状态": "生成中",
+            "视频任务ID": "task_existing",
+        }
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=child_fields), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "safe_download_attachment") as download_attachment, \
+             patch.object(nine_grid, "collect_nine_grid_video_product_reference") as product_ref, \
+             patch.object(nine_grid, "collect_nine_grid_video_human_references") as human_refs, \
+             patch.object(nine_grid, "submit_omni_video_task") as submitter, \
+             patch.object(nine_grid, "poll_omni_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}) as poller, \
+             patch.object(nine_grid, "download_video") as downloader, \
+             patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video") as uploader, \
+             patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = nine_grid.render_nine_grid_video("recBoard")
+
+        submitter.assert_not_called()
+        download_attachment.assert_not_called()
+        product_ref.assert_not_called()
+        human_refs.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing")
+        downloader.assert_called_once_with("https://x.test/video.mp4", result["output_path"])
+        uploader.assert_called_once()
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_existing")
+        self.assertEqual(updates[0]["视频任务ID"], "task_existing")
+        self.assertIn("恢复轮询", updates[0]["视频错误信息"])
+        self.assertEqual(updates[-1]["视频生成状态"], "成功")
+        self.assertEqual(updates[-1]["分镜视频"][0]["file_token"], "ft_video")
+
+    def test_video_dry_run_caps_human_references_at_five_after_grid_and_product(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Pear says in Thai: ใช้นี่เลย!",
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s",
+        }
+        parent_fields = {"关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+        asset_records = [
+            {"record_id": f"recHuman{idx}", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "recParent",
+                "资产类型": "human",
+                "资产ID": f"human_{idx}",
+                "资产名称": f"Human {idx}",
+                "参考图审核状态": "通过",
+                "参考图": [{"file_token": f"ft_human_{idx}"}],
+            }}
+            for idx in range(1, 8)
+        ]
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=asset_records):
+            result = nine_grid.render_nine_grid_video("recBoard", dry_run=True)
+
+        prompt = result["route"]["payload"]["prompt"]
+        self.assertEqual(result["route"]["reference_count"], 7)
+        self.assertIn("Reference image 7 = human character reference (Human 5)", prompt)
+        self.assertNotIn("Human 6", prompt)
+        self.assertNotIn("Human 7", prompt)
 
     def test_render_nine_grid_video_fails_when_product_image_missing(self):
         child_fields = {

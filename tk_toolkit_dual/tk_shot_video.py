@@ -27,6 +27,7 @@ from google.genai import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ai_routing  # noqa: E402
+import ai_model_catalog  # noqa: E402
 from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
@@ -1043,6 +1044,9 @@ def run_shot_video_generation(
     legacy_model_choice = extract_text(fields.get("视频生成模型")).strip()
     route_model_choice = extract_text(fields.get("视频AI模型")).strip()
     model_choice = route_model_choice if route_enabled and route_model_choice else legacy_model_choice
+    model_bits_for_validation = ai_routing.parse_model_display(model_choice)
+    if model_bits_for_validation["provider"] and not ai_model_catalog.is_first_last_video_model(model_choice):
+        raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {model_choice}")
     choice_channel, _ = split_prefixed_model_choice(model_choice)
     explicit_channel = extract_text(fields.get("视频通道")).strip()
     if route_enabled:
