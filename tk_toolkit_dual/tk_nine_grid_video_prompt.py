@@ -12,6 +12,8 @@ NINE_GRID_PLAN_SYSTEM_PROMPT = """
 4. 参考图只负责锁定一致性：人物、宠物、产品、环境。
 5. 如果脚本是产品演示型，必须显式覆盖：使用前、使用中、使用后。
 6. 多张 Board 时，前一张 Board 第 9 格必须等于后一张 Board 第 1 格，作为视觉衔接锚点。
+7. environment reference 是无人无宠物无产品的事故现场环境底图，不是干净空房间；如果脚本提到 urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点，必须在环境参考目的、environment_anchor 和 image_prompt 中写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
+8. 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。环境参考图仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印，只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
 
 脚本类型可选：
 - 剧情反应型
@@ -57,7 +59,7 @@ JSON Schema：
       {"role": "character", "name": "", "purpose": "lock identity, face, outfit"},
       {"role": "pet", "name": "", "purpose": "lock breed, fur, body"},
       {"role": "product", "name": "", "purpose": "lock package, label, shape"},
-      {"role": "environment", "name": "", "purpose": "lock room, furniture, light, problem location"}
+      {"role": "environment", "name": "", "purpose": "lock room, furniture, light, visible problem area, accident point, urine stain or wet patch when present in the script"}
     ]
   },
   "boards": [

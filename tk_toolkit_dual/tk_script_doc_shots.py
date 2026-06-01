@@ -78,9 +78,13 @@ DEFAULT_PARSE_PROMPT = """
 你需要完成三件事：
 1. 从全文中找出全局参考资产提示词：
    - pet：宠物形象参考底图提示词
-   - environment：环境/背景参考底图提示词
+   - environment：无人无宠物无产品的事故现场环境底图提示词，不是干净空房间
    - human：人类角色参考底图提示词
    如果全文中有多个宠物、环境或人类角色，要分别创建多个 asset。
+   - environment prompt 必须保留脚本里的可见问题发生点：urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点。
+   - 如果脚本提到尿渍/污渍/湿痕/破损/脏污/问题区域，environment prompt 必须写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
+   - 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。
+   - environment prompt 仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印；只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
 2. 按分镜拆成 shots。
 3. 对每条 shot 判断生成分镜图时到底需要哪些参考图：
    - 只有该分镜画面里需要保持某个宠物/环境/人物一致时，才把对应 asset_id 放进 asset_ids。

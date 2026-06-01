@@ -13,6 +13,18 @@ import tk_create_script_doc_shots_table as create_tables
 
 
 class ScriptDocShotsTests(unittest.TestCase):
+    def test_default_parse_prompt_requires_environment_problem_anchors(self):
+        prompt = doc_shots.DEFAULT_PARSE_PROMPT
+
+        for required in [
+            "urine stain",
+            "wet patch",
+            "visible problem area",
+            "accident point",
+            "不要删除尿渍",
+        ]:
+            self.assertIn(required, prompt)
+
     def sample_payload(self):
         return {
             "global_assets": [

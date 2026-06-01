@@ -75,6 +75,18 @@ def sample_plan_payload():
 
 
 class NineGridVideoTests(unittest.TestCase):
+    def test_plan_system_prompt_requires_environment_problem_anchors(self):
+        prompt = prompts.NINE_GRID_PLAN_SYSTEM_PROMPT
+
+        for required in [
+            "urine stain",
+            "wet patch",
+            "visible problem area",
+            "accident point",
+            "不要删除尿渍",
+        ]:
+            self.assertIn(required, prompt)
+
     def test_prompt_constants_are_supplier_neutral_and_define_json_truth(self):
         self.assertIn("JSON", prompts.NINE_GRID_PLAN_SYSTEM_PROMPT)
         self.assertIn("MULTI_IMAGE_NINE_GRID_PLAN", prompts.NINE_GRID_PLAN_SYSTEM_PROMPT)
