@@ -124,6 +124,12 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "视频片段类型",
             "视频操作",
             "视频版本",
+            "参考图画面尺寸",
+            "参考图画面比例",
+            "关键帧画面尺寸",
+            "关键帧画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
         ]:
             self.assertIn(name, field_names)
         record_type_options = next(field for field in create_table.MULTI_ROLE_FIRST_LAST_FIELDS if field["name"] == "记录类型")["options"]
@@ -157,6 +163,104 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "不要删除尿渍",
         ]:
             self.assertIn(phrase, prompt)
+
+    def test_multi_role_views_are_split_by_workflow_stage(self):
+        views = create_table.TABLE_DEFINITION["views"]
+
+        self.assertEqual(list(views.keys()), [
+            "01-母任务入口",
+            "02-参考图确认",
+            "03-关键帧审核",
+            "04-视频片段结果",
+            "90-有效记录总览",
+            "98-失败处理",
+            "高级AI参数",
+            "99-排错",
+            "99-全字段系统视图",
+            "00-已废弃记录",
+        ])
+        self.assertNotIn("01-用户入口", views)
+        self.assertNotIn("04-视频结果", views)
+        self.assertNotIn("记录类型", views["01-母任务入口"])
+        self.assertIn("记录类型", views["90-有效记录总览"])
+        self.assertIn("视频操作", views["04-视频片段结果"])
+        for name in ["参考图画面尺寸", "参考图画面比例"]:
+            self.assertIn(name, views["02-参考图确认"])
+        for name in ["关键帧画面尺寸", "关键帧画面比例"]:
+            self.assertIn(name, views["03-关键帧审核"])
+        for name in ["视频画面尺寸", "视频画面比例"]:
+            self.assertIn(name, views["04-视频片段结果"])
+        self.assertNotIn("视频AI模型", views["04-视频片段结果"])
+        self.assertNotIn("视频AI参数JSON", views["04-视频片段结果"])
+        self.assertLess(views["04-视频片段结果"].index("视频版本"), views["04-视频片段结果"].index("视频通道"))
+        self.assertLess(views["04-视频片段结果"].index("视频生成模型"), views["04-视频片段结果"].index("视频生成状态"))
+        self.assertIn("视频AI模型", views["高级AI参数"])
+        self.assertIn("视频AI参数JSON", views["高级AI参数"])
+        for name in [
+            "参考图画面尺寸",
+            "参考图画面比例",
+            "关键帧画面尺寸",
+            "关键帧画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
+        ]:
+            self.assertIn(name, views["高级AI参数"])
+        self.assertIn("视频通道", views["高级AI参数"])
+        self.assertIn("视频生成模型", views["高级AI参数"])
+        self.assertIn("视频任务ID", views["98-失败处理"])
+        self.assertIn("历史生成记录JSON", views["99-排错"])
+        self.assertEqual(views["99-全字段系统视图"], [field["name"] for field in create_table.MULTI_ROLE_FIRST_LAST_FIELDS])
+
+    def test_multi_role_view_filters_match_record_types(self):
+        filters = create_table.VIEW_FILTERS
+
+        self.assertEqual(filters["01-母任务入口"]["conditions"], [
+            ["记录类型", "intersects", ["母任务"]],
+            ["记录状态", "intersects", ["有效"]],
+        ])
+        self.assertEqual(filters["02-参考图确认"]["conditions"][0], ["记录类型", "intersects", ["参考资产"]])
+        self.assertEqual(filters["03-关键帧审核"]["conditions"][0], ["记录类型", "intersects", ["关键帧"]])
+        self.assertEqual(filters["04-视频片段结果"]["conditions"][0], ["记录类型", "intersects", ["视频片段"]])
+        self.assertEqual(filters["00-已废弃记录"]["conditions"], [["记录状态", "intersects", ["已废弃"]]])
+        self.assertEqual(filters["99-排错"], {"conditions": []})
+
+    def test_apply_view_filters_submits_all_known_filter_configs(self):
+        view_ids = {name: f"viw_{idx}" for idx, name in enumerate(create_table.VIEW_FILTERS, start=1)}
+
+        with patch.object(create_table, "list_views", return_value=view_ids), \
+             patch.object(create_table, "run_json", return_value={}) as run_json:
+            result = create_table.apply_view_filters("base", "tbl")
+
+        self.assertEqual(result, {"applied": len(create_table.VIEW_FILTERS), "skipped": 0})
+        submitted = [call.args[0] for call in run_json.call_args_list]
+        self.assertEqual(len(submitted), len(create_table.VIEW_FILTERS))
+        self.assertTrue(all("+view-set-filter" in args for args in submitted))
+
+    def test_apply_view_filters_retries_feishu_rate_limit(self):
+        first_view_name = next(iter(create_table.VIEW_FILTERS))
+
+        with patch.object(create_table, "VIEW_FILTERS", {first_view_name: create_table.VIEW_FILTERS[first_view_name]}), \
+             patch.object(create_table, "list_views", return_value={first_view_name: "viw_1"}), \
+             patch.object(create_table, "time") as fake_time, \
+             patch.object(create_table, "run_json", side_effect=[RuntimeError("800004135 limited"), {}]) as run_json:
+            result = create_table.apply_view_filters("base", "tbl")
+
+        self.assertEqual(result, {"applied": 1, "skipped": 0})
+        self.assertEqual(run_json.call_count, 2)
+        fake_time.sleep.assert_called_once_with(2)
+
+    def test_image_parameters_prefer_record_fields_over_json_and_config(self):
+        cfg = {"size": "1024x1024", "aspect_ratio": "1:1", "params": '{"size":"1280x720","aspect_ratio":"16:9"}'}
+
+        result = multi_role.resolve_media_dimensions(
+            {"参考图画面尺寸": "720x1280", "参考图画面比例": "9:16", "参考图AI参数JSON": '{"size":"1080x1920","aspect_ratio":"9:16"}'},
+            "参考图",
+            cfg,
+            default_size="1024x1024",
+            default_aspect_ratio="1:1",
+        )
+
+        self.assertEqual(result, {"size": "720x1280", "aspect_ratio": "9:16"})
 
     def test_normalize_plan_supports_dynamic_role_counts_and_per_frame_references(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=5))

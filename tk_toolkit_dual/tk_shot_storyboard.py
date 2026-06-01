@@ -23,6 +23,7 @@ from otu_image import (
     poll_otu_image_task,
     submit_otu_image_task,
 )
+from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
 
 
@@ -43,24 +44,26 @@ def selected_slot_model(fields, slot_name, default_model, *, route_enabled=False
     raw = extract_text(fields.get(f'{slot_name}AI模型')).strip()
     if ' / ' in raw:
         provider, model = raw.split(' / ', 1)
-        if provider.strip() != 'OTU':
-            raise ValueError(f'{slot_name}AI模型 当前图片生成只支持 OTU 图片模型，当前选择：{raw}')
-        return normalize_image_model_choice(model)
+        return raw if provider.strip() != 'OTU' else normalize_image_model_choice(model)
     return normalize_image_model_choice(raw or default_model)
 
 
 def slot_params(fields, slot_name, *, route_enabled=False):
-    if not route_enabled:
-        return {}
+    data = {}
     raw = extract_text(fields.get(f'{slot_name}AI参数JSON')).strip()
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f'{slot_name}AI参数JSON 不是合法 JSON: {exc}') from exc
-    if not isinstance(data, dict):
-        raise ValueError(f'{slot_name}AI参数JSON 顶层必须是对象')
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f'{slot_name}AI参数JSON 不是合法 JSON: {exc}') from exc
+        if not isinstance(data, dict):
+            raise ValueError(f'{slot_name}AI参数JSON 顶层必须是对象')
+    size = extract_text(fields.get(f'{slot_name}画面尺寸')).strip()
+    aspect_ratio = extract_text(fields.get(f'{slot_name}画面比例')).strip()
+    if size:
+        data["size"] = size
+    if aspect_ratio:
+        data["aspect_ratio"] = aspect_ratio
     return data
 
 
@@ -641,6 +644,15 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     route_enabled, route_dry_run_only = script_doc_unified_route_state(shot_fields, token)
     model_choice = selected_slot_model(shot_fields, '分镜图', config['model'] or DEFAULT_OTU_IMAGE_MODEL, route_enabled=route_enabled)
     image_params = slot_params(shot_fields, '分镜图', route_enabled=route_enabled)
+    config_records = config_records_for_image_slot(shot_fields, '分镜图', lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        shot_fields,
+        '分镜图',
+        config,
+        task_type='分镜图生成',
+        params={'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
+        config_records=config_records,
+    )
     prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
     summary = {
         'record_id': record_id,
@@ -680,27 +692,22 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     out_path = os.path.join(task_dir, f'{record_id}_shot.png')
     ref_paths = [ref.get('path') for ref in refs if ref.get('path')]
     reference_urls = build_reference_urls(token, refs)
-    submit_task_id, submit_body = submit_otu_image_task(
-        {
-            'api_key': api_key,
-            'api_base': api_base,
-            'model': model_choice,
-        },
+    image_result = run_image_generation(
+        route,
         prompt,
+        out_path,
         input_mode='image-to-image' if ref_paths else 'text-to-image',
         image_path=ref_paths[0] if ref_paths else '',
         metadata={'urls': reference_urls, 'reference_roles': [ref.get('role', 'reference') for ref in refs], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
         size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
+        aspect_ratio=image_params.get('aspect_ratio') or '9:16',
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
     )
-    result = submit_body if not submit_task_id else poll_otu_image_task({
-        'api_key': api_key,
-        'api_base': api_base,
-        'model': model_choice,
-    }, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise Exception('OTU 图像任务完成但未返回图片地址')
-    download_otu_image_result(result_url, out_path)
+    submit_task_id = image_result.task_id
+    submit_body = image_result.submit_body
+    result = image_result.result_body
 
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f'{record_id}_shot.png'),
@@ -809,6 +816,15 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     route_enabled, route_dry_run_only = script_doc_unified_route_state(fields, token)
     model_name = selected_slot_model(fields, '尾帧图', config['model'] or DEFAULT_OTU_IMAGE_MODEL, route_enabled=route_enabled)
     image_params = slot_params(fields, '尾帧图', route_enabled=route_enabled)
+    config_records = config_records_for_image_slot(fields, '尾帧图', lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        fields,
+        '尾帧图',
+        config,
+        task_type='尾帧图生成',
+        params={'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
+        config_records=config_records,
+    )
     prompt = build_script_doc_last_frame_prompt(
         fields,
         extract_text(fields.get('图片提示词') or fields.get('提示词')).strip(),
@@ -843,19 +859,22 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
     out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
-    submit_task_id, submit_body = submit_otu_image_task(
-        {'api_key': api_key, 'api_base': api_base, 'model': model_name},
+    image_result = run_image_generation(
+        route,
         prompt,
+        out_path,
         input_mode='image-to-image',
         image_path=str(first_frame_path),
         metadata={'urls': [first_frame_tmp_url] if first_frame_tmp_url else [], 'reference_roles': ['first_frame'], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
         size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
+        aspect_ratio=image_params.get('aspect_ratio') or '9:16',
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
     )
-    result = submit_body if not submit_task_id else poll_otu_image_task({'api_key': api_key, 'api_base': api_base, 'model': model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise Exception('OTU 尾帧图任务完成但未返回图片地址')
-    download_otu_image_result(result_url, out_path)
+    submit_task_id = image_result.task_id
+    submit_body = image_result.submit_body
+    result = image_result.result_body
 
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f'{record_id}_last_frame.png'),

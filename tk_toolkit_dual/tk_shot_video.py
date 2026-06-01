@@ -237,15 +237,21 @@ def resolve_model_config_stage(channel: str, provider: str) -> str:
 
 
 def slot_params(fields: Dict[str, Any], slot_name: str) -> Dict[str, Any]:
+    data: Dict[str, Any] = {}
     raw = extract_text(fields.get(f"{slot_name}AI参数JSON")).strip()
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{slot_name}AI参数JSON 不是合法 JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError(f"{slot_name}AI参数JSON 顶层必须是对象")
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{slot_name}AI参数JSON 不是合法 JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"{slot_name}AI参数JSON 顶层必须是对象")
+    size = extract_text(fields.get(f"{slot_name}画面尺寸")).strip()
+    aspect_ratio = extract_text(fields.get(f"{slot_name}画面比例")).strip()
+    if size:
+        data["size"] = size
+    if aspect_ratio:
+        data["aspect_ratio"] = aspect_ratio
     return data
 
 
@@ -1063,7 +1069,7 @@ def run_shot_video_generation(
     if last_frame_path and provider != "veo3.1":
         raise ValueError("首尾帧视频模式仅支持 Veo 视频模型")
     prompt, prompt_rebuilt = resolve_model_prompt(fields, provider)
-    params = slot_params(fields, "视频") if route_enabled else {}
+    params = slot_params(fields, "视频")
     seconds = normalize_seconds(params.get("seconds") or params.get("视频时长") or fields.get("目标时长秒"))
     size = params.get("size") or params.get("画面尺寸") or config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
     aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or config.get("aspect_ratio") or DEFAULT_ASPECT_RATIO

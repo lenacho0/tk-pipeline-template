@@ -76,6 +76,7 @@ from tk_shot_video import (  # noqa: E402
 )
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
+from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
 
 
 IMAGE_STAGE_NAME = "图片生成-OTU"
@@ -594,10 +595,16 @@ def build_child_scene_records(
             "使用统一AI路由",
             "首帧图AI模型",
             "首帧图AI参数JSON",
+            "首帧图画面尺寸",
+            "首帧图画面比例",
             "尾帧图AI模型",
             "尾帧图AI参数JSON",
+            "尾帧图画面尺寸",
+            "尾帧图画面比例",
             "视频AI模型",
             "视频AI参数JSON",
+            "视频画面尺寸",
+            "视频画面比例",
             "AI供应商",
             "AI能力类型",
             "AI任务类型",
@@ -801,6 +808,47 @@ def get_stage_config(
     raise ValueError(f"找不到模型配置: {stage_name}")
 
 
+def _parse_params_json(raw: Any, field_name: str) -> Dict[str, Any]:
+    text_value = extract_text(raw).strip()
+    if not text_value:
+        return {}
+    try:
+        data = json.loads(text_value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 不是合法 JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{field_name} 顶层必须是对象")
+    return data
+
+
+def resolve_media_dimensions(
+    fields: Dict[str, Any],
+    slot_name: str,
+    cfg: Dict[str, Any],
+    *,
+    default_size: str,
+    default_aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+) -> Dict[str, str]:
+    cfg_params = _parse_params_json(cfg.get("params"), "配置AI参数JSON")
+    slot_params = _parse_params_json(fields.get(f"{slot_name}AI参数JSON"), f"{slot_name}AI参数JSON")
+    return {
+        "size": (
+            extract_text(fields.get(f"{slot_name}画面尺寸")).strip()
+            or extract_text(slot_params.get("size") or slot_params.get("画面尺寸")).strip()
+            or extract_text(cfg_params.get("size") or cfg_params.get("画面尺寸")).strip()
+            or extract_text(cfg.get("size")).strip()
+            or default_size
+        ),
+        "aspect_ratio": (
+            extract_text(fields.get(f"{slot_name}画面比例")).strip()
+            or extract_text(slot_params.get("aspect_ratio") or slot_params.get("画面比例")).strip()
+            or extract_text(cfg_params.get("aspect_ratio") or cfg_params.get("画面比例")).strip()
+            or extract_text(cfg.get("aspect_ratio")).strip()
+            or default_aspect_ratio
+        ),
+    }
+
+
 def maybe_unified_media_summary(
     token: str,
     fields: Dict[str, Any],
@@ -816,7 +864,7 @@ def maybe_unified_media_summary(
 ) -> Optional[Dict[str, Any]]:
     if not ai_routing.record_wants_unified_route(fields):
         return None
-    config_records = safe_list_records(token, TABLE_CONFIG)
+    config_records = config_records_for_image_slot(fields, slot_name, lambda: safe_list_records(token, TABLE_CONFIG))
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
     route = ai_routing.route_from_slot(fields, slot_name, {
@@ -906,12 +954,23 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         default_size=DEFAULT_OTU_IMAGE_SIZE,
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
+    image_params = resolve_media_dimensions(fields, "首帧图", cfg, default_size=DEFAULT_OTU_IMAGE_SIZE)
+    config_records = config_records_for_image_slot(fields, "首帧图", lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        fields,
+        "首帧图",
+        cfg,
+        task_type="首帧图生图",
+        params=image_params,
+        config_records=config_records,
+    )
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "prompt_chars": len(prompt),
         "model": model_name,
-        "size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+        "size": image_params["size"],
+        "aspect_ratio": image_params["aspect_ratio"],
         "product_record_id": product_context["product_record_id"] if product_context else "",
         "product_reference_count": len(product_context["product_tokens"]) if product_context else 0,
     }
@@ -924,7 +983,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         model=model_name,
         slot_name="首帧图",
         prompt=prompt,
-        params={"size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE, "aspect_ratio": "9:16"},
+        params=image_params,
         reference_count=summary["product_reference_count"],
     )
     if route_summary:
@@ -934,7 +993,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+    if route_summary and ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
@@ -972,9 +1031,10 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
             "input_mode": "image-to-image",
             "remote_reference_urls": bool(reference_urls),
         }
-        submit_task_id, submit_body = submit_otu_image_task(
-            {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
+        image_result = run_image_generation(
+            route,
             prompt,
+            out_path,
             input_mode="image-to-image",
             image_path=product_refs[0]["path"],
             metadata={
@@ -982,21 +1042,38 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
                 "product_record_id": product_context["product_record_id"],
                 "product_reference_file_tokens": [ref["file_token"] for ref in product_refs],
                 "urls": reference_urls,
-                "aspectRatio": "9:16",
+                "aspectRatio": image_params["aspect_ratio"],
             },
-            size=cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE,
+            size=image_params["size"],
+            aspect_ratio=image_params["aspect_ratio"],
+            otu_submitter=submit_otu_image_task,
+            otu_poller=poll_otu_image_task,
+            otu_downloader=download_otu_image_result,
         )
+        submit_task_id = image_result.task_id
+        submit_body = image_result.submit_body
         safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
             "首帧图任务ID": submit_task_id,
             "首帧图版本": version,
             "首帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
-            "首帧图错误信息": f"已提交 OTU 首帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
+            "首帧图错误信息": f"已提交 {route.provider} 首帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
         }))
-    result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise RuntimeError("OTU 首帧图任务完成但未返回图片地址")
-    download_otu_image_result(result_url, out_path)
+    if existing_task_id:
+        image_result = run_image_generation(
+            route,
+            prompt,
+            out_path,
+            input_mode="image-to-image",
+            image_path="",
+            metadata={},
+            size=image_params["size"],
+            aspect_ratio=image_params["aspect_ratio"],
+            existing_task_id=submit_task_id,
+            otu_submitter=submit_otu_image_task,
+            otu_poller=poll_otu_image_task,
+            otu_downloader=download_otu_image_result,
+        )
+    result = image_result.result_body
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_first_frame.png"), max_attempts=3, label="upload first frame")
     ensure_current_generation(token, record_id, "首帧图生成状态", "生成中", "首帧图版本", version, "首帧图任务ID", submit_task_id)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
@@ -1065,6 +1142,16 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         default_size=DEFAULT_OTU_IMAGE_SIZE,
     )
     model_name = normalize_image_model_choice(cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL)
+    image_params = resolve_media_dimensions(fields, "尾帧图", cfg, default_size=DEFAULT_OTU_IMAGE_SIZE)
+    config_records = config_records_for_image_slot(fields, "尾帧图", lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        fields,
+        "尾帧图",
+        cfg,
+        task_type="尾帧图生图",
+        params=image_params,
+        config_records=config_records,
+    )
     route_summary = maybe_unified_media_summary(
         token,
         fields,
@@ -1074,7 +1161,7 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         model=model_name,
         slot_name="尾帧图",
         prompt=prompt,
-        params={"size": cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE, "aspect_ratio": "9:16"},
+        params=image_params,
         reference_count=1 + summary["product_reference_count"],
     )
     if route_summary:
@@ -1082,7 +1169,7 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+    if route_summary and ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     start_fields = last_frame_result_reset_fields("生成中")
@@ -1100,7 +1187,6 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     reference_urls = ([first_frame_url] if first_frame_url else []) + product_reference_urls
     reference_roles = ["first_frame"] + [ref["role"] for ref in product_refs]
     reference_file_tokens = [first_frame_token] + [ref["file_token"] for ref in product_refs]
-    image_size = cfg.get("size") or DEFAULT_OTU_IMAGE_SIZE
     reference_summary = {
         "product_record_id": product_context["product_record_id"],
         "product_name": product_context.get("product_name", ""),
@@ -1111,12 +1197,13 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "reference_urls": reference_urls,
         "input_mode": "image-to-image",
         "remote_reference_urls": bool(reference_urls),
-        "aspect_ratio": "9:16",
-        "size": image_size,
+        "aspect_ratio": image_params["aspect_ratio"],
+        "size": image_params["size"],
     }
-    submit_task_id, submit_body = submit_otu_image_task(
-        {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
+    image_result = run_image_generation(
+        route,
         prompt,
+        out_path,
         input_mode="image-to-image",
         image_path=str(first_frame_path),
         metadata={
@@ -1124,21 +1211,23 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
             "product_record_id": product_context["product_record_id"],
             "product_reference_file_tokens": product_context.get("product_tokens") or [],
             "urls": reference_urls,
-            "aspectRatio": "9:16",
+            "aspectRatio": image_params["aspect_ratio"],
         },
-        size=image_size,
+        size=image_params["size"],
+        aspect_ratio=image_params["aspect_ratio"],
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
     )
+    submit_task_id = image_result.task_id
+    submit_body = image_result.submit_body
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
         "尾帧图任务ID": submit_task_id,
         "尾帧图版本": version,
         "尾帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
-        "尾帧图错误信息": f"已提交 OTU 尾帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
+        "尾帧图错误信息": f"已提交 {route.provider} 尾帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
     }))
-    result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise RuntimeError("OTU 尾帧图任务完成但未返回图片地址")
-    download_otu_image_result(result_url, out_path)
+    result = image_result.result_body
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_last_frame.png"), max_attempts=3, label="upload last frame")
     ensure_current_generation(token, record_id, "尾帧图生成状态", "生成中", "尾帧图版本", version, "尾帧图任务ID", submit_task_id)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
@@ -1234,8 +1323,9 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         default_size=DEFAULT_OTU_SIZE,
     )
     seconds = normalize_seconds(fields.get("目标时长秒"))
-    size = cfg.get("size") or DEFAULT_OTU_SIZE
-    aspect_ratio = cfg.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
+    video_params = resolve_media_dimensions(fields, "视频", cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
+    size = video_params["size"]
+    aspect_ratio = video_params["aspect_ratio"]
     output_path = str(work_dir / f"{record_id}_first_last_video_v{version}.mp4")
     summary = {
         "record_id": record_id,

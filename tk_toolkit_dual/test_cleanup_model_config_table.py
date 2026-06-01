@@ -32,9 +32,9 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertEqual(plan.summary["prompt_stage_config_count"], 1)
         self.assertEqual(plan.summary["current_catalog_preset_count"], 1)
         self.assertEqual(plan.summary["archived_preset_count"], 2)
-        self.assertEqual(patches["prod_img"], {"是否统一AI预设": "否"})
+        self.assertEqual(patches["prod_img"], {"是否统一AI预设": "否", "画面尺寸": "720x1280", "画面比例": "9:16"})
         self.assertEqual(patches["switch"], {"是否统一AI预设": "否"})
-        self.assertEqual(patches["ng_img"], {"是否统一AI预设": "否"})
+        self.assertEqual(patches["ng_img"], {"是否统一AI预设": "否", "画面尺寸": "720x1280", "画面比例": "9:16"})
         self.assertEqual(patches["current"], {"是否统一AI预设": "是", "状态": "启用"})
         self.assertEqual(patches["candidate"]["状态"], "停用")
         self.assertEqual(patches["candidate"]["是否统一AI预设"], "否")
@@ -70,6 +70,8 @@ class CleanupModelConfigTableTests(unittest.TestCase):
             "AI任务类型",
             "模型名称",
             "API 代理地址",
+            "画面尺寸",
+            "画面比例",
             "AI参数JSON",
             "调用方式",
             "提示词",
@@ -87,12 +89,28 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         ])
         self.assertNotIn("API Key", views["模型目录"]["visible_fields"])
         self.assertNotIn("提示词", views["模型目录"]["visible_fields"])
+        self.assertIn("画面尺寸", views["模型目录"]["visible_fields"])
+        self.assertIn("画面比例", views["模型目录"]["visible_fields"])
         self.assertEqual(
             views["模型目录"]["filter"],
             {"logic": "and", "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]]},
         )
         self.assertIn("API Key", views["排错-全字段"]["visible_fields"])
         self.assertIn("提示词", views["排错-全字段"]["visible_fields"])
+
+    def test_config_field_specs_include_media_dimensions(self):
+        specs = {item["name"]: item for item in cleanup.CONFIG_FIELD_SPECS}
+
+        self.assertEqual([item["name"] for item in specs["画面尺寸"]["options"]], [
+            "1024x1024",
+            "720x1280",
+            "1080x1920",
+            "1280x720",
+            "1440x2560",
+            "2K",
+            "4K",
+        ])
+        self.assertEqual([item["name"] for item in specs["画面比例"]["options"]], ["9:16", "16:9", "1:1"])
 
     def test_ensure_view_falls_back_to_listing_after_create_without_id(self):
         existing = {}

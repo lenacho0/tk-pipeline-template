@@ -43,6 +43,42 @@ OBSOLETE_VIEW_NAMES = {
     "90-归档-旧预设",
     "99-全字段排错",
 }
+MEDIA_DIMENSION_DEFAULTS = {
+    "图片生成-OTU": ("720x1280", "9:16"),
+    "分镜视频生成-OTU": ("720x1280", "9:16"),
+    "故事板图片生成-OTU": ("1280x720", "16:9"),
+    "故事板视频生成-Omni": ("720x1280", "9:16"),
+    "多图九宫格图片生成": ("720x1280", "9:16"),
+    "多图九宫格视频生成": ("720x1280", "9:16"),
+}
+
+
+def opt(name: str, hue: str = "Blue", lightness: str = "Lighter") -> Dict[str, str]:
+    return {"name": name, "hue": hue, "lightness": lightness}
+
+
+CONFIG_FIELD_SPECS = [
+    {
+        "name": "画面尺寸",
+        "type": "select",
+        "multiple": False,
+        "options": [
+            opt("1024x1024", "Gray"),
+            opt("720x1280", "Green"),
+            opt("1080x1920", "Blue"),
+            opt("1280x720", "Gray"),
+            opt("1440x2560", "Purple"),
+            opt("2K", "Blue"),
+            opt("4K", "Purple"),
+        ],
+    },
+    {
+        "name": "画面比例",
+        "type": "select",
+        "multiple": False,
+        "options": [opt("9:16", "Green"), opt("16:9", "Gray"), opt("1:1", "Gray")],
+    },
+]
 
 
 @dataclass(frozen=True)
@@ -142,6 +178,12 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
                 "备注": _archive_remark(_text(fields, "备注"), reason),
             }
 
+        if stage in MEDIA_DIMENSION_DEFAULTS:
+            size, ratio = MEDIA_DIMENSION_DEFAULTS[stage]
+            category = category or "media_dimension_config"
+            patch.setdefault("画面尺寸", size)
+            patch.setdefault("画面比例", ratio)
+
         if patch and not _same_patch(fields, patch):
             updates.append(RecordUpdate(record_id=rid, category=category, fields=patch))
 
@@ -206,14 +248,14 @@ def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, An
     all_fields = list(field_names)
     return {
         "模型目录": {
-            "visible_fields": ["AI供应商", "AI能力类型", "模型名称", "AI任务类型", "AI参数JSON", "状态", "备注"],
+            "visible_fields": ["AI供应商", "AI能力类型", "模型名称", "AI任务类型", "画面尺寸", "画面比例", "AI参数JSON", "状态", "备注"],
             "filter": {
                 "logic": "and",
                 "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]],
             },
         },
         "供应商密钥-管理员": {
-            "visible_fields": ["环节", "状态", "模型名称", "API 代理地址", "调用方式", "应用表格", "备注"],
+            "visible_fields": ["环节", "状态", "模型名称", "画面尺寸", "画面比例", "API 代理地址", "调用方式", "应用表格", "备注"],
             "filter": {
                 "logic": "or",
                 "conditions": [["API Key", "non_empty"], ["环节", "intersects", [ROUTE_SWITCH_STAGE]]],
@@ -260,6 +302,26 @@ def list_fields(token: str) -> List[Dict[str, Any]]:
         acceptable_codes=(0,),
     )
     return (data.get("data") or {}).get("items") or []
+
+
+def create_missing_config_fields(base_token: str, existing_field_names: Sequence[str], *, dry_run: bool) -> List[Dict[str, Any]]:
+    existing = set(existing_field_names)
+    results = []
+    for spec in CONFIG_FIELD_SPECS:
+        name = spec["name"]
+        if name in existing:
+            results.append({"field_name": name, "status": "exists"})
+            continue
+        if not dry_run:
+            run_json([
+                "lark-cli", "base", "+field-create",
+                "--base-token", base_token,
+                "--table-id", TABLE_CONFIG,
+                "--json", json.dumps(spec, ensure_ascii=False),
+            ])
+        existing.add(name)
+        results.append({"field_name": name, "status": "dry_run" if dry_run else "created"})
+    return results
 
 
 def list_views(token: str) -> List[Dict[str, Any]]:
@@ -401,8 +463,13 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     views = list_views(token)
     records = safe_list_records(token, TABLE_CONFIG)
     field_names = [item.get("field_name") or item.get("name") for item in fields if item.get("field_name") or item.get("name")]
+    field_results = create_missing_config_fields(APP_TOKEN, field_names, dry_run=not write)
+    effective_field_names = list(field_names)
+    for result in field_results:
+        if result["field_name"] not in effective_field_names:
+            effective_field_names.append(result["field_name"])
     plan = build_cleanup_plan(records)
-    view_definitions = build_view_definitions(field_names)
+    view_definitions = build_view_definitions(effective_field_names)
     backup = build_backup_snapshot(fields=fields, views=views, records=records)
     write_backup(backup_path, backup)
     record_results = apply_record_updates(token, plan.record_updates, dry_run=not write)
@@ -413,6 +480,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
         "backup_path": str(backup_path),
         "summary": plan.summary,
         "record_updates": record_results,
+        "fields": field_results,
         "views": view_results,
         "obsolete_views": obsolete_view_results,
         "business_tables_touched": [],

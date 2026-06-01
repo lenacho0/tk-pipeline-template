@@ -65,6 +65,12 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "视频生成状态",
             "首尾帧视频",
             "历史生成记录JSON",
+            "首帧图画面尺寸",
+            "首帧图画面比例",
+            "尾帧图画面尺寸",
+            "尾帧图画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
         ]:
             self.assertIn(name, field_names)
 
@@ -122,13 +128,48 @@ class FirstLastVideoTableTests(unittest.TestCase):
         for field_name in ["场景拆分操作", "首帧图操作", "尾帧图操作", "视频操作"]:
             self.assertIn(field_name, views["02-场景子任务"])
             self.assertIn(field_name, views["99-排错"])
+        self.assertNotIn("视频AI模型", views["02-场景子任务"])
+        self.assertNotIn("视频AI参数JSON", views["02-场景子任务"])
+        self.assertIn("视频通道", views["02-场景子任务"])
+        self.assertIn("视频生成模型", views["02-场景子任务"])
+        for field_name in [
+            "首帧图画面尺寸",
+            "首帧图画面比例",
+            "尾帧图画面尺寸",
+            "尾帧图画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
+        ]:
+            self.assertIn(field_name, views["02-场景子任务"])
         self.assertIn("首帧图操作", views["03-首帧审核"])
+        self.assertIn("首帧图画面尺寸", views["03-首帧审核"])
+        self.assertIn("首帧图画面比例", views["03-首帧审核"])
         self.assertIn("尾帧图操作", views["04-尾帧审核"])
+        self.assertIn("尾帧图画面尺寸", views["04-尾帧审核"])
+        self.assertIn("尾帧图画面比例", views["04-尾帧审核"])
         self.assertIn("视频操作", views["05-视频结果"])
+        self.assertNotIn("视频AI模型", views["05-视频结果"])
+        self.assertNotIn("视频AI参数JSON", views["05-视频结果"])
+        self.assertIn("视频通道", views["05-视频结果"])
+        self.assertIn("视频生成模型", views["05-视频结果"])
+        self.assertIn("视频画面尺寸", views["05-视频结果"])
+        self.assertIn("视频画面比例", views["05-视频结果"])
         self.assertIn("使用统一AI路由", views["高级AI参数"])
         self.assertIn("拆分AI参数JSON", views["高级AI参数"])
         self.assertIn("首帧图AI模型", views["高级AI参数"])
         self.assertIn("视频AI模型", views["高级AI参数"])
+        self.assertIn("视频AI参数JSON", views["高级AI参数"])
+        self.assertIn("视频通道", views["高级AI参数"])
+        self.assertIn("视频生成模型", views["高级AI参数"])
+        for field_name in [
+            "首帧图画面尺寸",
+            "首帧图画面比例",
+            "尾帧图画面尺寸",
+            "尾帧图画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
+        ]:
+            self.assertIn(field_name, views["高级AI参数"])
         self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
         self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
 

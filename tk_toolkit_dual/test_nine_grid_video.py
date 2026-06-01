@@ -160,6 +160,7 @@ class NineGridVideoTests(unittest.TestCase):
             "方案AI供应商", "方案AI模型", "图片AI供应商", "图片AI模型", "视频AI供应商", "视频AI模型",
             "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源", "参考图",
             "参考图生成状态", "参考图审核状态", "参考图操作",
+            "参考图画面尺寸", "参考图画面比例",
         ]:
             self.assertIn(name, field_names)
         record_types = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["记录类型"]["options"]]
@@ -177,6 +178,25 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("02-方案审核", create_table.TABLE_DEFINITION["views"])
         self.assertIn("03-九宫格生成", create_table.TABLE_DEFINITION["views"])
         self.assertIn("04-视频生成", create_table.TABLE_DEFINITION["views"])
+        reference_view = create_table.TABLE_DEFINITION["views"]["02-参考资产确认"]
+        self.assertIn("参考图画面尺寸", reference_view)
+        self.assertIn("参考图画面比例", reference_view)
+        video_view = create_table.TABLE_DEFINITION["views"]["04-视频生成"]
+        self.assertIn("视频AI模型", video_view)
+        self.assertNotIn("视频AI参数JSON", video_view)
+        advanced_view = create_table.TABLE_DEFINITION["views"]["高级AI参数"]
+        for name in ["方案AI供应商", "参考图AI供应商", "图片AI供应商", "视频AI供应商"]:
+            self.assertIn(name, advanced_view)
+        for name in [
+            "参考图画面尺寸",
+            "参考图画面比例",
+            "图片画面尺寸",
+            "图片画面比例",
+            "视频画面尺寸",
+            "视频画面比例",
+        ]:
+            self.assertIn(name, advanced_view)
+            self.assertIn(name, create_table.TABLE_DEFINITION["views"]["99-排错"])
 
     def test_nine_grid_model_options_are_split_by_capability(self):
         field_by_name = {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}
@@ -221,6 +241,8 @@ class NineGridVideoTests(unittest.TestCase):
             watches["多图九宫格视频生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
         )
+        self.assertEqual(watches["多图九宫格视频生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertNotIn("视频任务ID", watches["多图九宫格视频生成"]["claim_clear_values"])
 
     def test_bootstrap_config_records_are_supplier_neutral_and_do_not_require_api_keys(self):
         wanted = bootstrap_config.build_wanted_config_records()
@@ -294,9 +316,9 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["route"]["capability"], "图片")
         self.assertEqual(result["route"]["payload"]["model"], "gpt-image-2")
-        self.assertEqual(result["route"]["payload"]["size"], "1080x1920")
+        self.assertEqual(result["route"]["payload"]["size"], "720x1280")
 
-    def test_render_nine_grid_image_submits_independent_reference_images(self):
+    def test_render_nine_grid_image_uses_contact_sheet_for_otu_references(self):
         child_fields = {
             "父任务记录ID": "recParent",
             "九宫格图片提示词": "Show the selected spray product in the nine-grid.",
@@ -319,7 +341,7 @@ class NineGridVideoTests(unittest.TestCase):
              patch.object(nine_grid, "safe_list_records", return_value=[]), \
              patch.object(nine_grid, "collect_nine_grid_reference_images", return_value=refs), \
              patch.object(nine_grid, "build_reference_urls", return_value=["https://x.test/product.png", "https://x.test/owner.png", "https://x.test/env.png"]), \
-             patch.object(nine_grid, "build_nine_grid_reference_contact_sheet", side_effect=AssertionError("contact sheet should not be used"), create=True), \
+             patch.object(nine_grid, "build_reference_contact_sheet", return_value="/tmp/contact.png", create=True) as contact_sheet, \
              patch.object(nine_grid, "submit_otu_image_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
              patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}), \
              patch.object(nine_grid, "download_otu_image_result"), \
@@ -331,8 +353,9 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "success")
         kwargs = submitter.call_args.kwargs
-        self.assertNotIn("image_path", kwargs)
-        self.assertEqual(kwargs["reference_image_paths"], ["/tmp/product.png", "/tmp/owner.png", "/tmp/env.png"])
+        contact_sheet.assert_called_once()
+        self.assertEqual(kwargs["image_path"], "/tmp/contact.png")
+        self.assertIsNone(kwargs["reference_image_paths"])
         self.assertEqual(kwargs["metadata"]["reference_roles"], ["product:1", "human:owner", "environment:main_room"])
         self.assertIn("PRODUCT REFERENCE LOCK", submitter.call_args.args[1])
         self.assertNotIn("exact_product_overlay_cells", result)
@@ -426,6 +449,37 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("wear marks", prompt)
         self.assertIn("localized details", prompt)
         self.assertIn("Do not include any people, pets, product bottles", prompt)
+
+    def test_environment_reference_prompt_keeps_natural_light_and_yellow_urine_ring(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "bedroom beside white thick mattress",
+            "purpose": "lock room, furniture, natural light, problem location with yellow urine ring",
+        })
+
+        self.assertIn("natural light", prompt)
+        self.assertIn("yellow urine ring", prompt)
+
+    def test_environment_reference_prompt_keeps_cat_urine_stain_without_pet(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "white mattress area",
+            "purpose": "visible cat urine stain on white mattress and wet patch on bedding",
+        })
+
+        self.assertIn("cat urine stain", prompt)
+        self.assertIn("wet patch", prompt)
+        self.assertIn("Do not include any people, pets, product bottles", prompt)
+
+    def test_environment_reference_prompt_filters_character_product_action(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "living room",
+            "purpose": "woman sprays product beside a dog in the living room",
+        })
+
+        self.assertNotIn("woman sprays product", prompt)
+        self.assertNotIn("beside a dog", prompt)
 
     def test_collect_reference_images_uses_only_approved_parent_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -976,6 +1030,13 @@ class NineGridVideoTests(unittest.TestCase):
              patch.object(nine_grid, "safe_list_records", return_value=[]):
             with self.assertRaisesRegex(ValueError, "产品记录缺少产品图片"):
                 nine_grid.render_nine_grid_video("recBoard", dry_run=True)
+
+    def test_failure_update_for_video_writes_video_status_and_error(self):
+        fields = nine_grid._failure_update_for_action("video", "network broke")
+
+        self.assertEqual(fields["视频生成状态"], "失败")
+        self.assertEqual(fields["视频错误信息"], "network broke")
+        self.assertEqual(fields["错误信息"], "network broke")
 
 
 if __name__ == "__main__":

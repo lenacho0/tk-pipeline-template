@@ -79,6 +79,18 @@ REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("
 VIDEO_CHANNEL_OPTIONS = [opt("AIHubMix"), opt("OTU", "Green")]
 END_FRAME_MODE_OPTIONS = [opt("不启用", "Gray"), opt("启用", "Green")]
 YES_NO_OPTIONS = [opt("否", "Gray"), opt("是", "Green")]
+IMAGE_SIZE_OPTIONS = [
+    opt("720x1280", "Green"),
+    opt("1080x1920", "Blue"),
+    opt("1024x1024", "Gray"),
+    opt("1280x720", "Gray"),
+    opt("1440x2560", "Purple"),
+    opt("2K", "Blue"),
+    opt("4K", "Purple"),
+]
+IMAGE_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Gray"), opt("1:1", "Gray")]
+VIDEO_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1280x720", "Gray")]
+VIDEO_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Gray")]
 
 
 TASK_FIELDS = [
@@ -100,10 +112,16 @@ TASK_FIELDS = [
     text("解析AI参数JSON"),
     select("分镜图AI模型", IMAGE_MODEL_OPTIONS),
     text("分镜图AI参数JSON"),
+    select("分镜图画面尺寸", IMAGE_SIZE_OPTIONS),
+    select("分镜图画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("尾帧图AI模型", IMAGE_MODEL_OPTIONS),
     text("尾帧图AI参数JSON"),
+    select("尾帧图画面尺寸", IMAGE_SIZE_OPTIONS),
+    select("尾帧图画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("视频AI模型", FIRST_LAST_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
+    select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
+    select("视频画面比例", VIDEO_ASPECT_RATIO_OPTIONS),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),
     select("AI任务类型", AI_TASK_TYPE_OPTIONS),
@@ -163,10 +181,16 @@ SHOT_FIELDS = [
     select("使用统一AI路由", YES_NO_OPTIONS),
     select("分镜图AI模型", IMAGE_MODEL_OPTIONS),
     text("分镜图AI参数JSON"),
+    select("分镜图画面尺寸", IMAGE_SIZE_OPTIONS),
+    select("分镜图画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("尾帧图AI模型", IMAGE_MODEL_OPTIONS),
     text("尾帧图AI参数JSON"),
+    select("尾帧图画面尺寸", IMAGE_SIZE_OPTIONS),
+    select("尾帧图画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("视频AI模型", FIRST_LAST_VIDEO_MODEL_OPTIONS),
     text("视频AI参数JSON"),
+    select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
+    select("视频画面比例", VIDEO_ASPECT_RATIO_OPTIONS),
     select("AI供应商", AI_PROVIDER_OPTIONS),
     select("AI能力类型", AI_CAPABILITY_OPTIONS),
     select("AI任务类型", AI_TASK_TYPE_OPTIONS),
@@ -218,8 +242,8 @@ TABLE_DEFINITIONS = [
         "fields": TASK_FIELDS,
         "views": {
             "01-用户入口": ["任务名称", "脚本文档标题", "脚本文档正文", "关联产品记录", "分镜风格", "视频时长", "口播音色ID", "解析AI模型", "解析AI参数JSON", "解析状态", "总分镜数", "批次ID"],
-            "高级AI参数": ["任务名称", "使用统一AI路由", "解析AI模型", "解析AI参数JSON", "分镜图AI模型", "分镜图AI参数JSON", "尾帧图AI模型", "尾帧图AI参数JSON", "视频AI模型", "视频AI参数JSON", "解析状态"],
-            "99-解析排错": ["任务名称", "解析状态", "解析错误信息", "解析结果JSON", "解析后逐镜头脚本", "批次ID", "使用统一AI路由", "解析AI模型", "解析AI参数JSON", "分镜图AI模型", "分镜图AI参数JSON", "尾帧图AI模型", "尾帧图AI参数JSON", "视频AI模型", "视频AI参数JSON", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"],
+            "高级AI参数": ["任务名称", "使用统一AI路由", "解析AI模型", "解析AI参数JSON", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "视频AI模型", "视频AI参数JSON", "视频画面尺寸", "视频画面比例", "解析状态"],
+            "99-解析排错": ["任务名称", "解析状态", "解析错误信息", "解析结果JSON", "解析后逐镜头脚本", "批次ID", "使用统一AI路由", "解析AI模型", "解析AI参数JSON", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "视频AI模型", "视频AI参数JSON", "视频画面尺寸", "视频画面比例", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"],
         },
     },
     {
@@ -236,12 +260,12 @@ TABLE_DEFINITIONS = [
         "name": SHOT_TABLE_NAME,
         "fields": SHOT_FIELDS,
         "views": {
-            "01-分镜图生成": ["任务名称", "关联任务", "分镜序号", "画面描述", "图片提示词", "分镜图AI模型", "分镜图AI参数JSON", "需要产品参考图", "参考资产ID列表", "分镜图生成状态", "分镜图", "分镜图错误信息", "首尾帧视频模式", "尾帧画面描述", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图生成状态", "尾帧图", "尾帧图错误信息"],
+            "01-分镜图生成": ["任务名称", "关联任务", "分镜序号", "画面描述", "图片提示词", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "需要产品参考图", "参考资产ID列表", "分镜图生成状态", "分镜图", "分镜图错误信息", "首尾帧视频模式", "尾帧画面描述", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图生成状态", "尾帧图", "尾帧图错误信息"],
             "02-口播音频": ["任务名称", "关联任务", "分镜序号", "口播文本", "口播音频状态", "口播音频", "口播音频下载链接", "口播音频错误信息"],
-            "03-分镜视频": ["任务名称", "关联任务", "分镜序号", "目标时长秒", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "尾帧图错误信息", "视频提示词", "视频AI模型", "视频AI参数JSON", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间"],
+            "03-分镜视频": ["任务名称", "关联任务", "分镜序号", "目标时长秒", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "尾帧图错误信息", "视频提示词", "视频通道", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频任务ID", "本地视频路径", "分镜视频file_token", "视频生成时间"],
             "04-发布素材": ["任务名称", "关联任务", "分镜序号", "发布视频标题", "发布文案", "发布视频标签", "发布状态"],
-            "高级AI参数": ["任务名称", "关联任务", "分镜序号", "使用统一AI路由", "分镜图AI模型", "分镜图AI参数JSON", "尾帧图AI模型", "尾帧图AI参数JSON", "视频AI模型", "视频AI参数JSON", "视频通道", "视频生成模型", "视频生成状态"],
-            "99-排错": ["任务名称", "关联任务", "分镜序号", "错误信息", "失败分类", "分镜图错误信息", "尾帧图错误信息", "口播音频错误信息", "视频错误信息", "结构化分镜JSON", "文本", "提示词", "尾帧图提示词", "视频生成原始响应JSON", "视频任务ID", "分镜图file_token", "尾帧图file_token", "分镜视频file_token", "口播音频FileToken", "分镜图本地路径", "尾帧图本地路径", "本地视频路径", "口播音频路径", "发布平台", "生成时间", "分镜图生成时间", "尾帧图生成时间", "视频生成时间", "使用统一AI路由", "分镜图AI模型", "分镜图AI参数JSON", "尾帧图AI模型", "尾帧图AI参数JSON", "视频AI模型", "视频AI参数JSON", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"],
+            "高级AI参数": ["任务名称", "关联任务", "分镜序号", "使用统一AI路由", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "视频AI模型", "视频AI参数JSON", "视频通道", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频生成状态"],
+            "99-排错": ["任务名称", "关联任务", "分镜序号", "错误信息", "失败分类", "分镜图错误信息", "尾帧图错误信息", "口播音频错误信息", "视频错误信息", "结构化分镜JSON", "文本", "提示词", "尾帧图提示词", "视频生成原始响应JSON", "视频任务ID", "分镜图file_token", "尾帧图file_token", "分镜视频file_token", "口播音频FileToken", "分镜图本地路径", "尾帧图本地路径", "本地视频路径", "口播音频路径", "发布平台", "生成时间", "分镜图生成时间", "尾帧图生成时间", "视频生成时间", "使用统一AI路由", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "视频AI模型", "视频AI参数JSON", "视频画面尺寸", "视频画面比例", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON"],
         },
     },
 ]

@@ -56,6 +56,7 @@ from tk_nine_grid_video_prompt import (  # noqa: E402
 )
 from tk_shot_script_gen import extract_json_object  # noqa: E402
 from tk_storyboard_video import (  # noqa: E402
+    build_reference_contact_sheet,
     build_reference_urls,
     compact_json,
     filter_existing_fields,
@@ -105,17 +106,26 @@ REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
 ASSET_RECORD_TYPE = "参考资产"
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, problem location, and non-character household props. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image.
+Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, problem location, visible surface problem marks such as yellow urine stains, urine rings, wet patches, or other stains when specified, and non-character household props. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image; only surface evidence such as stains or wet marks may remain.
 """.strip()
-ENVIRONMENT_FORBIDDEN_TERMS = {
-    "person", "people", "human", "woman", "man", "girl", "boy", "lady",
-    "dog", "cat", "pet", "animal", "bottle", "spray", "product", "hand",
-    "人物", "人像", "真人", "女人", "男人", "女孩", "男孩", "狗", "猫",
-    "宠物", "动物", "产品", "喷雾", "瓶", "手",
+ENVIRONMENT_FORBIDDEN_SOURCE_TERMS = {
+    "dog", "cat", "pet", "animal",
+    "狗", "猫", "宠物", "动物",
 }
+ENVIRONMENT_FORBIDDEN_ENTITY_TERMS = {
+    "person", "people", "human", "woman", "man", "girl", "boy", "lady",
+    "bottle", "spray", "product", "hand",
+    "人物", "人像", "真人", "女人", "男人", "女孩", "男孩", "产品", "喷雾", "瓶", "手",
+}
+ENVIRONMENT_FORBIDDEN_TERMS = ENVIRONMENT_FORBIDDEN_ENTITY_TERMS | ENVIRONMENT_FORBIDDEN_SOURCE_TERMS
 ENVIRONMENT_NEGATION_TERMS = {
     "no ", "without", "forbidden", "do not", "don't", "must not",
     "禁止", "不要", "不得", "不能", "无人物", "无人", "不出现", "严禁",
+}
+ENVIRONMENT_PROBLEM_EVIDENCE_TERMS = {
+    "urine", "pee", "stain", "stains", "stained", "ring", "wet patch", "wet patches",
+    "yellow urine", "urine ring", "urine stain", "cat urine", "dog urine",
+    "尿", "尿渍", "尿迹", "尿圈", "黄色尿渍", "黄色尿迹", "黄尿", "污渍", "湿斑", "湿痕",
 }
 SECRET_FALLBACK_STAGES = {
     PLAN_STAGE_NAME: ("故事板图片提示词拆分-Gemini",),
@@ -420,14 +430,29 @@ def _environment_prompt_parts(prompt: str) -> List[str]:
     return parts
 
 
+def _contains_environment_term(text: str, term: str) -> bool:
+    lowered = text.lower()
+    normalized = term.lower()
+    if normalized.strip() != normalized:
+        return normalized in lowered
+    if re.fullmatch(r"[a-z0-9 ]+", normalized):
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", lowered))
+    return normalized in lowered
+
+
+def _environment_term_hits(text: str, terms: Iterable[str]) -> set:
+    return {term for term in terms if _contains_environment_term(text, term)}
+
+
 def sanitize_environment_reference_prompt(prompt: str) -> str:
     source_prompt = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
     cleaned_parts: List[str] = []
     for text in _environment_prompt_parts(source_prompt):
-        lowered = text.lower()
-        has_forbidden = any(term in lowered for term in ENVIRONMENT_FORBIDDEN_TERMS)
-        has_negation = any(term in lowered for term in ENVIRONMENT_NEGATION_TERMS)
-        if has_forbidden and not has_negation:
+        forbidden_hits = _environment_term_hits(text, ENVIRONMENT_FORBIDDEN_TERMS)
+        has_negation = bool(_environment_term_hits(text, ENVIRONMENT_NEGATION_TERMS))
+        has_problem_evidence = bool(_environment_term_hits(text, ENVIRONMENT_PROBLEM_EVIDENCE_TERMS))
+        source_only_forbidden = forbidden_hits and forbidden_hits <= ENVIRONMENT_FORBIDDEN_SOURCE_TERMS
+        if forbidden_hits and not has_negation and not (has_problem_evidence and source_only_forbidden):
             continue
         cleaned_parts.append(text)
     cleaned = "\n".join(cleaned_parts).strip()
@@ -574,6 +599,8 @@ def build_reference_asset_records(
             "参考图AI供应商": _field_with_default(parent_fields, "参考图AI供应商", DEFAULT_IMAGE_PROVIDER),
             "参考图AI模型": _field_with_default(parent_fields, "参考图AI模型", DEFAULT_IMAGE_MODEL),
             "参考图AI参数JSON": extract_text(parent_fields.get("参考图AI参数JSON")).strip(),
+            "参考图画面尺寸": _field_with_default(parent_fields, "参考图画面尺寸", DEFAULT_IMAGE_SIZE),
+            "参考图画面比例": _field_with_default(parent_fields, "参考图画面比例", DEFAULT_ASPECT_RATIO),
             "参考图生成状态": generation_status,
             "参考图审核状态": "待确认",
             "参考图操作": "不触发",
@@ -1133,6 +1160,8 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         "aspect_ratio": DEFAULT_ASPECT_RATIO,
     }
     params.update(_parse_params(extract_text(fields.get("参考图AI参数JSON")).strip()))
+    params["size"] = extract_text(fields.get("参考图画面尺寸")).strip() or params.get("size") or DEFAULT_IMAGE_SIZE
+    params["aspect_ratio"] = extract_text(fields.get("参考图画面比例")).strip() or params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
     route = _route_for_prefixed_fields(
         fields,
         "参考图",
@@ -1234,11 +1263,12 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if not prompt:
         raise ValueError("九宫格图片提示词为空")
     _, cfg = get_config_record(IMAGE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
+    json_params = _parse_params(extract_text(fields.get("图片AI参数JSON")).strip())
     params = {
-        "size": _field_with_default(fields, "图片画面尺寸", DEFAULT_IMAGE_SIZE),
-        "aspect_ratio": _field_with_default(fields, "图片画面比例", DEFAULT_ASPECT_RATIO),
+        **json_params,
+        "size": extract_text(fields.get("图片画面尺寸")).strip() or json_params.get("size") or cfg.get("size") or DEFAULT_IMAGE_SIZE,
+        "aspect_ratio": extract_text(fields.get("图片画面比例")).strip() or json_params.get("aspect_ratio") or cfg.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
     }
-    params.update(_parse_params(extract_text(fields.get("图片AI参数JSON")).strip()))
     route = _route_for_prefixed_fields(
         fields,
         "图片",
@@ -1274,6 +1304,11 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     prompt = "\n\n".join(part for part in [NINE_GRID_IMAGE_SYSTEM_PROMPT, product_lock_prompt, prompt] if part).strip()
     summary["route"] = ai_routing.build_media_request_summary(route, prompt, reference_count=len(refs))
     out_path = str(work_dir / f"{record_id}_nine_grid.png")
+    primary_reference_path = ""
+    submitted_reference_image_paths: Optional[List[str]] = reference_image_paths
+    if route.provider == "OTU" and refs:
+        primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
+        submitted_reference_image_paths = None
 
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         "九宫格图": [],
@@ -1294,7 +1329,8 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         prompt,
         out_path,
         input_mode="image-to-image",
-        reference_image_paths=reference_image_paths,
+        image_path=primary_reference_path,
+        reference_image_paths=submitted_reference_image_paths,
         metadata={
             "urls": reference_urls,
             "reference_roles": [ref["role"] for ref in refs],
@@ -1351,12 +1387,13 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         raise ValueError("Board分段缺少父任务记录ID")
     parent_fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, parent_record_id)
     _, cfg = get_config_record(VIDEO_STAGE_NAME, default_model="omni_flash-10s", default_api_base="https://otuapi.com", default_size=DEFAULT_VIDEO_SIZE)
+    json_params = _parse_params(extract_text(fields.get("视频AI参数JSON")).strip())
     params = {
-        "size": _field_with_default(fields, "视频画面尺寸", DEFAULT_VIDEO_SIZE),
-        "aspect_ratio": _field_with_default(fields, "视频画面比例", DEFAULT_ASPECT_RATIO),
-        "seconds": "10",
+        **json_params,
+        "size": extract_text(fields.get("视频画面尺寸")).strip() or json_params.get("size") or cfg.get("size") or DEFAULT_VIDEO_SIZE,
+        "aspect_ratio": extract_text(fields.get("视频画面比例")).strip() or json_params.get("aspect_ratio") or cfg.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+        "seconds": json_params.get("seconds") or "10",
     }
-    params.update(_parse_params(extract_text(fields.get("视频AI参数JSON")).strip()))
     route = _route_for_prefixed_fields(
         fields,
         "视频",
@@ -1491,6 +1528,18 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     return summary
 
 
+def _failure_update_for_action(action: str, message: str) -> Dict[str, Any]:
+    if action == "plan":
+        return {"方案生成状态": "失败", "错误信息": message[:1000]}
+    if action == "reference":
+        return {"参考图生成状态": "失败", "参考图错误信息": message[:1000], "错误信息": message[:1000]}
+    if action == "image":
+        return {"图片生成状态": "失败", "图片错误信息": message[:1000], "错误信息": message[:1000]}
+    if action == "video":
+        return {"视频生成状态": "失败", "视频错误信息": message[:1000], "错误信息": message[:1000]}
+    return {"错误信息": message[:1000]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="多图九宫格视频生成")
     parser.add_argument("action", choices=["plan", "reference", "image", "video"])
@@ -1517,6 +1566,21 @@ def main() -> int:
             "video": "nine_grid_video",
         }[args.action]
         payload = build_error_payload(exc, stage=stage)
+        if not args.dry_run:
+            try:
+                token = get_feishu_token()
+                safe_update_record(
+                    token,
+                    TABLE_NINE_GRID_VIDEO,
+                    args.record_id,
+                    filter_existing_fields(
+                        token,
+                        TABLE_NINE_GRID_VIDEO,
+                        _failure_update_for_action(args.action, payload["message"]),
+                    ),
+                )
+            except Exception:
+                pass
         print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
         return 1
 
