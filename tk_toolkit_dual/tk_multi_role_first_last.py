@@ -159,6 +159,10 @@ DEFAULT_PARSE_PROMPT = """
 
 参考资产规则：
 - human / pet / object 资产只生成该资产本身，不要混入其他角色、产品或完整剧情。
+- human 资产必须生成 single person 的真实人物参考图：one angle, front-facing, full face visible；人物必须正对镜头，完整露出全脸，双眼、鼻子、嘴巴清晰可见。
+- human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄、自然光、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
+- human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
+- human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
 - environment 资产必须是空场景底图，只能描述房间、家具、材质、光线、机位、可行动空间和生活道具。
 - environment 资产严禁出现任何人物、宠物、产品包装、喷雾瓶、手、身体局部、倒影、海报/屏幕中的人物或动物。
 - 如果脚本文档要求“场景图不要出现人物/产品/宠物”，必须完全遵守；不要把角色站位规划写进 environment prompt。

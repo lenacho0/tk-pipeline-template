@@ -130,6 +130,22 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in record_type_options], ["母任务", "参考资产", "关键帧", "视频片段"])
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "multi_role_first_last")
 
+    def test_default_parse_prompt_constrains_human_reference_images_to_front_facing_ugc(self):
+        prompt = multi_role.DEFAULT_PARSE_PROMPT
+
+        for phrase in [
+            "single person",
+            "front-facing",
+            "full face visible",
+            "no side profile",
+            "one angle",
+            "no multi-view",
+            "UGC smartphone",
+            "natural skin texture",
+            "not studio",
+        ]:
+            self.assertIn(phrase, prompt)
+
     def test_normalize_plan_supports_dynamic_role_counts_and_per_frame_references(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=5))
         self.assertEqual(len(payload["roles"]), 5)
@@ -258,6 +274,8 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(len(by_type["参考资产"]), 5)
         self.assertEqual(len(by_type["关键帧"]), 3)
         self.assertEqual(len(by_type["视频片段"]), 2)
+        role_asset = next(row for row in by_type["参考资产"] if row["资产ID"] == "role_1")
+        self.assertEqual(role_asset["参考提示词"], "visual 1")
         first = next(row for row in by_type["关键帧"] if row["关键帧类型"] == "S01_FIRST")
         self.assertEqual(first["需要产品参考图"], "否")
         self.assertEqual(first["参考资产ID列表"], "role_1,living_room")
