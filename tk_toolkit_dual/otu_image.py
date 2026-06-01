@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from common import extract_text
+from media_specs import adapt_image_metadata
 
 DEFAULT_OTU_API_BASE = "https://otuapi.com"
 DEFAULT_OTU_IMAGE_MODEL = "gpt-image-2"
@@ -111,12 +112,16 @@ def submit_otu_image_task(
     reference_image_paths: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     size: str = DEFAULT_OTU_IMAGE_SIZE,
+    aspect_ratio: str = "",
 ) -> Tuple[str, Dict[str, Any]]:
     url = f"{(config.get('api_base') or DEFAULT_OTU_API_BASE).rstrip('/')}/v1/videos"
     headers = {"Authorization": f"Bearer {config['api_key']}"}
-    submit_metadata = {"aspectRatio": DEFAULT_ASPECT_RATIO}
-    if metadata:
-        submit_metadata.update(metadata)
+    submit_metadata = adapt_image_metadata(
+        metadata,
+        size=size,
+        aspect_ratio=aspect_ratio,
+        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+    )
     payload: Dict[str, Any] = {
         "model": config.get("model") or DEFAULT_OTU_IMAGE_MODEL,
         "prompt": prompt,

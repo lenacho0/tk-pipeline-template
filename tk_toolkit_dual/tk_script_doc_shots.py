@@ -741,9 +741,18 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     model_name = normalize_image_model_choice(cfg["model"] or DEFAULT_OTU_IMAGE_MODEL)
     api_key = cfg["api_key"]
     api_base = cfg["api_base"] or DEFAULT_OTU_API_BASE
+    size = extract_text(cfg.get("size")).strip() or DEFAULT_OTU_IMAGE_SIZE
+    aspect_ratio = extract_text(cfg.get("aspect_ratio")).strip() or "9:16"
     if not api_key:
         raise ValueError("分镜图生成配置缺少 API Key")
-    summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(full_prompt), "model": model_name}
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "prompt_chars": len(full_prompt),
+        "model": model_name,
+        "size": size,
+        "aspect_ratio": aspect_ratio,
+    }
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -759,8 +768,9 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         {"api_key": api_key, "api_base": api_base, "model": model_name},
         full_prompt,
         input_mode="text-to-image",
-        metadata={"urls": []},
-        size=DEFAULT_OTU_IMAGE_SIZE,
+        metadata={"urls": [], "aspectRatio": aspect_ratio, "aspect_ratio": aspect_ratio},
+        size=size,
+        aspect_ratio=aspect_ratio,
     )
     result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": api_key, "api_base": api_base, "model": model_name}, submit_task_id)
     result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)

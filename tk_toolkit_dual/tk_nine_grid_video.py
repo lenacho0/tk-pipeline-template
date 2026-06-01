@@ -384,8 +384,23 @@ def _field_with_default(fields: Dict[str, Any], name: str, default: str) -> str:
     return extract_text(fields.get(name)).strip() or default
 
 
+def _usable_model_choice(value: Any) -> str:
+    raw = extract_text(value).strip()
+    normalized = raw.lower().replace("_", "-").replace(" ", "")
+    if normalized in {"", "默认", "默认(配置表)", "默认（配置表）", "配置表默认", "default"}:
+        return ""
+    return raw
+
+
 def _prefixed_route_fields(fields: Dict[str, Any], prefix: str, *, default_provider: str, default_model: str) -> Dict[str, str]:
-    model = _field_with_default(fields, f"{prefix}AI模型", default_model)
+    if prefix == "视频":
+        model = (
+            _usable_model_choice(fields.get("视频生成模型"))
+            or _usable_model_choice(fields.get("视频AI模型"))
+            or default_model
+        )
+    else:
+        model = _field_with_default(fields, f"{prefix}AI模型", default_model)
     model_provider = ai_routing.parse_model_display(model)["provider"]
     return {
         "provider": model_provider or _field_with_default(fields, f"{prefix}AI供应商", default_provider),
@@ -650,6 +665,11 @@ def build_child_board_records(
             "视频提示词": extract_text(board.get("video_prompt")).strip(),
             "视频AI供应商": _field_with_default(parent_fields, "视频AI供应商", DEFAULT_VIDEO_PROVIDER),
             "视频AI模型": _field_with_default(parent_fields, "视频AI模型", DEFAULT_VIDEO_MODEL),
+            "视频生成模型": (
+                _usable_model_choice(parent_fields.get("视频生成模型"))
+                or _usable_model_choice(parent_fields.get("视频AI模型"))
+                or DEFAULT_VIDEO_MODEL
+            ),
             "视频AI参数JSON": extract_text(parent_fields.get("视频AI参数JSON")).strip(),
             "视频画面尺寸": DEFAULT_VIDEO_SIZE,
             "视频画面比例": DEFAULT_ASPECT_RATIO,
@@ -1204,8 +1224,14 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
             {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
             prompt,
             input_mode="text-to-image",
-            metadata={"urls": [], "reference_roles": []},
+            metadata={
+                "urls": [],
+                "reference_roles": [],
+                "aspectRatio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+                "aspect_ratio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+            },
             size=params.get("size") or DEFAULT_IMAGE_SIZE,
+            aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
         )
         if task_id:
             safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {

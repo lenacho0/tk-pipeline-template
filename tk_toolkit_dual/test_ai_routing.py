@@ -251,6 +251,13 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["payload"]["model"], "gpt-image-2")
         self.assertEqual(summary["payload"]["size"], "1024x1024")
         self.assertEqual(summary["payload"]["metadata"]["aspectRatio"], "9:16")
+        self.assertEqual(summary["payload"]["metadata"]["aspect_ratio"], "9:16")
+        self.assertEqual(summary["payload"]["metadata"]["size"], "1024x1024")
+        self.assertEqual(summary["media_spec"]["size"], "1024x1024")
+        self.assertEqual(summary["media_spec"]["aspect_ratio"], "9:16")
+        self.assertEqual(summary["adapter_payload_summary"]["size"], "payload.size")
+        self.assertEqual(summary["adapter_payload_summary"]["aspect_ratio"], "payload.metadata.aspectRatio")
+        self.assertEqual(summary["ignored_fields"], [])
         self.assertNotIn("sk-img", str(summary))
 
     def test_aihubmix_video_request_summary_uses_videos_endpoint(self):
@@ -268,6 +275,12 @@ class UnifiedAiRoutingTests(unittest.TestCase):
 
         self.assertEqual(summary["endpoint"], "https://aihubmix.com/v1/videos")
         self.assertEqual(summary["payload"]["model"], "veo-3.1-fast-generate-preview")
+        self.assertEqual(summary["media_spec"]["size"], "720p")
+        self.assertEqual(summary["media_spec"]["aspect_ratio"], "9:16")
+        self.assertEqual(summary["media_spec"]["seconds"], "8")
+        self.assertEqual(summary["adapter_payload_summary"]["size"], "payload.size")
+        self.assertEqual(summary["adapter_payload_summary"]["aspect_ratio"], "payload.aspect_ratio")
+        self.assertEqual(summary["adapter_payload_summary"]["seconds"], "payload.seconds")
         self.assertEqual(summary["payload"]["seconds"], "8")
         self.assertEqual(summary["reference_count"], 1)
 

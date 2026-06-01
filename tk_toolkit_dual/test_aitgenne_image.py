@@ -31,6 +31,8 @@ class AitgenneImageTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["json"]["prompt"], "Draw a clean product reference.")
         self.assertEqual(post.call_args.kwargs["json"]["size"], "720x1280")
         self.assertEqual(post.call_args.kwargs["json"]["metadata"]["aspectRatio"], "9:16")
+        self.assertEqual(post.call_args.kwargs["json"]["metadata"]["aspect_ratio"], "9:16")
+        self.assertEqual(post.call_args.kwargs["json"]["metadata"]["size"], "720x1280")
 
     def test_submit_image_generation_with_references_posts_edit_multipart_images(self):
         response = Mock(status_code=200)
@@ -48,9 +50,9 @@ class AitgenneImageTests(unittest.TestCase):
                 "Render the exact product and same human.",
                 input_mode="image-to-image",
                 reference_image_paths=[str(product), str(human)],
-                metadata={"reference_roles": ["product:1", "human:owner"], "aspectRatio": "9:16"},
-                size="720x1280",
-                aspect_ratio="9:16",
+                metadata={"reference_roles": ["product:1", "human:owner"]},
+                size="1280x720",
+                aspect_ratio="16:9",
                 post=post,
             )
 
@@ -61,8 +63,11 @@ class AitgenneImageTests(unittest.TestCase):
         self.assertNotIn("Content-Type", kwargs["headers"])
         self.assertEqual(kwargs["data"]["model"], "gpt-image-2")
         self.assertEqual(kwargs["data"]["prompt"], "Render the exact product and same human.")
-        self.assertEqual(kwargs["data"]["size"], "720x1280")
+        self.assertEqual(kwargs["data"]["size"], "1280x720")
         self.assertIn('"reference_roles": ["product:1", "human:owner"]', kwargs["data"]["metadata"])
+        self.assertIn('"aspectRatio": "16:9"', kwargs["data"]["metadata"])
+        self.assertIn('"aspect_ratio": "16:9"', kwargs["data"]["metadata"])
+        self.assertIn('"size": "1280x720"', kwargs["data"]["metadata"])
         self.assertEqual([item[0] for item in kwargs["files"]], ["image[]", "image[]"])
         self.assertEqual([item[1][0] for item in kwargs["files"]], ["product.png", "human.png"])
 

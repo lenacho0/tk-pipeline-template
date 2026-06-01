@@ -608,11 +608,11 @@ class ShotVideoTest(unittest.TestCase):
                     get_record_fn=lambda token, table, rid: fields,
                 )
 
-    def test_video_ai_model_is_ignored_when_unified_route_is_not_enabled(self):
+    def test_video_ai_model_is_legacy_fallback_when_video_generation_model_is_empty(self):
         fields = sample_fields()
         fields["视频通道"] = "AIHubMix"
         fields["视频生成模型"] = ""
-        fields["视频AI模型"] = "OTU / veo_3_1-fast-fl"
+        fields["视频AI模型"] = "AIHubMix / veo-3.1-fast-generate-preview"
         with patch("tk_shot_video.get_model_config") as cfg, \
              patch("tk_shot_video.ensure_work_dir") as work, \
              patch("tk_shot_video.resolve_reference_image") as ref:
@@ -636,6 +636,7 @@ class ShotVideoTest(unittest.TestCase):
         self.assertFalse(result["unified_ai_route_enabled"])
         self.assertEqual(result["video_channel"], "AIHubMix")
         self.assertEqual(result["model"], "veo-3.1-fast-generate-preview")
+        self.assertEqual(result["model_source"], "视频AI模型")
 
     def test_video_ai_model_is_blocked_by_global_dry_run_switch(self):
         fields = sample_fields()

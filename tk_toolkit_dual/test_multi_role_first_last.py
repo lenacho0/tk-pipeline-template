@@ -194,8 +194,8 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertNotIn("视频AI参数JSON", views["04-视频片段结果"])
         self.assertLess(views["04-视频片段结果"].index("视频版本"), views["04-视频片段结果"].index("视频通道"))
         self.assertLess(views["04-视频片段结果"].index("视频生成模型"), views["04-视频片段结果"].index("视频生成状态"))
-        self.assertIn("视频AI模型", views["高级AI参数"])
-        self.assertIn("视频AI参数JSON", views["高级AI参数"])
+        self.assertNotIn("视频AI模型", views["高级AI参数"])
+        self.assertNotIn("视频AI参数JSON", views["高级AI参数"])
         for name in [
             "参考图画面尺寸",
             "参考图画面比例",
@@ -209,6 +209,9 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertIn("视频生成模型", views["高级AI参数"])
         self.assertIn("视频任务ID", views["98-失败处理"])
         self.assertIn("历史生成记录JSON", views["99-排错"])
+        self.assertIn("视频生成模型", views["99-排错"])
+        self.assertIn("视频AI模型", views["99-排错"])
+        self.assertIn("视频AI参数JSON", views["99-排错"])
         self.assertEqual(views["99-全字段系统视图"], [field["name"] for field in create_table.MULTI_ROLE_FIRST_LAST_FIELDS])
 
     def test_multi_role_view_filters_match_record_types(self):

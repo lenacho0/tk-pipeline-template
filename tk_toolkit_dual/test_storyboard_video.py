@@ -1005,14 +1005,23 @@ Omni Video Prompt:
         self.assertIn("故事板图片模型", image_view)
         self.assertIn("故事板图片画面尺寸", image_view)
         self.assertIn("故事板图片画面比例", image_view)
+        self.assertNotIn("故事板图片AI模型", image_view)
+        self.assertNotIn("故事板图片AI参数JSON", image_view)
         self.assertLess(image_view.index("故事板图片提示词"), image_view.index("故事板图片模型"))
         self.assertLess(image_view.index("故事板图片画面比例"), image_view.index("故事板图片生成状态"))
         omni_view = create_table.TABLE_DEFINITION["views"]["03-Omni视频"]
         self.assertIn("Omni模型", omni_view)
         self.assertIn("Omni画面尺寸", omni_view)
         self.assertIn("Omni画面比例", omni_view)
+        self.assertNotIn("视频AI模型", omni_view)
+        self.assertNotIn("视频AI参数JSON", omni_view)
         self.assertLess(omni_view.index("视频提示词"), omni_view.index("Omni模型"))
         self.assertLess(omni_view.index("Omni画面比例"), omni_view.index("视频生成状态"))
+        advanced_view = create_table.TABLE_DEFINITION["views"]["高级AI参数"]
+        self.assertIn("故事板图片模型", advanced_view)
+        self.assertIn("Omni模型", advanced_view)
+        self.assertNotIn("故事板图片AI模型", advanced_view)
+        self.assertNotIn("视频AI模型", advanced_view)
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "storyboard_video")
         self.assertEqual(create_table.TABLE_DEFINITION["views"]["01-母任务入口"], [
             "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分AI模型", "拆分AI参数JSON", "拆分状态", "错误信息",

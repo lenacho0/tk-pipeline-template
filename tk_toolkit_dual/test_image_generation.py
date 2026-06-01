@@ -11,6 +11,45 @@ import image_generation
 
 
 class ImageGenerationTests(unittest.TestCase):
+    def test_run_image_generation_adapts_otu_metadata_from_media_spec(self):
+        submitter = Mock(return_value=("task_1", {"id": "task_1"}))
+        poller = Mock(return_value={"result_url": "https://x.test/out.png"})
+        downloader = Mock()
+        route = ai_routing.AiRoute(
+            provider="OTU",
+            capability="图片",
+            task_type="图生图/参考图重绘",
+            model="OTU / gpt-image-2",
+            call_type="OTU /v1/videos",
+            api_base="https://otuapi.com",
+            api_key="sk-test",
+            params={"size": "1280x720", "aspect_ratio": "16:9"},
+        )
+
+        result = image_generation.run_image_generation(
+            route,
+            "Render from reference.",
+            "/tmp/out.png",
+            input_mode="image-to-image",
+            metadata={"reference_roles": ["product:1"]},
+            size="1280x720",
+            aspect_ratio="16:9",
+            otu_submitter=submitter,
+            otu_poller=poller,
+            otu_downloader=downloader,
+        )
+
+        self.assertEqual(result.provider, "OTU")
+        self.assertEqual(result.request_summary["size"], "1280x720")
+        self.assertEqual(result.request_summary["aspect_ratio"], "16:9")
+        self.assertEqual(result.request_summary["adapter_payload_summary"]["aspect_ratio"], "payload.metadata.aspectRatio")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["reference_roles"], ["product:1"])
+
     def test_run_image_generation_uses_aitgenne_image_to_image(self):
         submitter = Mock(return_value={"data": [{"url": "https://x.test/out.png"}]})
         saver = Mock()
@@ -44,11 +83,16 @@ class ImageGenerationTests(unittest.TestCase):
 
         self.assertEqual(result.provider, "Aitgenne")
         self.assertEqual(result.task_id, "")
+        self.assertEqual(result.request_summary["size"], "720x1280")
+        self.assertEqual(result.request_summary["aspect_ratio"], "9:16")
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2")
         self.assertEqual(submitter.call_args.args[1], "Render from reference.")
         self.assertEqual(submitter.call_args.kwargs["input_mode"], "image-to-image")
         self.assertEqual(submitter.call_args.kwargs["image_path"], str(ref_path))
-        self.assertEqual(submitter.call_args.kwargs["metadata"], {"reference_roles": ["product:1"]})
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["reference_roles"], ["product:1"])
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "9:16")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "9:16")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "720x1280")
         saver.assert_called_once()
 
 

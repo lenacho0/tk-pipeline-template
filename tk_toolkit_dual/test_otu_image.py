@@ -47,8 +47,9 @@ class OtuImagePollingTests(unittest.TestCase):
                     "prompt",
                     input_mode="image-to-image",
                     reference_image_paths=[str(first), str(second)],
-                    metadata={"reference_roles": ["product:1", "human:owner"], "aspectRatio": "9:16"},
-                    size="720x1280",
+                    metadata={"reference_roles": ["product:1", "human:owner"]},
+                    size="1280x720",
+                    aspect_ratio="16:9",
                 )
 
         self.assertEqual(task_id, "task_multi")
@@ -59,8 +60,33 @@ class OtuImagePollingTests(unittest.TestCase):
         self.assertEqual(kwargs["data"]["model"], "gpt-image-2")
         self.assertEqual(kwargs["data"]["input_mode"], "image-to-image")
         self.assertIn('"reference_roles": ["product:1", "human:owner"]', kwargs["data"]["metadata"])
+        self.assertIn('"aspectRatio": "16:9"', kwargs["data"]["metadata"])
+        self.assertIn('"aspect_ratio": "16:9"', kwargs["data"]["metadata"])
+        self.assertIn('"size": "1280x720"', kwargs["data"]["metadata"])
+        self.assertEqual(kwargs["data"]["size"], "1280x720")
         self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
         self.assertEqual([item[1][0] for item in kwargs["files"]], ["product.png", "human.png"])
+
+    def test_submit_json_image_payload_includes_aspect_ratio_metadata_aliases(self):
+        submitted = Mock(status_code=200)
+        submitted.json.return_value = {"id": "task_json"}
+
+        with patch.object(otu_image.requests, "post", return_value=submitted) as poster:
+            task_id, body = otu_image.submit_otu_image_task(
+                {"api_key": "test-key", "api_base": "https://otu.example", "model": "gpt-image-2"},
+                "prompt",
+                input_mode="text-to-image",
+                size="1024x1024",
+                aspect_ratio="1:1",
+            )
+
+        self.assertEqual(task_id, "task_json")
+        self.assertEqual(body, {"id": "task_json"})
+        payload = poster.call_args.kwargs["json"]
+        self.assertEqual(payload["size"], "1024x1024")
+        self.assertEqual(payload["metadata"]["aspectRatio"], "1:1")
+        self.assertEqual(payload["metadata"]["aspect_ratio"], "1:1")
+        self.assertEqual(payload["metadata"]["size"], "1024x1024")
 
     def test_submit_reference_image_paths_does_not_fall_back_to_weak_url_refs(self):
         rejected = Mock(status_code=400)

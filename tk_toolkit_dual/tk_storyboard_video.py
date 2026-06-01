@@ -63,6 +63,7 @@ from tk_storyboard_video_prompt import (  # noqa: E402
     STORYBOARD_OMNI_VIDEO_PROMPT,
 )
 import ai_routing  # noqa: E402
+from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
 
 
 SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
@@ -735,7 +736,7 @@ def maybe_unified_media_summary(
 ) -> Optional[Dict[str, Any]]:
     if not ai_routing.record_wants_unified_route(fields):
         return None
-    config_records = safe_list_records(token, TABLE_CONFIG)
+    config_records = config_records_for_image_slot(fields, "故事板图片", lambda: safe_list_records(token, TABLE_CONFIG))
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
     route = ai_routing.route_from_slot(fields, slot_name, {
@@ -943,11 +944,22 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         default_api_base=DEFAULT_OTU_API_BASE,
         default_size=DEFAULT_STORYBOARD_IMAGE_SIZE,
     )
+    image_params = {"size": size, "aspect_ratio": aspect_ratio}
+    config_records = config_records_for_image_slot(fields, "故事板图片", lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        fields,
+        "故事板图片",
+        {**cfg, "model": model_name},
+        task_type="图生图/参考图重绘",
+        params=image_params,
+        config_records=config_records,
+    )
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "reference_count": len(refs),
         "model": model_name,
+        "model_source": "故事板图片模型",
         "size": size,
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
@@ -961,7 +973,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         model=model_name,
         slot_name="故事板图片",
         prompt=prompt,
-        params={"size": size, "aspect_ratio": aspect_ratio},
+        params=image_params,
         reference_count=len(refs),
     )
     if route_summary:
@@ -969,7 +981,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+    if route_summary and ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
@@ -982,9 +994,10 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         "故事板图片错误信息": "",
     }))
     out_path = str(work_dir / f"{record_id}_storyboard.png")
-    submit_task_id, submit_body = submit_otu_image_task(
-        {"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name},
+    image_result = run_image_generation(
+        route,
         prompt,
+        out_path,
         input_mode="image-to-image" if refs else "text-to-image",
         image_path=primary_reference_path if refs else "",
         metadata={
@@ -994,22 +1007,25 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
             "aspect_ratio": aspect_ratio,
         },
         size=size,
+        aspect_ratio=aspect_ratio,
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
     )
+    submit_task_id = image_result.task_id
+    submit_body = image_result.submit_body
     if submit_task_id:
         safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
             "故事板图片任务ID": submit_task_id,
-            "故事板图片错误信息": f"已提交 OTU 故事板图片任务，正在轮询。task_id={submit_task_id}",
+            "故事板图片错误信息": f"已提交 {route.provider} 故事板图片任务，正在轮询。task_id={submit_task_id}",
         }))
-    result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": cfg["api_key"], "api_base": cfg.get("api_base") or DEFAULT_OTU_API_BASE, "model": model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise RuntimeError("OTU 故事板图片任务完成但未返回图片地址")
-    download_otu_image_result(result_url, out_path)
+    result = image_result.result_body
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_storyboard.png"), max_attempts=3, label="upload storyboard image")
     ensure_record_current_generation(token, record_id, "故事板图片生成状态", "生成中", "故事板图片任务ID", submit_task_id)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         "故事板图": [{"file_token": file_token}],
         "故事板图片任务ID": submit_task_id,
+        "故事板图片原始响应JSON": compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}, 10000),
         "故事板图片生成状态": "成功",
         "故事板图片生成时间": int(time.time() * 1000),
         "故事板图片错误信息": "",
@@ -1177,6 +1193,7 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "dry_run": dry_run,
         "reference_count": len(refs),
         "model": cfg["model"],
+        "model_source": "Omni模型",
         "size": size,
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),

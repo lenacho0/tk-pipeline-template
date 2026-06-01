@@ -128,6 +128,8 @@ class FirstLastVideoTableTests(unittest.TestCase):
         for field_name in ["场景拆分操作", "首帧图操作", "尾帧图操作", "视频操作"]:
             self.assertIn(field_name, views["02-场景子任务"])
             self.assertIn(field_name, views["99-排错"])
+        self.assertIn("视频生成模型", views["99-排错"])
+        self.assertIn("视频AI模型", views["99-排错"])
         self.assertNotIn("视频AI模型", views["02-场景子任务"])
         self.assertNotIn("视频AI参数JSON", views["02-场景子任务"])
         self.assertIn("视频通道", views["02-场景子任务"])
@@ -157,8 +159,8 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertIn("使用统一AI路由", views["高级AI参数"])
         self.assertIn("拆分AI参数JSON", views["高级AI参数"])
         self.assertIn("首帧图AI模型", views["高级AI参数"])
-        self.assertIn("视频AI模型", views["高级AI参数"])
-        self.assertIn("视频AI参数JSON", views["高级AI参数"])
+        self.assertNotIn("视频AI模型", views["高级AI参数"])
+        self.assertNotIn("视频AI参数JSON", views["高级AI参数"])
         self.assertIn("视频通道", views["高级AI参数"])
         self.assertIn("视频生成模型", views["高级AI参数"])
         for field_name in [
@@ -1105,6 +1107,50 @@ video prompt exactly
         self.assertIn("恢复轮询", updates[0]["视频错误信息"])
         self.assertEqual(updates[-1]["视频生成状态"], "成功")
         self.assertEqual(updates[-1]["首尾帧视频file_token"], "ft_video")
+
+    def test_render_video_uses_record_video_generation_model_for_new_submit(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "首尾帧生视频提示词": "video prompt",
+            "首帧图file_token": "ft_first",
+            "尾帧图file_token": "ft_last",
+            "视频生成状态": "待生成",
+            "视频任务ID": "",
+            "视频版本": 2,
+            "视频生成模型": "OTU / veo_3_1-fl",
+            "目标时长秒": 6,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(first_last, "get_stage_config", return_value=("rec_cfg", {
+                 "api_key": "sk",
+                 "api_base": "https://otuapi.com",
+                 "model": "veo_3_1-fast-fl",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             })), \
+             patch.object(first_last, "get_table_field_types", return_value={"首尾帧视频URL": 1}), \
+             patch.object(first_last, "submit_first_last_video_task", return_value=("task_new", {"id": "task_new"})) as submitter, \
+             patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(first_last, "poll_otu_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}), \
+             patch.object(first_last, "download_video", return_value="/tmp/video.mp4"), \
+             patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(first_last, "ensure_current_generation"), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.render_video("rec1")
+
+        submitted_cfg = submitter.call_args.args[0]
+        self.assertEqual(submitted_cfg["model"], "veo_3_1-fl")
+        self.assertEqual(result["model"], "veo_3_1-fl")
+        self.assertEqual(result["model_source"], "视频生成模型")
+        self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
 
 
 if __name__ == "__main__":

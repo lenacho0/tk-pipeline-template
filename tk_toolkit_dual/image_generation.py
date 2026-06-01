@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import ai_routing
@@ -10,6 +10,7 @@ from aitgenne_image import (
     save_aitgenne_image_result,
     submit_aitgenne_image_generation,
 )
+from media_specs import adapt_image_metadata
 from otu_image import (
     DEFAULT_OTU_API_BASE,
     DEFAULT_OTU_IMAGE_MODEL,
@@ -29,6 +30,34 @@ class ImageGenerationResult:
     submit_body: Dict[str, Any]
     result_body: Dict[str, Any]
     output_path: str
+    request_summary: Dict[str, Any] = field(default_factory=dict)
+
+
+def _request_summary(
+    *,
+    provider: str,
+    model: str,
+    size: str,
+    aspect_ratio: str,
+    input_mode: str,
+    reference_count: int,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return {
+        "provider": provider,
+        "model": model,
+        "size": size,
+        "aspect_ratio": aspect_ratio,
+        "input_mode": input_mode,
+        "reference_count": int(reference_count or 0),
+        "metadata_keys": sorted((metadata or {}).keys()),
+        "adapter_payload_summary": {
+            "size": "payload.size",
+            "aspect_ratio": "payload.metadata.aspectRatio",
+            "aspect_ratio_alias": "payload.metadata.aspect_ratio",
+        },
+        "ignored_fields": [],
+    }
 
 
 def resolve_image_route_from_slot(
@@ -106,15 +135,37 @@ def run_image_generation(
     model_name = image_model_name(route)
     if route.provider == "OTU":
         cfg = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
+        request_summary: Dict[str, Any]
         if existing_task_id:
             task_id = existing_task_id
             submit_body: Dict[str, Any] = {"existing_task_id": task_id, "resumed": True}
+            request_summary = _request_summary(
+                provider=route.provider,
+                model=model_name,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                input_mode=input_mode,
+                reference_count=len(reference_image_paths or []),
+                metadata=metadata,
+            )
+            request_summary["existing_task_id"] = task_id
         else:
+            effective_metadata = adapt_image_metadata(metadata, size=size, aspect_ratio=aspect_ratio)
+            request_summary = _request_summary(
+                provider=route.provider,
+                model=model_name,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                input_mode=input_mode,
+                reference_count=len(reference_image_paths or []),
+                metadata=effective_metadata,
+            )
             submit_kwargs: Dict[str, Any] = {
                 "input_mode": input_mode,
                 "reference_image_paths": reference_image_paths,
-                "metadata": metadata,
+                "metadata": effective_metadata,
                 "size": size,
+                "aspect_ratio": aspect_ratio,
             }
             if image_path:
                 submit_kwargs["image_path"] = image_path
@@ -130,8 +181,18 @@ def run_image_generation(
         if not result_url:
             raise RuntimeError("OTU 图片任务完成但未返回图片地址")
         otu_downloader(result_url, out_path)
-        return ImageGenerationResult(route.provider, task_id, submit_body, result, out_path)
+        return ImageGenerationResult(route.provider, task_id, submit_body, result, out_path, request_summary)
     if route.provider == "Aitgenne":
+        effective_metadata = adapt_image_metadata(metadata, size=size, aspect_ratio=aspect_ratio)
+        request_summary = _request_summary(
+            provider=route.provider,
+            model=model_name,
+            size=size,
+            aspect_ratio=aspect_ratio,
+            input_mode=input_mode,
+            reference_count=len(reference_image_paths or []),
+            metadata=effective_metadata,
+        )
         body = aitgenne_submitter(
             {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_AITGENNE_API_BASE, "model": model_name},
             prompt,
@@ -139,10 +200,10 @@ def run_image_generation(
             image_path=image_path,
             image_url=image_url,
             reference_image_paths=reference_image_paths,
-            metadata=metadata,
+            metadata=effective_metadata,
             size=size,
             aspect_ratio=aspect_ratio,
         )
         aitgenne_saver(body, out_path)
-        return ImageGenerationResult(route.provider, "", body, body, out_path)
+        return ImageGenerationResult(route.provider, "", body, body, out_path, request_summary)
     raise NotImplementedError(f"当前图片生成暂不支持供应商：{route.provider}")

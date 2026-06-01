@@ -1049,7 +1049,10 @@ def run_shot_video_generation(
     route_enabled, route_dry_run_only = unified_route_state(fields, token)
     legacy_model_choice = extract_text(fields.get("视频生成模型")).strip()
     route_model_choice = extract_text(fields.get("视频AI模型")).strip()
-    model_choice = route_model_choice if route_enabled and route_model_choice else legacy_model_choice
+    model_choice = legacy_model_choice if not is_default_model_choice(legacy_model_choice) else route_model_choice
+    model_source = "视频生成模型" if model_choice == legacy_model_choice and model_choice else (
+        "视频AI模型" if model_choice == route_model_choice and model_choice else "配置表"
+    )
     model_bits_for_validation = ai_routing.parse_model_display(model_choice)
     if model_bits_for_validation["provider"] and not ai_model_catalog.is_first_last_video_model(model_choice):
         raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {model_choice}")
@@ -1086,6 +1089,7 @@ def run_shot_video_generation(
         "video_channel": channel,
         "video_provider": provider,
         "model": runtime_config["model"],
+        "model_source": model_source,
         "api_base": native_veo_api_base(config) if channel == "AIHubMix" and provider == "veo3.1" else normalize_api_base(config.get("api_base") or (DEFAULT_OTU_API_BASE if channel == "OTU" else DEFAULT_API_BASE)),
         "first_frame_image_path": str(image_path),
         "end_frame_mode": bool(last_frame_path),

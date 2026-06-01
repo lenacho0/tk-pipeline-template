@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 
 from common import extract_text
+from media_specs import adapt_image_metadata
 
 
 DEFAULT_AITGENNE_API_BASE = "https://api.aitgenne.com"
@@ -67,14 +68,18 @@ def submit_aitgenne_image_generation(
         )
 
     url = aitgenne_images_endpoint(config.get("api_base") or DEFAULT_AITGENNE_API_BASE)
+    submit_metadata = adapt_image_metadata(
+        metadata,
+        size=size or DEFAULT_AITGENNE_IMAGE_SIZE,
+        aspect_ratio=aspect_ratio,
+        default_aspect_ratio=DEFAULT_AITGENNE_ASPECT_RATIO,
+    )
     payload = {
         "model": config.get("model") or DEFAULT_AITGENNE_IMAGE_MODEL,
         "prompt": prompt,
         "size": size or DEFAULT_AITGENNE_IMAGE_SIZE,
-        "metadata": {"aspectRatio": aspect_ratio or DEFAULT_AITGENNE_ASPECT_RATIO},
+        "metadata": submit_metadata,
     }
-    if metadata:
-        payload["metadata"].update(metadata)
     if input_mode:
         payload["input_mode"] = input_mode
     if image_url:
@@ -117,9 +122,12 @@ def _submit_aitgenne_image_edit(
     post: Callable[..., Any] = requests.post,
 ) -> Dict[str, Any]:
     url = aitgenne_images_endpoint(config.get("api_base") or DEFAULT_AITGENNE_API_BASE, edit=True)
-    submit_metadata = {"aspectRatio": aspect_ratio or DEFAULT_AITGENNE_ASPECT_RATIO}
-    if metadata:
-        submit_metadata.update(metadata)
+    submit_metadata = adapt_image_metadata(
+        metadata,
+        size=size or DEFAULT_AITGENNE_IMAGE_SIZE,
+        aspect_ratio=aspect_ratio,
+        default_aspect_ratio=DEFAULT_AITGENNE_ASPECT_RATIO,
+    )
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     data = {
         "model": config.get("model") or DEFAULT_AITGENNE_IMAGE_MODEL,

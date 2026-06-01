@@ -214,6 +214,8 @@ class ScriptDocShotsTests(unittest.TestCase):
         )
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
+        self.assertIn("视频生成模型", views["99-排错"])
+        self.assertIn("视频AI模型", views["99-排错"])
 
     def test_unified_ai_route_fields_are_optional_and_visible_in_advanced_view(self):
         fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
@@ -228,6 +230,7 @@ class ScriptDocShotsTests(unittest.TestCase):
             "尾帧图画面比例",
             "视频AI模型",
             "视频AI参数JSON",
+            "视频生成模型",
             "视频画面尺寸",
             "视频画面比例",
         ]:
@@ -237,8 +240,8 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("高级AI参数", views)
         self.assertIn("使用统一AI路由", views["高级AI参数"])
         self.assertIn("分镜图AI参数JSON", views["高级AI参数"])
-        self.assertIn("视频AI模型", views["高级AI参数"])
-        self.assertIn("视频AI参数JSON", views["高级AI参数"])
+        self.assertNotIn("视频AI模型", views["高级AI参数"])
+        self.assertNotIn("视频AI参数JSON", views["高级AI参数"])
         self.assertIn("视频通道", views["高级AI参数"])
         self.assertIn("视频生成模型", views["高级AI参数"])
         for name in [
@@ -250,6 +253,13 @@ class ScriptDocShotsTests(unittest.TestCase):
             "视频画面比例",
         ]:
             self.assertIn(name, views["高级AI参数"])
+
+        task_views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_tasks")["views"]
+        self.assertIn("视频生成模型", task_views["高级AI参数"])
+        self.assertNotIn("视频AI模型", task_views["高级AI参数"])
+        self.assertNotIn("视频AI参数JSON", task_views["高级AI参数"])
+        self.assertIn("视频生成模型", task_views["99-解析排错"])
+        self.assertIn("视频AI模型", task_views["99-解析排错"])
 
     def test_split_table_records_omit_mixed_record_type_field(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)
@@ -415,6 +425,36 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("Output a single image only. No text, watermark, collage, or split panels.", prompt)
         self.assertIn("fur slightly longer", prompt)
         self.assertNotIn("2x3网格六张头部小图", prompt)
+
+    def test_generate_reference_image_uses_configured_size_and_aspect_ratio(self):
+        fields = {
+            "参考类型": "human",
+            "参考名称": "owner",
+            "参考提示词": "Thai owner reference.",
+        }
+
+        with patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=fields), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+                 "size": "1280x720",
+                 "aspect_ratio": "16:9",
+             }), \
+             patch.object(doc_shots, "safe_update_record"), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields), \
+             patch.object(doc_shots, "submit_otu_image_task", return_value=("task_1", {"id": "task_1"})) as submitter, \
+             patch.object(doc_shots, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}), \
+             patch.object(doc_shots, "download_otu_image_result"), \
+             patch.object(doc_shots, "upload_image_to_feishu", return_value="ft_out"):
+            result = doc_shots.generate_reference_image("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
 
     def test_collect_reference_images_uses_only_shot_requested_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
 import requests
+from media_specs import adapt_image_metadata, media_spec_from_values
 
 import ai_model_catalog
 from common import extract_text
@@ -409,13 +410,28 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         size = params.get("size") or params.get("画面尺寸") or "1024x1024"
         aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or "9:16"
         payload["size"] = size
-        payload["metadata"] = {"aspectRatio": aspect_ratio}
+        payload["metadata"] = adapt_image_metadata(size=size, aspect_ratio=aspect_ratio)
         if reference_count:
             payload["input_mode"] = "image-to-image"
+        spec = media_spec_from_values(size=size, aspect_ratio=aspect_ratio, slot_name=route.task_type, capability=route.capability)
+        adapter_payload_summary = {
+            "size": "payload.size",
+            "aspect_ratio": "payload.metadata.aspectRatio",
+            "aspect_ratio_alias": "payload.metadata.aspect_ratio",
+        }
     else:
-        payload["size"] = params.get("size") or params.get("画面尺寸") or "720x1280"
-        payload["seconds"] = str(params.get("seconds") or params.get("视频时长") or "8")
-        payload["aspect_ratio"] = params.get("aspect_ratio") or params.get("画面比例") or "9:16"
+        size = params.get("size") or params.get("画面尺寸") or "720x1280"
+        seconds = str(params.get("seconds") or params.get("视频时长") or "8")
+        aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or "9:16"
+        payload["size"] = size
+        payload["seconds"] = seconds
+        payload["aspect_ratio"] = aspect_ratio
+        spec = media_spec_from_values(size=size, aspect_ratio=aspect_ratio, seconds=seconds, slot_name=route.task_type, capability=route.capability)
+        adapter_payload_summary = {
+            "size": "payload.size",
+            "aspect_ratio": "payload.aspect_ratio",
+            "seconds": "payload.seconds",
+        }
     return redact_secret({
         "provider": route.provider,
         "capability": route.capability,
@@ -424,6 +440,9 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         "method": "POST",
         "payload_keys": sorted(payload.keys()),
         "payload": payload,
+        "media_spec": spec.summary(),
+        "adapter_payload_summary": adapter_payload_summary,
+        "ignored_fields": [],
         "reference_count": int(reference_count or 0),
         "api_key": route.api_key,
     })

@@ -1214,7 +1214,7 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if not existing_task_id:
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "参考图任务ID": task_id,
-            "参考图原始响应JSON": compact_json({"submit": submit_body}, 10000),
+            "参考图原始响应JSON": compact_json({"submit": submit_body, "request_summary": image_result.request_summary}, 10000),
         }))
     file_token = upload_image_to_feishu(token, output_path, f"{record_id}_reference.png")
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
@@ -1225,7 +1225,7 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         "参考图版本": version,
         "参考图生成状态": "成功",
         "参考图审核状态": "待确认",
-        "参考图原始响应JSON": compact_json({"submit": submit_body, "result": result}, 10000),
+        "参考图原始响应JSON": compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}, 10000),
         "参考图错误信息": "",
         "参考图生成时间": int(time.time() * 1000),
         "错误信息": "",
@@ -1338,8 +1338,8 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     if not existing_task_id:
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "关键帧任务ID": task_id,
-            "原始请求JSON": compact_json({"submit": submit_body, "reference_manifest": manifest, "metadata": metadata}, 12000),
-            "关键帧原始响应JSON": compact_json({"submit": submit_body}, 10000),
+            "原始请求JSON": compact_json({"submit": submit_body, "reference_manifest": manifest, "metadata": metadata, "request_summary": image_result.request_summary}, 12000),
+            "关键帧原始响应JSON": compact_json({"submit": submit_body, "request_summary": image_result.request_summary}, 10000),
         }))
     file_token = upload_image_to_feishu(token, output_path, f"{record_id}_keyframe.png")
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
@@ -1350,7 +1350,7 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         "关键帧版本": version,
         "关键帧生成状态": "成功",
         "关键帧审核状态": "待确认",
-        "关键帧原始响应JSON": compact_json({"submit": submit_body, "result": result}, 10000),
+        "关键帧原始响应JSON": compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}, 10000),
         "关键帧错误信息": "",
         "关键帧生成时间": int(time.time() * 1000),
         "错误信息": "",
