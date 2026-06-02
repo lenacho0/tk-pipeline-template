@@ -172,15 +172,14 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             self.assertIn(phrase, prompt)
         self.assertIn("Thai renter, worried expression, blue shirt", prompt)
 
-    def test_default_parse_prompt_preserves_environment_problem_anchor(self):
+    def test_default_parse_prompt_requires_dynamic_environment_problem_anchor(self):
         prompt = multi_role.DEFAULT_PARSE_PROMPT
 
         for phrase in [
-            "urine stain",
-            "pee stain",
-            "visible problem area",
-            "accident point",
-            "不要删除尿渍",
+            "根据脚本判断",
+            "不能默认套用尿渍",
+            "不能默认套用虫害",
+            "不得编造事故点",
         ]:
             self.assertIn(phrase, prompt)
 

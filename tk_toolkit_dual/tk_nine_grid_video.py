@@ -107,7 +107,7 @@ REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
 ASSET_RECORD_TYPE = "参考资产"
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, problem location, visible surface problem marks such as yellow urine stains, urine rings, wet patches, or other stains when specified, and non-character household props. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing in this environment reference image; only surface evidence such as stains or wet marks may remain.
+Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, non-character household props, and the explicit visible problem anchor from the source script if one exists. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Do not add any problem mark that is not explicitly present in the source script.
 """.strip()
 ENVIRONMENT_FORBIDDEN_SOURCE_TERMS = {
     "dog", "cat", "pet", "animal",
@@ -128,6 +128,11 @@ ENVIRONMENT_PROBLEM_EVIDENCE_TERMS = {
     "yellow urine", "urine ring", "urine stain", "cat urine", "dog urine",
     "尿", "尿渍", "尿迹", "尿圈", "黄色尿渍", "黄色尿迹", "黄尿", "污渍", "湿斑", "湿痕",
 }
+ENVIRONMENT_FORBIDDEN_CLEANUP_PATTERNS = [
+    (re.compile(r"\b(cat|dog|pet|puppy|animal)\s+(urine stain|pee stain|wet patch|stain)\b", re.IGNORECASE), r"\2"),
+    (re.compile(r"\b(person|people|human|woman|man|girl|boy|lady|cat|dog|pet|puppy|animal|product|spray|bottle|hand)\b", re.IGNORECASE), ""),
+    (re.compile(r"(人物|人像|真人|女人|男人|女孩|男孩|小狗|狗狗|猫|宠物|动物|产品|喷雾|瓶|手)"), ""),
+]
 SECRET_FALLBACK_STAGES = {
     PLAN_STAGE_NAME: ("故事板图片提示词拆分-Gemini",),
     IMAGE_STAGE_NAME: ("图片生成-OTU", "故事板图片生成-OTU"),
@@ -466,10 +471,13 @@ def sanitize_environment_reference_prompt(prompt: str) -> str:
     for text in _environment_prompt_parts(source_prompt):
         forbidden_hits = _environment_term_hits(text, ENVIRONMENT_FORBIDDEN_TERMS)
         has_negation = bool(_environment_term_hits(text, ENVIRONMENT_NEGATION_TERMS))
-        has_problem_evidence = bool(_environment_term_hits(text, ENVIRONMENT_PROBLEM_EVIDENCE_TERMS))
-        source_only_forbidden = forbidden_hits and forbidden_hits <= ENVIRONMENT_FORBIDDEN_SOURCE_TERMS
-        if forbidden_hits and not has_negation and not (has_problem_evidence and source_only_forbidden):
-            continue
+        if forbidden_hits and not has_negation:
+            for pattern, replacement in ENVIRONMENT_FORBIDDEN_CLEANUP_PATTERNS:
+                text = pattern.sub(replacement, text)
+            text = re.sub(r"\s{2,}", " ", text)
+            text = re.sub(r"\s+([,.;:!?。！？])", r"\1", text).strip(" ,")
+            if not text:
+                continue
         cleaned_parts.append(text)
     cleaned = "\n".join(cleaned_parts).strip()
     if cleaned:

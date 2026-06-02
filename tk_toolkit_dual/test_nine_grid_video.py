@@ -75,15 +75,14 @@ def sample_plan_payload():
 
 
 class NineGridVideoTests(unittest.TestCase):
-    def test_plan_system_prompt_requires_environment_problem_anchors(self):
+    def test_plan_system_prompt_requires_dynamic_environment_problem_anchors(self):
         prompt = prompts.NINE_GRID_PLAN_SYSTEM_PROMPT
 
         for required in [
-            "urine stain",
-            "wet patch",
-            "visible problem area",
-            "accident point",
-            "不要删除尿渍",
+            "根据脚本判断",
+            "不能默认套用尿渍",
+            "不能默认套用虫害",
+            "不得编造事故点",
         ]:
             self.assertIn(required, prompt)
 
@@ -583,7 +582,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("localized details", prompt)
         self.assertIn("Do not include any people, pets, product bottles", prompt)
 
-    def test_environment_reference_prompt_keeps_natural_light_and_yellow_urine_ring(self):
+    def test_environment_reference_prompt_keeps_natural_light_and_dynamic_urine_ring(self):
         prompt = nine_grid.build_reference_asset_prompt({
             "asset_type": "environment",
             "asset_name": "bedroom beside white thick mattress",
@@ -592,17 +591,57 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertIn("natural light", prompt)
         self.assertIn("yellow urine ring", prompt)
+        self.assertNotIn("fleas", prompt)
+        self.assertNotIn("ticks", prompt)
 
-    def test_environment_reference_prompt_keeps_cat_urine_stain_without_pet(self):
+    def test_environment_reference_prompt_keeps_infestation_without_inventing_urine(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "Thai family living room with beige fabric sofa",
+            "purpose": "lock room, furniture, light: the center of the beige sofa cushion is covered by many visible crawling black fleas or ticks around the cat",
+        })
+
+        self.assertIn("beige sofa cushion", prompt)
+        self.assertIn("black fleas or ticks", prompt)
+        self.assertNotIn("urine", prompt.lower())
+        self.assertNotIn("wet patch", prompt.lower())
+        self.assertNotIn("urine ring", prompt.lower())
+
+    def test_environment_reference_prompt_keeps_damage_without_inventing_urine_or_insects(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "old hallway wall",
+            "purpose": "lock hallway layout and the cracked damaged plaster patch near the door frame",
+        })
+
+        self.assertIn("cracked damaged plaster patch", prompt)
+        self.assertNotIn("urine", prompt.lower())
+        self.assertNotIn("fleas", prompt.lower())
+        self.assertNotIn("ticks", prompt.lower())
+
+    def test_environment_reference_prompt_does_not_invent_problem_anchor_when_absent(self):
+        prompt = nine_grid.build_reference_asset_prompt({
+            "asset_type": "environment",
+            "asset_name": "Thai apartment living room",
+            "purpose": "lock room layout, sofa position, natural window light",
+        })
+
+        lowered = prompt.lower()
+        for forbidden in ["urine", "pee", "wet patch", "fleas", "ticks", "insects", "damaged spot", "dirty area"]:
+            self.assertNotIn(forbidden, lowered)
+
+
+    def test_environment_reference_prompt_keeps_urine_stain_without_pet_subject(self):
         prompt = nine_grid.build_reference_asset_prompt({
             "asset_type": "environment",
             "asset_name": "white mattress area",
             "purpose": "visible cat urine stain on white mattress and wet patch on bedding",
         })
 
-        self.assertIn("cat urine stain", prompt)
+        self.assertIn("urine stain", prompt)
         self.assertIn("wet patch", prompt)
         self.assertIn("Do not include any people, pets, product bottles", prompt)
+        self.assertNotIn("cat urine stain", prompt)
 
     def test_environment_reference_prompt_filters_character_product_action(self):
         prompt = nine_grid.build_reference_asset_prompt({

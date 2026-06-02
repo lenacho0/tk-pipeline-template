@@ -83,9 +83,8 @@ DEFAULT_PARSE_PROMPT = """
    如果全文中有多个宠物、环境或人类角色，要分别创建多个 asset。
    - human prompt 必须写成单人、白底、半身/腰上、正对镜头、完整露出全脸的身份参考图：pure white background, front-facing upper-body, full unobstructed face visible；双眼、鼻子、嘴巴必须清晰可见。
    - human prompt 必须禁止侧脸、背影、低头、遮脸、墨镜、头发/手/道具遮挡脸部、多视角、角色设定表、contact sheet、turnaround、拼图、文字、logo、水印。
-   - environment prompt 必须保留脚本里的可见问题发生点：urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点。
-   - 如果脚本提到尿渍/污渍/湿痕/破损/脏污/问题区域，environment prompt 必须写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
-   - 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。
+   - environment prompt 必须根据脚本判断环境图中应该出现什么问题锚点；只保留脚本明确写出的可见问题发生点和位置细节。
+   - environment prompt 不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。
    - environment prompt 仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印；只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
 2. 按分镜拆成 shots。
 3. 对每条 shot 判断生成分镜图时到底需要哪些参考图：

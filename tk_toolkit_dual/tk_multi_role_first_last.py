@@ -165,9 +165,8 @@ DEFAULT_PARSE_PROMPT = """
 - human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄质感、自然光感、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；背景仍必须是 pure white background；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
 - human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
 - human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、character sheet、no contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
-- environment 资产必须是无人无产品的事故现场环境底图，只能描述房间、家具、材质、光线、机位、可行动空间、生活道具和脚本明确写出的固定问题发生点。
-- environment 资产如果脚本提到 urine stain、pee stain、污渍、尿渍、wet patch、湿痕、破损、脏污区域、visible problem area、accident point、问题区域、事故点或异味来源位置，prompt 必须写清楚位置、大小、所在材质表面和可见状态。
-- environment 资产不要删除尿渍/污渍/湿痕/事故点；不能因为“空场景”而删除问题痕迹；不能把尿渍改成普通干净地面、沙发或地毯。
+- environment 资产必须根据脚本判断环境图中应该出现什么问题锚点；只保留脚本明确写出的可见问题发生点和位置细节。
+- environment 资产不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。
 - environment 资产严禁出现任何人物、宠物、产品包装、喷雾瓶、手、身体局部、倒影、海报/屏幕中的人物或动物。
 - 如果脚本文档要求“场景图不要出现人物/产品/宠物”，必须完全遵守；不要把角色站位规划写进 environment prompt。
 
@@ -298,7 +297,7 @@ def normalize_role(role: Dict[str, Any], idx: int) -> Dict[str, Any]:
 
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate an empty scene master/background plate for later compositing, with the fixed visible problem anchor preserved when required by the source script. Show only the room, furniture, surfaces, lighting, camera angle, non-character household props, and any explicit accident point such as a urine stain, pee stain, wet patch, visible problem area, damaged spot, dirty area, or odor source location. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Any character, pet, or product mentioned in the source script is forbidden from appearing as a visible subject in this environment reference image, but do not remove the visible problem mark itself.
+Generate an empty scene master/background plate for later compositing, with only the explicit visible problem anchor from the source script preserved when one exists. Show only the room, furniture, surfaces, lighting, camera angle, non-character household props, and script-defined problem location details. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Do not add any problem mark that is not explicitly present in the source script.
 """.strip()
 
 ENVIRONMENT_FORBIDDEN_TERMS = {

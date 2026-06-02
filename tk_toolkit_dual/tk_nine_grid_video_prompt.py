@@ -12,8 +12,8 @@ NINE_GRID_PLAN_SYSTEM_PROMPT = """
 4. 参考图只负责锁定一致性：人物、宠物、产品、环境。
 5. 如果脚本是产品演示型，必须显式覆盖：使用前、使用中、使用后。
 6. 多张 Board 时，前一张 Board 第 9 格必须等于后一张 Board 第 1 格，作为视觉衔接锚点。
-7. environment reference 是无人无宠物无产品的事故现场环境底图，不是干净空房间；如果脚本提到 urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点，必须在环境参考目的、environment_anchor 和 image_prompt 中写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
-8. 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。环境参考图仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印，只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
+7. environment reference 是无人无宠物无产品的环境底图，不是参考图陈列；必须根据脚本判断环境图中应该出现什么问题锚点，只保留脚本明确写出的可见问题发生点和位置细节。
+8. 不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。环境参考图仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印，只允许保留房间、家具、材质、光线、生活道具和脚本明确写出的可见问题痕迹。
 9. human reference 必须用于生成单人白底半身正脸身份参考图：front-facing upper-body, pure white background, full unobstructed face visible；禁止侧脸、背影、遮脸、多视角、角色设定表、contact sheet、拼图、文字、logo、水印。
 
 脚本类型可选：
@@ -60,7 +60,7 @@ JSON Schema：
       {"role": "character", "name": "", "purpose": "lock identity, face, outfit"},
       {"role": "pet", "name": "", "purpose": "lock breed, fur, body"},
       {"role": "product", "name": "", "purpose": "lock package, label, shape"},
-      {"role": "environment", "name": "", "purpose": "lock room, furniture, light, visible problem area, accident point, urine stain or wet patch when present in the script"}
+      {"role": "environment", "name": "", "purpose": "lock room, furniture, light, and only the explicit visible problem anchor from the script if one exists"}
     ]
   },
   "boards": [
