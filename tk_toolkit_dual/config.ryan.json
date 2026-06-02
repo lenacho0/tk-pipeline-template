@@ -36,7 +36,7 @@
   "dispatcher": {
     "poll_interval": 30,
     "healthcheck_hour": -1,
-    "global_max_concurrency": 6,
+    "global_max_concurrency": 12,
     "circuit_breaker": {
       "window_seconds": 900,
       "threshold": 3,
@@ -89,7 +89,7 @@
         "max_concurrency": 2
       },
       "多图九宫格视频生成": {
-        "max_concurrency": 2
+        "max_concurrency": 4
       },
       "首尾帧首帧图生成": {
         "max_concurrency": 2

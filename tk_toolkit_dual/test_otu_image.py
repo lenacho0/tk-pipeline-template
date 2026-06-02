@@ -138,6 +138,25 @@ class OtuImagePollingTests(unittest.TestCase):
         self.assertEqual(result["result_url"], "https://example.test/result.png")
         self.assertEqual(getter.call_count, 2)
 
+    def test_poll_times_out_when_queued_zero_progress_exceeds_threshold(self):
+        queued = Mock(status_code=200)
+        queued.json.return_value = {
+            "id": "task_stuck",
+            "status": "queued",
+            "progress": 0,
+            "created_at": 1_000,
+        }
+
+        with patch.object(otu_image.requests, "get", return_value=queued), \
+             patch.object(otu_image.time, "time", return_value=1_601), \
+             patch.object(otu_image.time, "sleep"):
+            with self.assertRaisesRegex(TimeoutError, "queued progress=0 timeout"):
+                otu_image.poll_otu_image_task(
+                    {"api_key": "test-key", "api_base": "https://otu.example"},
+                    "task_stuck",
+                    queued_zero_progress_timeout_seconds=600,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

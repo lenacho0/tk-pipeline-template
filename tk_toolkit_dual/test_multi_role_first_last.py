@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -180,6 +180,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "不能默认套用尿渍",
             "不能默认套用虫害",
             "不得编造事故点",
+            "直接给图片模型使用",
         ]:
             self.assertIn(phrase, prompt)
 
@@ -439,6 +440,21 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         duplicated = f"{env_prompt}\nScene details to keep:\nEMPTY ENVIRONMENT REFERENCE PLATE ONLY."
         self.assertEqual(multi_role.sanitize_environment_prompt(duplicated).count("EMPTY ENVIRONMENT REFERENCE PLATE ONLY"), 1)
 
+    def test_environment_asset_prompt_is_direct_image_prompt_without_script_meta(self):
+        payload = sample_plan(role_count=4)
+        payload["assets"][-1]["prompt"] = "\n".join([
+            "Vertical 9:16 Bangkok rental living room with beige sofa and rug.",
+            "No people, no pets, no product bottle.",
+        ])
+        normalized = multi_role.normalize_plan_payload(payload)
+        env_prompt = next(asset["prompt"] for asset in normalized["assets"] if asset["asset_type"] == "environment")
+        lowered = env_prompt.lower()
+
+        self.assertIn("Scene details:", env_prompt)
+        self.assertNotIn("Scene details to keep:", env_prompt)
+        for forbidden in ["source script", "script-defined", "if one exists", "when present in the script"]:
+            self.assertNotIn(forbidden, lowered)
+
     def test_environment_asset_prompt_preserves_problem_anchor_without_pet_subject(self):
         payload = sample_plan(role_count=4)
         payload["assets"][-1]["prompt"] = "\n".join([
@@ -696,6 +712,146 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
         self.assertTrue(any(update.get("视频操作") == "不触发" for update in updates))
 
+    def test_video_clip_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 2,
+            "视频任务ID": "",
+            "视频生成模型": "AIHubMix / veo-3.1-fast-generate-preview",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        operation = Mock()
+        operation.name = "operations/op_multi_aihubmix"
+        completed = Mock()
+        generated_video = Mock()
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://aihubmix.com/gemini", "api_key": "key", "model": "veo-3.1-fast-generate-preview"})), \
+             patch.object(multi_role, "get_table_field_types", return_value={}), \
+             patch.object(multi_role, "get_native_veo_client", return_value="client") as client_factory, \
+             patch.object(multi_role, "call_native_veo_first_frame_task", return_value=operation) as native_submitter, \
+             patch.object(multi_role, "poll_native_veo_operation", return_value=completed) as native_poller, \
+             patch.object(multi_role, "extract_native_generated_video", return_value=generated_video), \
+             patch.object(multi_role, "native_generated_video_uri", return_value="https://example.com/native.mp4"), \
+             patch.object(multi_role, "download_native_veo_video", return_value="/tmp/video.mp4") as native_downloader, \
+             patch.object(multi_role, "submit_otu_video_task") as otu_submitter, \
+             patch.object(multi_role, "poll_otu_video_task") as otu_poller, \
+             patch.object(multi_role, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(multi_role, "upload_video_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+
+        otu_submitter.assert_not_called()
+        otu_poller.assert_not_called()
+        client_factory.assert_called_once()
+        native_submitter.assert_called_once()
+        self.assertEqual(native_submitter.call_args.args[0]["model"], "veo-3.1-fast-generate-preview")
+        self.assertEqual(native_submitter.call_args.args[4], "720p")
+        self.assertEqual(native_submitter.call_args.kwargs["last_frame_path"], str(Path(tmp) / "clip_rec_S02_TAIL.png"))
+        native_poller.assert_called_once_with("client", operation)
+        native_downloader.assert_called_once_with("client", generated_video, result["output_path"])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "operations/op_multi_aihubmix")
+        self.assertTrue(any(update.get("视频通道") == "AIHubMix" for update in updates))
+        self.assertTrue(any(update.get("视频生成模型") == "AIHubMix / veo-3.1-fast-generate-preview" for update in updates))
+        self.assertTrue(any(update.get("视频操作") == "不触发" for update in updates))
+
+    def test_video_clip_preserves_url_and_local_path_before_upload_failure(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 1,
+            "视频任务ID": "task_existing",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
+             patch.object(multi_role, "get_table_field_types", return_value={"视频片段URL": 15}), \
+             patch.object(multi_role, "poll_otu_video_task", return_value={"url": "https://example.com/out.mp4"}), \
+             patch.object(multi_role, "extract_video_url", return_value="https://example.com/out.mp4"), \
+             patch.object(multi_role, "download_video"), \
+             patch.object(multi_role, "upload_video_to_feishu", side_effect=RuntimeError("飞书视频上传失败: params error.")), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            with self.assertRaisesRegex(RuntimeError, "params error"):
+                multi_role.render_video_clip("clip_rec")
+
+        repair_updates = [update for update in updates if update.get("视频本地路径") and update.get("视频片段URL")]
+        self.assertTrue(repair_updates)
+        self.assertEqual(repair_updates[-1]["视频任务ID"], "task_existing")
+        self.assertEqual(repair_updates[-1]["视频生成状态"], "生成中")
+        self.assertIn("等待飞书上传", repair_updates[-1]["视频错误信息"])
+
     def test_regeneration_resets_current_output_and_increments_version(self):
         updates = []
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
@@ -749,6 +905,28 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertIn(("clip_s01", {"视频生成状态": "待生成", "视频错误信息": "", "错误信息": ""}), updates)
         self.assertIn(("kf_shared", {"关键帧审核状态": "已触发下游"}), updates)
 
+    def test_advance_ready_videos_repairs_stuck_clip_after_keyframes_are_approved(self):
+        records = [
+            {"record_id": "kf_first", "fields": {"记录类型": "关键帧", "父任务记录ID": "parent", "关键帧类型": "S01_FIRST", "关键帧审核状态": "通过", "关键帧图file_token": "ft_first"}},
+            {"record_id": "kf_shared", "fields": {"记录类型": "关键帧", "父任务记录ID": "parent", "关键帧类型": "S01_TAIL_SHARED_S02_FIRST", "关键帧审核状态": "已触发下游", "关键帧图file_token": "ft_shared"}},
+            {"record_id": "kf_tail", "fields": {"记录类型": "关键帧", "父任务记录ID": "parent", "关键帧类型": "S02_TAIL", "关键帧审核状态": "通过", "关键帧图file_token": "ft_tail"}},
+            {"record_id": "clip_s01", "fields": {"记录类型": "视频片段", "父任务记录ID": "parent", "视频片段类型": "S01", "首关键帧类型": "S01_FIRST", "尾关键帧类型": "S01_TAIL_SHARED_S02_FIRST", "视频生成状态": "生成中"}},
+            {"record_id": "clip_s02", "fields": {"记录类型": "视频片段", "父任务记录ID": "parent", "视频片段类型": "S02", "首关键帧类型": "S01_TAIL_SHARED_S02_FIRST", "尾关键帧类型": "S02_TAIL", "视频生成状态": "不触发"}},
+        ]
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=records[2]["fields"]), \
+             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = multi_role.advance_ready_videos("kf_tail")
+
+        self.assertEqual(result["parent_record_id"], "parent")
+        self.assertEqual(result["triggered_videos"], 1)
+        self.assertIn(("clip_s02", {"视频生成状态": "待生成", "视频错误信息": "", "错误信息": ""}), updates)
+        self.assertNotIn(("clip_s01", {"视频生成状态": "待生成", "视频错误信息": "", "错误信息": ""}), updates)
+
     def test_dispatcher_has_multi_role_watches(self):
         watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
         self.assertEqual(watches["多角色首尾帧解析"]["script"], "tk_multi_role_first_last.py")
@@ -759,9 +937,20 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(watches["多角色关键帧审核推进"]["args"], ["advance-keyframe-review"])
         self.assertEqual(watches["多角色参考图生成"]["required_field_values"], {"记录类型": ["参考资产"]})
         self.assertEqual(watches["多角色关键帧生成"]["required_field_values"], {"记录类型": ["关键帧"]})
+        self.assertEqual(watches["多角色参考图生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["多角色关键帧生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(watches["多角色视频片段生成"]["required_field_values"], {"记录类型": ["视频片段"]})
         self.assertEqual(watches["多角色视频片段生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(watches["多角色视频片段生成"]["max_concurrency"], 2)
+        reference_waiting_claim = dispatcher.apply_claim_clear_fields({"参考图生成状态": "生成中"}, watches["多角色参考图生成"], "待生成")
+        self.assertEqual(reference_waiting_claim["参考图任务ID"], "")
+        reference_running_claim = dispatcher.apply_claim_clear_fields({"参考图生成状态": "生成中"}, watches["多角色参考图生成"], "生成中")
+        self.assertNotIn("参考图任务ID", reference_running_claim)
+
+        keyframe_waiting_claim = dispatcher.apply_claim_clear_fields({"关键帧生成状态": "生成中"}, watches["多角色关键帧生成"], "待生成")
+        self.assertEqual(keyframe_waiting_claim["关键帧任务ID"], "")
+        keyframe_running_claim = dispatcher.apply_claim_clear_fields({"关键帧生成状态": "生成中"}, watches["多角色关键帧生成"], "生成中")
+        self.assertNotIn("关键帧任务ID", keyframe_running_claim)
         self.assertEqual(
             watches["多角色视频片段生成"]["claim_clear_fields_by_trigger_value"]["待生成"],
             [
@@ -770,15 +959,49 @@ class MultiRoleFirstLastTests(unittest.TestCase):
                 "视频本地路径",
                 "视频原始响应JSON",
                 "视频错误信息",
+                "错误信息",
             ],
         )
         self.assertEqual(
             watches["多角色视频片段生成"]["claim_clear_values_by_trigger_value"]["待生成"],
             {
-                "视频片段": [],
                 "视频片段URL": None,
             },
         )
+
+    def test_dispatcher_claim_filters_attachment_resets_before_update(self):
+        watch = {
+            "name": "多角色视频片段生成",
+            "table": "tblMulti",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "required_field_values": {"记录类型": ["视频片段"]},
+            "claim_clear_fields_by_trigger_value": {
+                "待生成": ["视频任务ID", "视频片段file_token"],
+            },
+            "claim_clear_values_by_trigger_value": {
+                "待生成": {
+                    "视频片段": [],
+                    "视频片段URL": None,
+                },
+            },
+        }
+        updates = []
+        latest = {"记录类型": "视频片段", "视频生成状态": "待生成"}
+
+        with patch.object(dispatcher, "safe_get_record", return_value=latest), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"), \
+             patch.object(dispatcher, "get_table_field_kinds", return_value={"视频片段": "attachment", "视频片段URL": "text"}):
+            self.assertTrue(dispatcher.try_claim_task("token", watch, "rec1"))
+
+        self.assertEqual(updates[0], {
+            "视频生成状态": "生成中",
+            "视频任务ID": "",
+            "视频片段file_token": "",
+            "视频片段URL": None,
+        })
 
     def test_video_plan_uses_shared_keyframe_for_both_clips(self):
         payload = multi_role.normalize_plan_payload(sample_plan(role_count=3))

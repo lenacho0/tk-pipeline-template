@@ -7,7 +7,7 @@
 """
 import json, os, sys, time, base64
 from pathlib import Path
-from typing import List
+from typing import Any, List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ai_routing
 from common import *
@@ -25,6 +25,7 @@ from otu_image import (
 )
 from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_record
 
 
 _TABLE_FIELDS_CACHE = {}
@@ -100,6 +101,10 @@ def get_attachment_token(value):
             if isinstance(item, dict) and item.get('file_token'):
                 return str(item.get('file_token')).strip()
     return ''
+
+
+def _compact_json(value: Any, max_chars: int = 10000) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, separators=(',', ':'))[:max_chars]
 
 
 def download_feishu_media(token, file_token, save_path):
@@ -624,6 +629,19 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     )
 
     shot_fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    shot_fields = apply_task_default_to_record(
+        token,
+        TABLE_SCRIPT_DOC_SHOTS,
+        record_id,
+        shot_fields,
+        app_table=TASK_TABLES["script_doc_shots"],
+        stage="分镜图生成默认",
+        model_field="分镜图AI模型",
+        size_field="分镜图画面尺寸",
+        ratio_field="分镜图画面比例",
+        params_field="分镜图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     parent_record_id = extract_text(shot_fields.get('父文档记录ID', '')).strip()
     if not parent_record_id:
         raise Exception('缺少父文档记录ID')
@@ -670,10 +688,17 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         summary['status'] = 'unified_ai_dry_run_ready'
         return summary
 
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+    current_status = extract_text(shot_fields.get('分镜图生成状态')).strip()
+    existing_task_id = extract_text(shot_fields.get('分镜图任务ID')).strip() if current_status == '生成中' and route.provider == 'OTU' else ''
+    start_fields = {
         '分镜图生成状态': '生成中',
-        '分镜图错误信息': '',
-    }))
+        '分镜图任务ID': existing_task_id,
+        '分镜图错误信息': f'恢复轮询已有 OTU 分镜图任务。task_id={existing_task_id}' if existing_task_id else '',
+        '错误信息': '',
+    }
+    if not existing_task_id:
+        start_fields['分镜图原始响应JSON'] = ''
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, start_fields))
 
     task_dir = ensure_task_dir(record_id)
     refs = collect_reference_images_for_shot(
@@ -692,6 +717,15 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     out_path = os.path.join(task_dir, f'{record_id}_shot.png')
     ref_paths = [ref.get('path') for ref in refs if ref.get('path')]
     reference_urls = build_reference_urls(token, refs)
+
+    def on_shot_task_submitted(task_id):
+        safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+            '分镜图任务ID': task_id,
+            '分镜图原始响应JSON': _compact_json({'submit': {'id': task_id}}),
+            '分镜图错误信息': f'已提交 OTU 分镜图任务，正在轮询。task_id={task_id}',
+            '错误信息': f'已提交 OTU 分镜图任务，正在轮询。task_id={task_id}',
+        }))
+
     image_result = run_image_generation(
         route,
         prompt,
@@ -704,6 +738,8 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        existing_task_id=existing_task_id,
+        on_task_submitted=on_shot_task_submitted,
     )
     submit_task_id = image_result.task_id
     submit_body = image_result.submit_body
@@ -721,6 +757,12 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         out_path=out_path,
         prompt=prompt,
     )
+    success_fields['分镜图任务ID'] = submit_task_id
+    success_fields['分镜图原始响应JSON'] = _compact_json({
+        'submit': submit_body,
+        'result': result,
+        'request_summary': image_result.request_summary,
+    })
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
     log_event('INFO', 'script doc shot storyboard render success', record_id=record_id, reference_count=len(refs))
     print(f'✅ 脚本文档单张分镜图生成完成: {record_id}')
@@ -806,6 +848,19 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
 
     fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_SCRIPT_DOC_SHOTS,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["script_doc_shots"],
+        stage="尾帧图生成默认",
+        model_field="尾帧图AI模型",
+        size_field="尾帧图画面尺寸",
+        ratio_field="尾帧图画面比例",
+        params_field="尾帧图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     if not is_end_frame_mode_enabled(fields):
         raise Exception('首尾帧视频模式未启用，拒绝生成尾帧图')
     first_frame_token = get_attachment_token(fields.get('分镜图'))
@@ -846,10 +901,17 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         summary['status'] = 'unified_ai_dry_run_ready'
         return summary
 
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+    current_status = extract_text(fields.get('尾帧图生成状态')).strip()
+    existing_task_id = extract_text(fields.get('尾帧图任务ID')).strip() if current_status == '生成中' and route.provider == 'OTU' else ''
+    start_fields = {
         '尾帧图生成状态': '生成中',
-        '尾帧图错误信息': '',
-    }))
+        '尾帧图任务ID': existing_task_id,
+        '尾帧图错误信息': f'恢复轮询已有 OTU 尾帧图任务。task_id={existing_task_id}' if existing_task_id else '',
+        '错误信息': '',
+    }
+    if not existing_task_id:
+        start_fields['尾帧图原始响应JSON'] = ''
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, start_fields))
 
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
@@ -859,6 +921,15 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     if not api_key:
         raise Exception('飞书配置表缺少 API Key')
     out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
+
+    def on_tail_task_submitted(task_id):
+        safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+            '尾帧图任务ID': task_id,
+            '尾帧图原始响应JSON': _compact_json({'submit': {'id': task_id}}),
+            '尾帧图错误信息': f'已提交 OTU 尾帧图任务，正在轮询。task_id={task_id}',
+            '错误信息': f'已提交 OTU 尾帧图任务，正在轮询。task_id={task_id}',
+        }))
+
     image_result = run_image_generation(
         route,
         prompt,
@@ -871,6 +942,8 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        existing_task_id=existing_task_id,
+        on_task_submitted=on_tail_task_submitted,
     )
     submit_task_id = image_result.task_id
     submit_body = image_result.submit_body
@@ -885,6 +958,12 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         '尾帧图': [{'file_token': file_token}],
         '尾帧图file_token': file_token,
         '尾帧图本地路径': out_path,
+        '尾帧图任务ID': submit_task_id,
+        '尾帧图原始响应JSON': _compact_json({
+            'submit': submit_body,
+            'result': result,
+            'request_summary': image_result.request_summary,
+        }),
         '尾帧图提示词': prompt[:10000],
         '尾帧图生成状态': '成功',
         '尾帧图生成时间': int(time.time() * 1000),

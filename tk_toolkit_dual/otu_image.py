@@ -23,6 +23,7 @@ POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
 MAX_SUBMIT_REQUEST_ERRORS = 3
 MAX_POLL_REQUEST_ERRORS = 8
+QUEUED_ZERO_PROGRESS_TIMEOUT_SECONDS = 600
 
 
 def normalize_image_channel(value: Any) -> str:
@@ -188,13 +189,36 @@ def submit_otu_image_task(
     return task_id, body
 
 
-def poll_otu_image_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def poll_otu_image_task(
+    config: Dict[str, str],
+    task_id: str,
+    *,
+    queued_zero_progress_timeout_seconds: int = QUEUED_ZERO_PROGRESS_TIMEOUT_SECONDS,
+    max_poll_seconds: int = MAX_POLL_SECONDS,
+) -> Dict[str, Any]:
     url = f"{(config.get('api_base') or DEFAULT_OTU_API_BASE).rstrip('/')}/v1/videos/{task_id}"
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     start = time.time()
     last_body: Dict[str, Any] = {}
     consecutive_request_errors = 0
-    while time.time() - start < MAX_POLL_SECONDS:
+    queued_zero_started_at: Optional[float] = None
+    while time.time() - start < max_poll_seconds:
         try:
             resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
         except requests.RequestException as exc:
@@ -224,6 +248,40 @@ def poll_otu_image_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:
             raise RuntimeError(f"OTU 图片生成失败: {str(last_body)[:1500]}")
+        data = last_body.get("data") if isinstance(last_body.get("data"), dict) else {}
+        result = last_body.get("result") if isinstance(last_body.get("result"), dict) else {}
+        progress = _float_or_none(_first_present(
+            last_body.get("progress"),
+            data.get("progress"),
+            result.get("progress"),
+        ))
+        created_at = _float_or_none(_first_present(
+            last_body.get("created_at"),
+            data.get("created_at"),
+            result.get("created_at"),
+        ))
+        if status == "queued" and progress == 0:
+            now = time.time()
+            if (
+                created_at is not None
+                and now >= created_at
+                and now - created_at >= queued_zero_progress_timeout_seconds
+            ):
+                raise TimeoutError(
+                    "OTU 图片任务 queued progress=0 timeout: "
+                    f"task_id={task_id}, status={status}, progress={int(progress)}, "
+                    f"created_at={created_at}, last={str(last_body)[:1200]}"
+                )
+            if queued_zero_started_at is None:
+                queued_zero_started_at = now
+            elif now - queued_zero_started_at >= queued_zero_progress_timeout_seconds:
+                raise TimeoutError(
+                    "OTU 图片任务 queued progress=0 timeout: "
+                    f"task_id={task_id}, status={status}, progress={int(progress)}, "
+                    f"created_at={created_at}, last={str(last_body)[:1200]}"
+                )
+        else:
+            queued_zero_started_at = None
         time.sleep(POLL_INTERVAL)
     raise TimeoutError(f"OTU 图片任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 

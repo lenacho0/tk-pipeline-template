@@ -299,6 +299,16 @@ def build_error_payload(error, stage='unknown'):
     failure_status = 'failed_terminal'
 
     if (
+        '违规' in msg
+        or '请立即修改' in msg
+        or '可能违规内容' in msg
+        or 'policy' in lower
+        or 'safety' in lower
+    ):
+        error_code = 'UPSTREAM_POLICY_BLOCKED'
+        retryable = False
+        failure_status = 'failed_terminal'
+    elif (
         '429' in lower
         or 'rate limit' in lower
         or 'too many requests' in lower

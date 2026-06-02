@@ -2,7 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -94,6 +94,45 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "9:16")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "720x1280")
         saver.assert_called_once()
+
+    def test_run_image_generation_retries_aitgenne_rate_limit_before_saving(self):
+        submitter = Mock(side_effect=[
+            RuntimeError("Aitgenne 图片编辑提交失败: HTTP 429, body={'error': {'message': '当前分组上游负载已饱和，请稍后再试'}}"),
+            RuntimeError("Aitgenne 图片编辑提交失败: HTTP 429, body={'error': {'message': '当前分组上游负载已饱和，请稍后再试'}}"),
+            {"data": [{"url": "https://x.test/out.png"}]},
+        ])
+        saver = Mock()
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="图片",
+            task_type="图生图/参考图重绘",
+            model="Aitgenne / gpt-image-2",
+            call_type="OpenAI兼容 /v1/images/generations",
+            api_base="https://api.aitgenne.com",
+            api_key="sk-test",
+            params={"size": "720x1280", "aspect_ratio": "9:16"},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("time.sleep") as sleep:
+            out_path = Path(tmp) / "out.png"
+            result = image_generation.run_image_generation(
+                route,
+                "Render from references.",
+                str(out_path),
+                input_mode="image-to-image",
+                reference_image_paths=[str(Path(tmp) / "ref.png")],
+                metadata={"reference_roles": ["product:1"]},
+                size="720x1280",
+                aspect_ratio="9:16",
+                aitgenne_submitter=submitter,
+                aitgenne_saver=saver,
+            )
+
+        self.assertEqual(result.provider, "Aitgenne")
+        self.assertEqual(result.result_body, {"data": [{"url": "https://x.test/out.png"}]})
+        self.assertEqual(submitter.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [8, 16])
+        saver.assert_called_once_with({"data": [{"url": "https://x.test/out.png"}]}, str(out_path))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,958 @@
+{
+  "generated_at": "2026-06-02 06:47:10",
+  "legacy_archive_updates": 29,
+  "model_catalog_rows": 20,
+  "records": [
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "003 脚本文档三表结构化拆分专用配置；输出 JSON 用于创建参考资产与分镜生产记录。",
+        "应用表格": [
+          "003-1脚本文档-任务表",
+          "003-2脚本文档-参考资产表",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=2421]",
+        "是否统一AI预设": "否",
+        "模型名称": "gemini-3.1-pro-preview",
+        "状态": "启用",
+        "环节": "脚本文档结构化拆分-Gemini",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recveQZPORmm33"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "OTU 单张分镜图生成",
+        "应用表格": [
+          "002-首尾帧视频生成表",
+          "003-2脚本文档-参考资产表",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=102]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2",
+        "状态": "启用",
+        "环节": "图片生成-OTU",
+        "画面尺寸": "720x1280",
+        "画面比例": "9:16",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recveQZRZc7NUI"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com/v1",
+        "备注": "003-3 单镜头口播音频生成配置；API Key 请在飞书字段内填写，不写入仓库或命令日志。",
+        "应用表格": [
+          "初始化-音色库",
+          "初始化-口播音频生成",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=182]",
+        "是否统一AI预设": "否",
+        "模型名称": "speech-2.8-turbo",
+        "状态": "启用",
+        "环节": "语音合成-MiniMax",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvjYDHpGWjPd"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": null,
+        "应用表格": [
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=83]",
+        "是否统一AI预设": "否",
+        "模型名称": "veo-3.1-fast-generate-preview",
+        "状态": null,
+        "环节": "分镜视频生成-Veo",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvk4lsU0TGGD"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "OTU 低成本视频通道；由 视频通道=OTU 触发，接口为 /v1/videos。",
+        "应用表格": [
+          "002-首尾帧视频生成表",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "veo_3_1-fast-fl",
+        "状态": "启用",
+        "环节": "分镜视频生成-OTU",
+        "画面尺寸": "720x1280",
+        "画面比例": "9:16",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvke6sRYHMMU"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "故事板制作板 16:9 图片生成配置；API Key 由本地脚本初始化写入。",
+        "应用表格": [
+          "001-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2",
+        "状态": "启用",
+        "环节": "故事板图片生成-OTU",
+        "画面尺寸": "1280x720",
+        "画面比例": "16:9",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvkNLlvfzx9H"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "Omni 10s 故事板图生视频配置；模型固定 omni_flash-10s，横屏尺寸由代码默认 1280x720。",
+        "应用表格": [
+          "001-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=560]",
+        "是否统一AI预设": "否",
+        "模型名称": "omni_flash-10s",
+        "状态": "启用",
+        "环节": "故事板视频生成-Omni",
+        "画面尺寸": "720x1280",
+        "画面比例": "9:16",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvkNLmjYXW2P"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "001 故事板图片提示词拆分专用配置；提示词、模型与 API 均由本记录维护。",
+        "应用表格": [
+          "001-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=3513]",
+        "是否统一AI预设": "否",
+        "模型名称": "gemini-3.1-pro-preview",
+        "状态": "启用",
+        "环节": "故事板图片提示词拆分-Gemini",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvkP9VfsEY3o"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "004 多角色事故救场首尾帧解析专用配置；动态解析角色、参考资产、关键帧依赖和视频片段。",
+        "应用表格": null,
+        "提示词": "[prompt chars=3011]",
+        "是否统一AI预设": "否",
+        "模型名称": "gemini-3.1-pro-preview",
+        "状态": "启用",
+        "环节": "多角色首尾帧解析-Gemini",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvkUn0Oh2xDp"
+    },
+    {
+      "fields": {
+        "AI任务类型": null,
+        "AI供应商": null,
+        "AI参数JSON": null,
+        "AI能力类型": null,
+        "API Key": "[REDACTED]",
+        "API 代理地址": null,
+        "备注": "Codex 扩展 smoke test 已完成；恢复关闭，统一AI路由不参与生产执行。",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "指定记录启用",
+        "状态": "启用",
+        "环节": "统一AI路由启用状态",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": null
+      },
+      "record_id": "recvl5tXBFeBu7"
+    },
+    {
+      "fields": {
+        "AI任务类型": "脚本解析拆分",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": "{\"temperature\":0.1,\"response_format\":\"json\"}",
+        "AI能力类型": "文本",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；统一路由文本预设；API Key 复用对应正式 Gemini 环节配置。",
+        "应用表格": [
+          "003-1脚本文档-任务表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gemini-3.1-pro-preview",
+        "状态": "停用",
+        "环节": "统一AI预设-文本-AIHubMix-Gemini3.1Pro",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvl5CncJF4yW"
+    },
+    {
+      "fields": {
+        "AI任务类型": "脚本解析拆分",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"temperature\":0.1,\"response_format\":\"json\"}",
+        "AI能力类型": "文本",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；统一路由文本预设；用于脚本拆分/故事板拆分/多角色解析灰度。",
+        "应用表格": [
+          "003-1脚本文档-任务表",
+          "001-多角色首尾帧生成表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-5.5",
+        "状态": "停用",
+        "环节": "统一AI预设-文本-Aitgenne-GPT5.5",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OpenAI 兼容格式（/chat/completions 端点）"
+      },
+      "record_id": "recvl5CncJAvWi"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"1024x1024\",\"aspect_ratio\":\"1:1\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；低成本图片 smoke/default 预设；真实 API Key 复用图片生成-OTU。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "002-首尾帧视频生成表",
+          "003-2脚本文档-参考资产表",
+          "003-3脚本文档-分镜生产表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2",
+        "状态": "停用",
+        "环节": "统一AI预设-图片-OTU-GPTImage2-1K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJo33I"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"2K\",\"aspect_ratio\":\"9:16\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；更高清图片预设；按记录级 AI参数JSON 覆盖尺寸/比例。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "002-首尾帧视频生成表",
+          "003-3脚本文档-分镜生产表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2-2K",
+        "状态": "停用",
+        "环节": "统一AI预设-图片-OTU-GPTImage2-2K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJd6v3"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"4K\",\"aspect_ratio\":\"9:16\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；高成本高分辨率图片预设；只建议单条记录灰度。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "002-首尾帧视频生成表",
+          "003-3脚本文档-分镜生产表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2-4K",
+        "状态": "停用",
+        "环节": "统一AI预设-图片-OTU-GPTImage2-4K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJswS1"
+    },
+    {
+      "fields": {
+        "AI任务类型": "文生图",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"1024x1024\",\"aspect_ratio\":\"1:1\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；Nano banana 系列图片预设；仅在模型可用时启用。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "003-3脚本文档-分镜生产表",
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "nano_banana_pro-1K",
+        "状态": "停用",
+        "环节": "统一AI预设-图片-OTU-NanoBanana-Pro-1K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJmWRd"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首尾帧视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"720x1280\",\"seconds\":8,\"aspect_ratio\":\"9:16\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；低成本视频 smoke/default 预设；真实提交走 /v1/videos。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "002-首尾帧视频生成表",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "veo_3_1-fast-fl",
+        "状态": "停用",
+        "环节": "统一AI预设-视频-OTU-VeoFast-720p",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJLjBG"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首尾帧视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"1080x1920\",\"seconds\":8,\"aspect_ratio\":\"9:16\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；高清视频预设；建议通过指定记录启用后再真实调用。",
+        "应用表格": [
+          "001-多角色首尾帧生成表",
+          "002-首尾帧视频生成表",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "veo_3_1-fast-fl-hd",
+        "状态": "停用",
+        "环节": "统一AI预设-视频-OTU-VeoFast-1080p",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJymoE"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\":\"720x1280\",\"seconds\":10,\"aspect_ratio\":\"9:16\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；故事板 Omni 视频预设；保留故事板图作为主参考。",
+        "应用表格": [
+          "004-故事板图片视频生成表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "omni_flash-10s",
+        "状态": "停用",
+        "环节": "统一AI预设-视频-OTU-OmniFlash-10s",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJXtSC"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": "{\"resolution\":\"720p\",\"aspect_ratio\":\"9:16\",\"seconds\":4}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；AIHubMix/Gemini native Veo 首帧图生视频预设。",
+        "应用表格": [
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "veo-3.1-fast-generate-preview",
+        "状态": "停用",
+        "环节": "统一AI预设-视频-AIHubMix-VeoFast-720p",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvl5CncJneTG"
+    },
+    {
+      "fields": {
+        "AI任务类型": "TTS",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"audio_format\":\"mp3\",\"speed\":1.0}",
+        "AI能力类型": "语音",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com/v1",
+        "备注": "归档：旧命名统一AI预设，已由供应商/模型显示名预设替代；语音 TTS 预设；真实 API Key 复用语音合成-MiniMax。",
+        "应用表格": [
+          "初始化-音色库",
+          "初始化-口播音频生成",
+          "003-3脚本文档-分镜生产表"
+        ],
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "speech-2.8-turbo",
+        "状态": "停用",
+        "环节": "统一AI预设-语音-Aitgenne-MiniMax-TTS",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl5CncJ8bYr"
+    },
+    {
+      "fields": {
+        "AI任务类型": "脚本解析拆分",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": null,
+        "AI能力类型": "文本",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "多图九宫格方案生成提示词真源；API Key 复用正式文本模型配置或由记录字段路由选择。",
+        "应用表格": null,
+        "提示词": "[prompt chars=3380]",
+        "是否统一AI预设": "否",
+        "模型名称": "gemini-3.1-pro-preview",
+        "状态": "测试中",
+        "环节": "多图九宫格方案生成",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvl6nD8Q7dXu"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\": \"720x1280\", \"aspect_ratio\": \"9:16\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "多图九宫格图片生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
+        "应用表格": null,
+        "提示词": "[prompt chars=1014]",
+        "是否统一AI预设": "否",
+        "模型名称": "gpt-image-2",
+        "状态": "测试中",
+        "环节": "多图九宫格图片生成",
+        "画面尺寸": "720x1280",
+        "画面比例": "9:16",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl6nDOa8ISd"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"size\": \"720x1280\", \"aspect_ratio\": \"9:16\", \"seconds\": \"10\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "多图九宫格视频生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
+        "应用表格": null,
+        "提示词": "[prompt chars=2049]",
+        "是否统一AI预设": "否",
+        "模型名称": "OTU / omni_flash-10s",
+        "状态": "测试中",
+        "环节": "多图九宫格视频生成",
+        "画面尺寸": "720x1280",
+        "画面比例": "9:16",
+        "调用方式": "专用 API"
+      },
+      "record_id": "recvl6nEacNcDe"
+    },
+    {
+      "fields": {
+        "AI任务类型": "脚本生成",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": "{}",
+        "AI能力类型": "文本",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com/gemini",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=现有适配器/配置；fit=适合方案/拆分/提示词生成",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "AIHubMix / gemini-3.1-pro-preview",
+        "状态": "启用",
+        "环节": "统一AI预设-AIHubMix / gemini-3.1-pro-preview",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini 原生 SDK"
+      },
+      "record_id": "recvl9IVOK26VL"
+    },
+    {
+      "fields": {
+        "AI任务类型": "脚本生成",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{}",
+        "AI能力类型": "文本",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=现有适配器/配置；fit=适合方案/文案生成",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "Aitgenne / gpt-5.5",
+        "状态": "启用",
+        "环节": "统一AI预设-Aitgenne / gpt-5.5",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OpenAI兼容 chat/completions"
+      },
+      "record_id": "recvl9IWzKFfZO"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"size\": \"720x1280\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models + 现有适配器；fit=1K 图片主通道",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / gpt-image-2",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / gpt-image-2",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos JSON image task"
+      },
+      "record_id": "recvl9IX0l2xx0"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"size\": \"1080x1920\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models + 现有适配器；fit=2K 图片主通道",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / gpt-image-2-2K",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / gpt-image-2-2K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos JSON image task"
+      },
+      "record_id": "recvl9IXrlCP2X"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"size\": \"1440x2560\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models + 现有适配器；fit=4K 图片主通道",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / gpt-image-2-4K",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / gpt-image-2-4K",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos JSON image task"
+      },
+      "record_id": "recvl9IXRDILPt"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models；fit=适合单图/Omni 视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / omni_flash-10s",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / omni_flash-10s",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9IYfBEIHj"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models；fit=适合图生视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9IYFl3sNZ"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models + 现有适配器；fit=首帧图生视频主通道",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1-fast-fl",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1-fast-fl",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9IZ4tb0EU"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models + UGC smoke；fit=高清首帧图生视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1-fast-fl-hd",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1-fast-fl-hd",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9IZtXiA5g"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models；fit=首帧图生视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1-fl",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1-fl",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9IZTGuuh4"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models；fit=高清视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1-hd",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1-hd",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9J0hLfuf7"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "OTU",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://otuapi.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=OTU /v1/models；fit=高清首帧图生视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "OTU / veo_3_1-hd-fl",
+        "状态": "启用",
+        "环节": "统一AI预设-OTU / veo_3_1-hd-fl",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OTU /v1/videos multipart"
+      },
+      "record_id": "recvl9J0Ipxce0"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=现有适配器/smoke test；fit=单首帧视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "AIHubMix / veo-3.1-fast-generate-preview",
+        "状态": "启用",
+        "环节": "统一AI预设-AIHubMix / veo-3.1-fast-generate-preview",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "Gemini native Veo"
+      },
+      "record_id": "recvl9J1erpz7q"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "AIHubMix",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://aihubmix.com",
+        "备注": "归档：候选/非生产模型，catalog_status=candidate；统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=现有适配器；平台曾有参数覆盖问题，保留但谨慎使用。",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "否",
+        "模型名称": "AIHubMix / seeddance2.0",
+        "状态": "停用",
+        "环节": "统一AI预设-AIHubMix / seeddance2.0",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "AIHubMix 视频适配器"
+      },
+      "record_id": "recvl9J1HYMOKu"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=官网模型广场/用户确认；fit=适合多参考图九宫格",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "Aitgenne / happyhorse-1.0-r2v",
+        "状态": "启用",
+        "环节": "统一AI预设-Aitgenne / happyhorse-1.0-r2v",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "happyhorse视频"
+      },
+      "record_id": "recvl9J2842Kw4"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=官网模型广场/用户确认；fit=适合单张九宫格图转视频",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "Aitgenne / happyhorse-1.0-i2v",
+        "状态": "启用",
+        "环节": "统一AI预设-Aitgenne / happyhorse-1.0-i2v",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "happyhorse视频"
+      },
+      "record_id": "recvl9J2xwBa5U"
+    },
+    {
+      "fields": {
+        "AI任务类型": "首帧图生视频",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"seconds\": \"8\", \"size\": \"720x1280\"}",
+        "AI能力类型": "视频",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=官网模型广场/用户确认；fit=适合 Omni 视频候选",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "Aitgenne / omni-flash",
+        "状态": "启用",
+        "环节": "统一AI预设-Aitgenne / omni-flash",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "视频统一格式"
+      },
+      "record_id": "recvl9J2WnW2sh"
+    },
+    {
+      "fields": {
+        "AI任务类型": "图生图/参考图重绘",
+        "AI供应商": "Aitgenne",
+        "AI参数JSON": "{\"aspect_ratio\": \"9:16\", \"size\": \"720x1280\"}",
+        "AI能力类型": "图片",
+        "API Key": "[REDACTED]",
+        "API 代理地址": "https://api.aitgenne.com",
+        "备注": "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。；source=Aitgenne 图片端点验证/现有统一路由；用于参考图文生图；参考图真实提交已接入。",
+        "应用表格": null,
+        "提示词": "[prompt chars=0]",
+        "是否统一AI预设": "是",
+        "模型名称": "Aitgenne / gpt-image-2",
+        "状态": "启用",
+        "环节": "统一AI预设-Aitgenne / gpt-image-2",
+        "画面尺寸": null,
+        "画面比例": null,
+        "调用方式": "OpenAI兼容 /v1/images/generations"
+      },
+      "record_id": "recvlc6MDlPdcf"
+    }
+  ],
+  "source_table": "初始化-模型与API配置",
+  "source_table_id": "tblPUVFtpjogYOGn",
+  "task_default_rows": 20
+}

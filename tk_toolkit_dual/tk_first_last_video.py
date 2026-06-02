@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from google.genai import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
@@ -62,13 +63,24 @@ from tk_shot_storyboard import (  # noqa: E402
 )
 from tk_shot_video import (  # noqa: E402
     DEFAULT_ASPECT_RATIO,
+    DEFAULT_GEMINI_API_BASE,
+    DEFAULT_MODEL as DEFAULT_NATIVE_VIDEO_MODEL,
     DEFAULT_OTU_MODEL,
     DEFAULT_OTU_SIZE,
+    call_native_veo_first_frame_task,
     download_video,
+    download_native_veo_video,
+    extract_native_generated_video,
     extract_video_url,
     format_url_field_value,
+    get_native_veo_client,
     get_table_field_types,
+    is_native_veo_operation_id,
+    native_generated_video_uri,
+    normalize_native_veo_resolution,
     normalize_seconds,
+    operation_to_dict,
+    poll_native_veo_operation,
     poll_otu_video_task,
     upload_video_to_feishu,
     video_item_url,
@@ -77,10 +89,12 @@ from tk_shot_video import (  # noqa: E402
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
 from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
 IMAGE_STAGE_NAME = "图片生成-OTU"
 VIDEO_STAGE_NAME = "分镜视频生成-OTU"
+AIHUBMIX_VIDEO_STAGE_NAME = "分镜视频生成-Veo"
 BASE_WORK_DIR = Path(WORKSPACE) / "first_last_video_work"
 SUBMIT_TIMEOUT = 180
 PARENT_RECORD_TYPE = "母任务"
@@ -655,6 +669,44 @@ def build_child_scene_records(
     return records
 
 
+def apply_child_scene_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        fields = record.get("fields") or {}
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["first_last_video"],
+            stage="首帧图生成默认",
+            model_field="首帧图AI模型",
+            size_field="首帧图画面尺寸",
+            ratio_field="首帧图画面比例",
+            params_field="首帧图AI参数JSON",
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["first_last_video"],
+            stage="尾帧图生成默认",
+            model_field="尾帧图AI模型",
+            size_field="尾帧图画面尺寸",
+            ratio_field="尾帧图画面比例",
+            params_field="尾帧图AI参数JSON",
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["first_last_video"],
+            stage="首尾帧视频生成默认",
+            model_field="视频生成模型",
+            size_field="视频画面尺寸",
+            ratio_field="视频画面比例",
+            params_field="视频AI参数JSON",
+            placeholder_values=(f"OTU / {DEFAULT_OTU_MODEL}", "默认（配置表）"),
+        )
+        record["fields"] = fields
+    return records
+
+
 def deprecate_existing_children(token: str, parent_record_id: str) -> int:
     deprecated = 0
     for rec in safe_list_records(token, TABLE_FIRST_LAST_VIDEO):
@@ -712,6 +764,7 @@ def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_out
     scenes = payload["scenes"]
     deprecated = deprecate_existing_children(token, record_id)
     child_records = build_child_scene_records(record_id, fields, scenes, batch_id=batch_id, split_version=split_version, product_context=product_context)
+    child_records = apply_child_scene_default_models(token, child_records)
     created = create_records(token, TABLE_FIRST_LAST_VIDEO, child_records)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
         "记录类型": PARENT_RECORD_TYPE,
@@ -879,6 +932,16 @@ def resolve_video_generation_model(fields: Dict[str, Any], cfg: Dict[str, Any]) 
     return {"model": model, "provider": provider, "display": display, "source": source}
 
 
+def selected_video_provider_hint(fields: Dict[str, Any]) -> str:
+    raw = _usable_model_choice(fields.get("视频生成模型")) or _usable_model_choice(fields.get("视频AI模型"))
+    bits = ai_routing.parse_model_display(raw)
+    return bits["provider"] or "OTU"
+
+
+def video_channel_for_provider(provider: str) -> str:
+    return "OTU" if provider == "OTU" else "AIHubMix"
+
+
 def maybe_unified_media_summary(
     token: str,
     fields: Dict[str, Any],
@@ -968,6 +1031,19 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     ensure_first_last_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_FIRST_LAST_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["first_last_video"],
+        stage="首帧图生成默认",
+        model_field="首帧图AI模型",
+        size_field="首帧图画面尺寸",
+        ratio_field="首帧图画面比例",
+        params_field="首帧图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_child_or_single(fields)
     prompt = extract_text(fields.get("首帧生图提示词")).strip()
     current_status = extract_text(fields.get("首帧图生成状态")).strip()
@@ -1079,6 +1155,17 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
             otu_submitter=submit_otu_image_task,
             otu_poller=poll_otu_image_task,
             otu_downloader=download_otu_image_result,
+            on_task_submitted=lambda task_id: safe_update_record(
+                token,
+                TABLE_FIRST_LAST_VIDEO,
+                record_id,
+                filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+                    "首帧图任务ID": task_id,
+                    "首帧图版本": version,
+                    "首帧图原始响应JSON": compact_json({"submit": {"id": task_id}, "references": reference_summary}, 10000),
+                    "首帧图错误信息": f"已提交 {route.provider} 首帧图任务，正在轮询。task_id={task_id}",
+                }),
+            ),
         )
         submit_task_id = image_result.task_id
         submit_body = image_result.submit_body
@@ -1146,24 +1233,43 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     ensure_first_last_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_FIRST_LAST_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["first_last_video"],
+        stage="尾帧图生成默认",
+        model_field="尾帧图AI模型",
+        size_field="尾帧图画面尺寸",
+        ratio_field="尾帧图画面比例",
+        params_field="尾帧图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_child_or_single(fields)
     prompt = extract_text(fields.get("尾帧生图提示词")).strip()
     if not prompt:
         raise ValueError("尾帧生图提示词为空")
+    current_status = extract_text(fields.get("尾帧图生成状态")).strip()
+    existing_task_id = extract_text(fields.get("尾帧图任务ID")).strip() if current_status == "生成中" else ""
     first_frame_token = extract_text(fields.get("首帧图file_token")).strip()
-    if not first_frame_token:
+    if not first_frame_token and not existing_task_id:
         raise ValueError("缺少当前首帧图file_token，无法生成尾帧图")
     version = current_version(fields, "尾帧图版本")
     work_dir = ensure_stage_work_dir(record_id, "last_frame", version)
-    first_frame_path = download_feishu_media(token, first_frame_token, work_dir / f"{record_id}_first_frame_ref_v{version}.png")
-    product_context = resolve_product_reference_context(token, fields, record_id)
+    if existing_task_id:
+        first_frame_path = None
+        product_context = None
+    else:
+        first_frame_path = download_feishu_media(token, first_frame_token, work_dir / f"{record_id}_first_frame_ref_v{version}.png")
+        product_context = resolve_product_reference_context(token, fields, record_id)
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "prompt_chars": len(prompt),
-        "first_frame_path": str(first_frame_path),
-        "product_record_id": product_context["product_record_id"],
-        "product_reference_count": len(product_context["product_tokens"]),
+        "first_frame_path": str(first_frame_path) if first_frame_path else "",
+        "product_record_id": product_context["product_record_id"] if product_context else "",
+        "product_reference_count": len(product_context["product_tokens"]) if product_context else 0,
     }
     _, cfg = get_stage_config(
         IMAGE_STAGE_NAME,
@@ -1202,61 +1308,99 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     if route_summary and ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
-    start_fields = last_frame_result_reset_fields("生成中")
-    start_fields.update({
-        "尾帧图版本": version,
-        "尾帧图生成状态": "生成中",
-        "尾帧图错误信息": "",
-        **product_reference_record_fields(product_context),
-    })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
     out_path = str(work_dir / f"{record_id}_last_frame_v{version}.png")
-    product_refs = collect_product_reference_images(token, product_context, work_dir)
-    first_frame_url = get_tmp_download_url_for_attachment(token, first_frame_token)
-    product_reference_urls = reference_urls_for_refs(token, product_refs)
-    reference_urls = ([first_frame_url] if first_frame_url else []) + product_reference_urls
-    reference_roles = ["first_frame"] + [ref["role"] for ref in product_refs]
-    reference_file_tokens = [first_frame_token] + [ref["file_token"] for ref in product_refs]
-    reference_summary = {
-        "product_record_id": product_context["product_record_id"],
-        "product_name": product_context.get("product_name", ""),
-        "reference_roles": reference_roles,
-        "reference_file_tokens": reference_file_tokens,
-        "product_reference_file_tokens": product_context.get("product_tokens") or [],
-        "reference_paths": [str(first_frame_path)] + [ref.get("path", "") for ref in product_refs],
-        "reference_urls": reference_urls,
-        "input_mode": "image-to-image",
-        "remote_reference_urls": bool(reference_urls),
-        "aspect_ratio": image_params["aspect_ratio"],
-        "size": image_params["size"],
-    }
-    image_result = run_image_generation(
-        route,
-        prompt,
-        out_path,
-        input_mode="image-to-image",
-        image_path=str(first_frame_path),
-        metadata={
-            "reference_roles": reference_roles,
+    if existing_task_id:
+        submit_task_id = existing_task_id
+        previous_raw = parse_compact_json_object(fields.get("尾帧图原始响应JSON"))
+        submit_body = previous_raw.get("submit") if isinstance(previous_raw.get("submit"), dict) else {"id": submit_task_id}
+        reference_summary = previous_raw.get("references") if isinstance(previous_raw.get("references"), dict) else {}
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "尾帧图任务ID": submit_task_id,
+            "尾帧图版本": version,
+            "尾帧图生成状态": "生成中",
+            "尾帧图错误信息": f"恢复轮询已有 OTU 尾帧图任务。task_id={submit_task_id}",
+            "错误信息": "",
+        }))
+        image_result = run_image_generation(
+            route,
+            prompt,
+            out_path,
+            input_mode="image-to-image",
+            image_path="",
+            metadata={},
+            size=image_params["size"],
+            aspect_ratio=image_params["aspect_ratio"],
+            existing_task_id=submit_task_id,
+            otu_submitter=submit_otu_image_task,
+            otu_poller=poll_otu_image_task,
+            otu_downloader=download_otu_image_result,
+        )
+    else:
+        start_fields = last_frame_result_reset_fields("生成中")
+        start_fields.update({
+            "尾帧图版本": version,
+            "尾帧图生成状态": "生成中",
+            "尾帧图错误信息": "",
+            **product_reference_record_fields(product_context),
+        })
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
+        product_refs = collect_product_reference_images(token, product_context, work_dir)
+        first_frame_url = get_tmp_download_url_for_attachment(token, first_frame_token)
+        product_reference_urls = reference_urls_for_refs(token, product_refs)
+        reference_urls = ([first_frame_url] if first_frame_url else []) + product_reference_urls
+        reference_roles = ["first_frame"] + [ref["role"] for ref in product_refs]
+        reference_file_tokens = [first_frame_token] + [ref["file_token"] for ref in product_refs]
+        reference_summary = {
             "product_record_id": product_context["product_record_id"],
+            "product_name": product_context.get("product_name", ""),
+            "reference_roles": reference_roles,
+            "reference_file_tokens": reference_file_tokens,
             "product_reference_file_tokens": product_context.get("product_tokens") or [],
-            "urls": reference_urls,
-            "aspectRatio": image_params["aspect_ratio"],
-        },
-        size=image_params["size"],
-        aspect_ratio=image_params["aspect_ratio"],
-        otu_submitter=submit_otu_image_task,
-        otu_poller=poll_otu_image_task,
-        otu_downloader=download_otu_image_result,
-    )
-    submit_task_id = image_result.task_id
-    submit_body = image_result.submit_body
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
-        "尾帧图任务ID": submit_task_id,
-        "尾帧图版本": version,
-        "尾帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
-        "尾帧图错误信息": f"已提交 {route.provider} 尾帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
-    }))
+            "reference_paths": [str(first_frame_path)] + [ref.get("path", "") for ref in product_refs],
+            "reference_urls": reference_urls,
+            "input_mode": "image-to-image",
+            "remote_reference_urls": bool(reference_urls),
+            "aspect_ratio": image_params["aspect_ratio"],
+            "size": image_params["size"],
+        }
+        image_result = run_image_generation(
+            route,
+            prompt,
+            out_path,
+            input_mode="image-to-image",
+            image_path=str(first_frame_path),
+            metadata={
+                "reference_roles": reference_roles,
+                "product_record_id": product_context["product_record_id"],
+                "product_reference_file_tokens": product_context.get("product_tokens") or [],
+                "urls": reference_urls,
+                "aspectRatio": image_params["aspect_ratio"],
+            },
+            size=image_params["size"],
+            aspect_ratio=image_params["aspect_ratio"],
+            otu_submitter=submit_otu_image_task,
+            otu_poller=poll_otu_image_task,
+            otu_downloader=download_otu_image_result,
+            on_task_submitted=lambda task_id: safe_update_record(
+                token,
+                TABLE_FIRST_LAST_VIDEO,
+                record_id,
+                filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+                    "尾帧图任务ID": task_id,
+                    "尾帧图版本": version,
+                    "尾帧图原始响应JSON": compact_json({"submit": {"id": task_id}, "references": reference_summary}, 10000),
+                    "尾帧图错误信息": f"已提交 {route.provider} 尾帧图任务，正在轮询。task_id={task_id}",
+                }),
+            ),
+        )
+        submit_task_id = image_result.task_id
+        submit_body = image_result.submit_body
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "尾帧图任务ID": submit_task_id,
+            "尾帧图版本": version,
+            "尾帧图原始响应JSON": compact_json({"submit": submit_body, "references": reference_summary}, 10000),
+            "尾帧图错误信息": f"已提交 {route.provider} 尾帧图任务，正在轮询。task_id={submit_task_id}" if submit_task_id else "",
+        }))
     result = image_result.result_body
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_last_frame.png"), max_attempts=3, label="upload last frame")
     ensure_current_generation(token, record_id, "尾帧图生成状态", "生成中", "尾帧图版本", version, "尾帧图任务ID", submit_task_id)
@@ -1272,9 +1416,9 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "尾帧图错误信息": "",
         "尾帧审核状态": "待确认",
         "错误信息": "",
-        **product_reference_record_fields(product_context),
+        **(product_reference_record_fields(product_context) if product_context else {}),
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
+    summary.update({"status": "success", "task_id": submit_task_id, "file_token": file_token, "output_path": out_path})
     return summary
 
 
@@ -1341,23 +1485,40 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     ensure_first_last_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_FIRST_LAST_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_FIRST_LAST_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["first_last_video"],
+        stage="首尾帧视频生成默认",
+        model_field="视频生成模型",
+        size_field="视频画面尺寸",
+        ratio_field="视频画面比例",
+        params_field="视频AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_child_or_single(fields)
     prompt = extract_text(fields.get("首尾帧生视频提示词")).strip()
     existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     version = current_version(fields, "视频版本")
     work_dir = ensure_stage_work_dir(record_id, "video", version)
+    provider_hint = selected_video_provider_hint(fields)
+    stage_name = AIHUBMIX_VIDEO_STAGE_NAME if provider_hint == "AIHubMix" else VIDEO_STAGE_NAME
     _, cfg = get_stage_config(
-        VIDEO_STAGE_NAME,
-        default_model=DEFAULT_OTU_MODEL,
-        default_api_base=DEFAULT_OTU_API_BASE,
+        stage_name,
+        default_model=DEFAULT_NATIVE_VIDEO_MODEL if provider_hint == "AIHubMix" else DEFAULT_OTU_MODEL,
+        default_api_base=DEFAULT_GEMINI_API_BASE if provider_hint == "AIHubMix" else DEFAULT_OTU_API_BASE,
         default_size=DEFAULT_OTU_SIZE,
     )
     video_model = resolve_video_generation_model(fields, cfg)
     runtime_cfg = {**cfg, "model": video_model["model"]}
+    channel = video_channel_for_provider(video_model["provider"])
     seconds = normalize_seconds(fields.get("目标时长秒"))
     video_params = resolve_media_dimensions(fields, "视频", runtime_cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
     size = video_params["size"]
     aspect_ratio = video_params["aspect_ratio"]
+    native_resolution = normalize_native_veo_resolution(size) if channel == "AIHubMix" else ""
     output_path = str(work_dir / f"{record_id}_first_last_video_v{version}.mp4")
     summary = {
         "record_id": record_id,
@@ -1366,6 +1527,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         "model_source": video_model["source"],
         "seconds": seconds,
         "size": size,
+        "native_resolution": native_resolution or None,
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
         "output_path": output_path,
@@ -1394,15 +1556,31 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         return summary
 
     field_types = get_table_field_types(token, TABLE_FIRST_LAST_VIDEO)
+    native_client: Any = None
+    if channel == "AIHubMix" and existing_task_id and not is_native_veo_operation_id(existing_task_id):
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "视频任务ID": "",
+            "视频生成原始响应JSON": "",
+            "视频错误信息": f"旧视频任务ID不属于 AIHubMix Gemini/Veo，已忽略并重新提交。old_task_id={existing_task_id}",
+        }))
+        existing_task_id = ""
+    if channel == "OTU" and existing_task_id and not existing_task_id.startswith("task_"):
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            "视频任务ID": "",
+            "视频生成原始响应JSON": "",
+            "视频错误信息": f"旧视频任务ID不属于 OTU，已忽略并重新提交。old_task_id={existing_task_id}",
+        }))
+        existing_task_id = ""
+
     if existing_task_id:
         task_id = existing_task_id
         safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
-            "视频通道": "OTU",
+            "视频通道": channel,
             "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频任务ID": task_id,
             "视频版本": version,
-            "视频错误信息": f"恢复轮询已有 OTU 首尾帧视频任务。task_id={task_id}",
+            "视频错误信息": f"恢复轮询已有 {channel} 首尾帧视频任务。task_id={task_id}",
             "错误信息": "",
         }))
     else:
@@ -1418,38 +1596,69 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
         last_frame_path = download_feishu_media(token, last_frame_token, work_dir / f"{record_id}_video_last_frame_v{version}.png")
         start_fields = video_result_reset_fields("生成中")
         start_fields.update({
-            "视频通道": "OTU",
+            "视频通道": channel,
             "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频版本": version,
-            "视频错误信息": "",
+            "视频错误信息": f"准备提交 AIHubMix Gemini/Veo 首尾帧视频任务... 视频画面尺寸={size}, native_resolution={native_resolution}" if channel == "AIHubMix" else "",
         })
         safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
-        task_id, submit_body = submit_first_last_video_task(
-            runtime_cfg,
-            prompt,
-            str(first_frame_path),
-            str(last_frame_path),
-            seconds=seconds,
-            size=size,
-            aspect_ratio=aspect_ratio,
-        )
-        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
-            "视频任务ID": task_id,
-            "视频版本": version,
-            "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
-            "视频错误信息": f"已提交 OTU 首尾帧视频任务，正在轮询。task_id={task_id}",
-        }))
-    result = poll_otu_video_task(runtime_cfg, task_id)
-    video_url = extract_video_url(result)
-    if not video_url:
-        content_url = video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content"
-        video_url = content_url
-    download_video(video_url, output_path)
+        if channel == "OTU":
+            task_id, submit_body = submit_first_last_video_task(
+                runtime_cfg,
+                prompt,
+                str(first_frame_path),
+                str(last_frame_path),
+                seconds=seconds,
+                size=size,
+                aspect_ratio=aspect_ratio,
+            )
+            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+                "视频任务ID": task_id,
+                "视频版本": version,
+                "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
+                "视频错误信息": f"已提交 OTU 首尾帧视频任务，正在轮询。task_id={task_id}",
+            }))
+        else:
+            native_client = get_native_veo_client(runtime_cfg)
+            operation = call_native_veo_first_frame_task(
+                runtime_cfg,
+                prompt,
+                str(first_frame_path),
+                seconds,
+                native_resolution,
+                aspect_ratio,
+                last_frame_path=str(last_frame_path),
+                client=native_client,
+            )
+            task_id = extract_text(getattr(operation, "name", "")).strip()
+            if not task_id:
+                raise RuntimeError(f"Veo 首尾帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
+            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+                "视频任务ID": task_id,
+                "视频版本": version,
+                "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}, 10000),
+                "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首尾帧视频任务，正在轮询。task_id={task_id}; 视频画面尺寸={size}, native_resolution={native_resolution}",
+            }))
+    if channel == "OTU":
+        result = poll_otu_video_task(runtime_cfg, task_id)
+        video_url = extract_video_url(result)
+        if not video_url:
+            content_url = video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content"
+            video_url = content_url
+        download_video(video_url, output_path)
+    else:
+        client = native_client or get_native_veo_client(runtime_cfg)
+        operation = types.GenerateVideosOperation(name=task_id) if existing_task_id else operation
+        completed_operation = poll_native_veo_operation(client, operation)
+        generated_video = extract_native_generated_video(completed_operation)
+        result = operation_to_dict(completed_operation)
+        video_url = native_generated_video_uri(generated_video)
+        download_native_veo_video(client, generated_video, output_path)
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_first_last_video.mp4")
     ensure_current_generation(token, record_id, "视频生成状态", "生成中", "视频版本", version, "视频任务ID", task_id)
     success_fields: Dict[str, Any] = {
-        "视频通道": "OTU",
+        "视频通道": channel,
         "视频生成模型": video_model["display"],
         "视频生成状态": "成功",
         "首尾帧视频": [{"file_token": file_token, "name": Path(output_path).name}],

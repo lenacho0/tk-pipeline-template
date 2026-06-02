@@ -1,6 +1,6 @@
 # Workspace TK 文档索引
 
-最后整理：2026-05-28
+最后整理：2026-06-01
 
 当前一线文档只服务 ryan 主线 TK pipeline 多维表格项目。UGC / 内容-01~07、新 TikTok Bitable 表6、colleague 实例、误建 Base、早期脚本副本和实验输出均已归档，不再作为当前主线依据。
 
@@ -12,7 +12,14 @@
 
 旧 TK pipeline、分镜一致性、上线状态、P0/P1 改造和经验复盘。
 
+- `ai-model-catalog-candidates-2026-05-30.md`：全局 AI 模型目录候选清单。
+- `ai-model-catalog-dry-run-2026-05-31.md`：AI 模型目录同步 dry-run 记录。
+- `ai-model-catalog-dry-run-with-candidates-2026-05-31.md`：带候选项的 AI 模型目录 dry-run 记录。
+- `ai-model-smoke-results-2026-05-31.md`：AI 模型 smoke test 结果。
+- `ai-model-smoke-retry-2026-05-31.md`：AI 模型 smoke test 重试记录。
+- `global-ai-model-catalog-plan-2026-05-30.md`：全局 AI 模型目录方案。
 - `pipeline-migration-phase1.md`：不停产迁移第一阶段改造项。
+- `script-doc-shots-handoff-2026-05-20.md`：脚本文档分镜三表链路交接记录。
 - `storyboard-consistency-phase2.md`：逐镜头一致性增强工程化记录。
 - `tk-2026-03-28-rollout-status.md`：2026-03-28 实际上线状态。
 - `tk-dual-storyboard-plan-2026-03-25.md`：双流程分镜方案。

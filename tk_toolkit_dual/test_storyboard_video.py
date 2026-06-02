@@ -458,17 +458,17 @@ Storyboard 02 Prompt:
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
         self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
         self.assertEqual(records[0]["fields"]["故事板图片提示词"], complete_storyboard_prompt(1))
-        self.assertEqual(records[0]["fields"]["故事板图片模型"], "gpt-image-2")
+        self.assertEqual(records[0]["fields"]["故事板图片AI模型"], "OTU / gpt-image-2")
         self.assertEqual(records[0]["fields"]["故事板图片画面尺寸"], "1280x720")
         self.assertEqual(records[0]["fields"]["故事板图片画面比例"], "16:9")
-        self.assertEqual(records[0]["fields"]["Omni模型"], "omni_flash-10s")
+        self.assertEqual(records[0]["fields"]["视频AI模型"], "OTU / omni_flash-10s")
         self.assertEqual(records[0]["fields"]["Omni画面尺寸"], "720x1280")
         self.assertEqual(records[0]["fields"]["Omni画面比例"], "9:16")
         self.assertEqual(records[1]["fields"]["故事板图片提示词"], complete_storyboard_prompt(2, include_hook=False))
-        self.assertEqual(records[1]["fields"]["故事板图片模型"], "gpt-image-2")
+        self.assertEqual(records[1]["fields"]["故事板图片AI模型"], "OTU / gpt-image-2")
         self.assertEqual(records[1]["fields"]["故事板图片画面尺寸"], "1280x720")
         self.assertEqual(records[1]["fields"]["故事板图片画面比例"], "16:9")
-        self.assertEqual(records[1]["fields"]["Omni模型"], "omni_flash-10s")
+        self.assertEqual(records[1]["fields"]["视频AI模型"], "OTU / omni_flash-10s")
         self.assertEqual(records[1]["fields"]["Omni画面尺寸"], "720x1280")
         self.assertEqual(records[1]["fields"]["Omni画面比例"], "9:16")
 
@@ -715,7 +715,7 @@ Storyboard 02 Prompt:
         child_fields = {
             "父任务记录ID": "recParent",
             "故事板图片提示词": complete_storyboard_prompt(1),
-            "故事板图片模型": "gpt-image-2-2K",
+            "故事板图片AI模型": "OTU / gpt-image-2-2K",
             "故事板图片画面尺寸": "1280x720",
             "故事板图片画面比例": "16:9",
         }
@@ -775,7 +775,7 @@ Storyboard 02 Prompt:
         child_fields = {
             "父任务记录ID": "recParent",
             "故事板图片提示词": complete_storyboard_prompt(1),
-            "故事板图片模型": "",
+            "故事板图片AI模型": "",
             "故事板图片画面尺寸": "",
             "故事板图片画面比例": "",
         }
@@ -811,6 +811,45 @@ Storyboard 02 Prompt:
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2")
         self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+
+    def test_render_storyboard_image_resumes_existing_otu_task_without_resubmitting(self):
+        updates = []
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "故事板图片提示词": complete_storyboard_prompt(1),
+            "故事板图片AI模型": "OTU / gpt-image-2",
+            "故事板图片生成状态": "生成中",
+            "故事板图片任务ID": "task_existing_story",
+            "故事板图片原始响应JSON": '{"submit":{"id":"task_existing_story"}}',
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(storyboard_video, "get_feishu_token", return_value="token"), \
+                 patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_storyboard"), \
+                 patch.object(storyboard_video, "safe_get_record", return_value=child_fields), \
+                 patch.object(storyboard_video, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(storyboard_video, "collect_parent_reference_images") as collect_refs, \
+                 patch.object(storyboard_video, "build_reference_urls") as build_urls, \
+                 patch.object(storyboard_video, "get_stage_config", return_value=("cfg_image", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2"})), \
+                 patch.object(storyboard_video, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+                 patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(storyboard_video, "build_reference_contact_sheet") as contact_sheet, \
+                 patch.object(storyboard_video, "submit_otu_image_task") as submitter, \
+                 patch.object(storyboard_video, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/storyboard.png"}) as poller, \
+                 patch.object(storyboard_video, "download_otu_image_result"), \
+                 patch.object(storyboard_video, "upload_image_to_feishu", return_value="ft_story"), \
+                 patch.object(storyboard_video, "ensure_record_current_generation"):
+                result = storyboard_video.render_storyboard_image("recChild")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_existing_story")
+        submitter.assert_not_called()
+        collect_refs.assert_not_called()
+        build_urls.assert_not_called()
+        contact_sheet.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing_story")
+        self.assertIn("恢复轮询已有 OTU 故事板图片任务", updates[0]["故事板图片错误信息"])
 
     def test_build_omni_video_prompt_rejects_rendering_storyboard_board(self):
         prompt = storyboard_video.build_omni_video_prompt(
@@ -885,7 +924,7 @@ Omni Video Prompt:
         child_fields = {
             "父任务记录ID": "recParent",
             "故事板图": [{"file_token": "ft_story"}],
-            "Omni模型": "omni_flash-10s",
+            "视频AI模型": "OTU / omni_flash-10s",
             "Omni画面尺寸": "1280x720",
             "Omni画面比例": "16:9",
         }
@@ -907,6 +946,7 @@ Omni Video Prompt:
                  patch.object(storyboard_video, "parent_fields_with_reference_snapshots", side_effect=lambda token, fields: fields), \
                  patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
                  patch.object(storyboard_video, "collect_omni_reference_images", return_value=[{"role": "storyboard", "path": str(story)}]), \
+                 patch.object(storyboard_video, "safe_list_records", return_value=[]), \
                  patch.object(storyboard_video, "get_stage_config", return_value=("cfg_video", {"api_key": "sk", "api_base": "https://otuapi.com", "prompt": "Omni Video Prompt:\nCONFIG PROMPT"})), \
                  patch.object(storyboard_video, "get_table_field_types", return_value={"分镜视频URL": 0}), \
                  patch.object(storyboard_video, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
@@ -930,7 +970,7 @@ Omni Video Prompt:
         child_fields = {
             "父任务记录ID": "recParent",
             "故事板图": [{"file_token": "ft_story"}],
-            "Omni模型": "",
+            "视频AI模型": "",
             "Omni画面尺寸": "",
             "Omni画面比例": "",
         }
@@ -952,6 +992,7 @@ Omni Video Prompt:
                  patch.object(storyboard_video, "parent_fields_with_reference_snapshots", side_effect=lambda token, fields: fields), \
                  patch.object(storyboard_video, "ensure_work_dir", return_value=tmp_path), \
                  patch.object(storyboard_video, "collect_omni_reference_images", return_value=[{"role": "storyboard", "path": str(story)}]), \
+                 patch.object(storyboard_video, "safe_list_records", return_value=[]), \
                  patch.object(storyboard_video, "get_stage_config", return_value=("cfg_video", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "wrong", "size": "wrong", "prompt": "Omni Video Prompt:\nCONFIG PROMPT"})), \
                  patch.object(storyboard_video, "get_table_field_types", return_value={"分镜视频URL": 0}), \
                  patch.object(storyboard_video, "safe_update_record"), \
@@ -989,39 +1030,39 @@ Omni Video Prompt:
         self.assertNotIn("视频生成原始响应JSON", field_names)
         self.assertNotIn("失败分类", field_names)
         self.assertNotIn("生成时间", field_names)
+        self.assertNotIn("故事板图片模型", field_names)
+        self.assertNotIn("Omni模型", field_names)
         self.assertIn("环境图", field_names)
         self.assertIn("Storyboard编号", field_names)
         self.assertIn("故事板图片生成状态", field_names)
         self.assertIn("视频生成状态", field_names)
         self.assertIn("分镜视频", field_names)
         field_by_name = {field["name"]: field for field in create_table.STORYBOARD_VIDEO_FIELDS}
-        self.assertEqual([opt["name"] for opt in field_by_name["故事板图片模型"]["options"]], ["gpt-image-2", "gpt-image-2-2K", "gpt-image-2-4K"])
+        self.assertIn("Aitgenne / gpt-image-2", [opt["name"] for opt in field_by_name["故事板图片AI模型"]["options"]])
         self.assertEqual([opt["name"] for opt in field_by_name["故事板图片画面尺寸"]["options"]], ["1280x720", "720x1280", "1024x1024"])
         self.assertEqual([opt["name"] for opt in field_by_name["故事板图片画面比例"]["options"]], ["16:9", "9:16", "1:1"])
-        self.assertEqual([opt["name"] for opt in field_by_name["Omni模型"]["options"]], ["omni_flash-10s"])
+        self.assertIn("Aitgenne / omni-flash", [opt["name"] for opt in field_by_name["视频AI模型"]["options"]])
         self.assertEqual([opt["name"] for opt in field_by_name["Omni画面尺寸"]["options"]], ["720x1280", "1280x720"])
         self.assertEqual([opt["name"] for opt in field_by_name["Omni画面比例"]["options"]], ["9:16", "16:9"])
         image_view = create_table.TABLE_DEFINITION["views"]["02-故事板图片"]
-        self.assertIn("故事板图片模型", image_view)
+        self.assertIn("故事板图片AI模型", image_view)
         self.assertIn("故事板图片画面尺寸", image_view)
         self.assertIn("故事板图片画面比例", image_view)
-        self.assertNotIn("故事板图片AI模型", image_view)
-        self.assertNotIn("故事板图片AI参数JSON", image_view)
-        self.assertLess(image_view.index("故事板图片提示词"), image_view.index("故事板图片模型"))
+        self.assertNotIn("故事板图片模型", image_view)
+        self.assertLess(image_view.index("故事板图片提示词"), image_view.index("故事板图片AI模型"))
         self.assertLess(image_view.index("故事板图片画面比例"), image_view.index("故事板图片生成状态"))
         omni_view = create_table.TABLE_DEFINITION["views"]["03-Omni视频"]
-        self.assertIn("Omni模型", omni_view)
+        self.assertIn("视频AI模型", omni_view)
         self.assertIn("Omni画面尺寸", omni_view)
         self.assertIn("Omni画面比例", omni_view)
-        self.assertNotIn("视频AI模型", omni_view)
-        self.assertNotIn("视频AI参数JSON", omni_view)
-        self.assertLess(omni_view.index("视频提示词"), omni_view.index("Omni模型"))
+        self.assertNotIn("Omni模型", omni_view)
+        self.assertLess(omni_view.index("视频提示词"), omni_view.index("视频AI模型"))
         self.assertLess(omni_view.index("Omni画面比例"), omni_view.index("视频生成状态"))
         advanced_view = create_table.TABLE_DEFINITION["views"]["高级AI参数"]
-        self.assertIn("故事板图片模型", advanced_view)
-        self.assertIn("Omni模型", advanced_view)
-        self.assertNotIn("故事板图片AI模型", advanced_view)
-        self.assertNotIn("视频AI模型", advanced_view)
+        self.assertIn("故事板图片AI模型", advanced_view)
+        self.assertIn("视频AI模型", advanced_view)
+        self.assertNotIn("故事板图片模型", advanced_view)
+        self.assertNotIn("Omni模型", advanced_view)
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "storyboard_video")
         self.assertEqual(create_table.TABLE_DEFINITION["views"]["01-母任务入口"], [
             "任务名称", "脚本内容", "关联产品记录", "选择模特", "环境图", "拆分AI模型", "拆分AI参数JSON", "拆分状态", "错误信息",
@@ -1068,7 +1109,7 @@ Omni Video Prompt:
                 "record_id": "rec_empty",
                 "fields": {
                     "记录类型": "Storyboard分段",
-                    "Omni模型": "",
+                    "视频AI模型": "",
                     "Omni画面尺寸": "",
                     "Omni画面比例": "",
                 },
@@ -1077,7 +1118,7 @@ Omni Video Prompt:
                 "record_id": "rec_custom",
                 "fields": {
                     "记录类型": "Storyboard分段",
-                    "Omni模型": "omni_flash-10s",
+                    "视频AI模型": "Aitgenne / omni-flash",
                     "Omni画面尺寸": "1280x720",
                     "Omni画面比例": "16:9",
                 },
@@ -1086,7 +1127,7 @@ Omni Video Prompt:
                 "record_id": "rec_parent",
                 "fields": {
                     "记录类型": "母任务",
-                    "Omni模型": "",
+                    "视频AI模型": "",
                     "Omni画面尺寸": "",
                     "Omni画面比例": "",
                 },
@@ -1101,7 +1142,7 @@ Omni Video Prompt:
         self.assertEqual(updates, [(
             "rec_empty",
             {
-                "Omni模型": "omni_flash-10s",
+                "视频AI模型": "OTU / omni_flash-10s",
                 "Omni画面尺寸": "720x1280",
                 "Omni画面比例": "9:16",
             },
@@ -1114,7 +1155,7 @@ Omni Video Prompt:
                 "record_id": "rec_empty",
                 "fields": {
                     "记录类型": "Storyboard分段",
-                    "故事板图片模型": "",
+                    "故事板图片AI模型": "",
                     "故事板图片画面尺寸": "",
                     "故事板图片画面比例": "",
                 },
@@ -1123,7 +1164,7 @@ Omni Video Prompt:
                 "record_id": "rec_custom",
                 "fields": {
                     "记录类型": "Storyboard分段",
-                    "故事板图片模型": "gpt-image-2-2K",
+                    "故事板图片AI模型": "Aitgenne / gpt-image-2",
                     "故事板图片画面尺寸": "720x1280",
                     "故事板图片画面比例": "9:16",
                 },
@@ -1132,7 +1173,7 @@ Omni Video Prompt:
                 "record_id": "rec_parent",
                 "fields": {
                     "记录类型": "母任务",
-                    "故事板图片模型": "",
+                    "故事板图片AI模型": "",
                     "故事板图片画面尺寸": "",
                     "故事板图片画面比例": "",
                 },
@@ -1147,7 +1188,7 @@ Omni Video Prompt:
         self.assertEqual(updates, [(
             "rec_empty",
             {
-                "故事板图片模型": "gpt-image-2",
+                "故事板图片AI模型": "OTU / gpt-image-2",
                 "故事板图片画面尺寸": "1280x720",
                 "故事板图片画面比例": "16:9",
             },
@@ -1225,6 +1266,15 @@ Omni Video Prompt:
         self.assertEqual(storyboard_watches["故事板提示词拆分"]["required_field_values"], {"记录类型": ["母任务"]})
         self.assertEqual(storyboard_watches["故事板图片生成"]["required_field_values"], {"记录类型": ["Storyboard分段"]})
         self.assertEqual(storyboard_watches["故事板Omni视频生成"]["required_field_values"], {"记录类型": ["Storyboard分段"]})
+        self.assertEqual(storyboard_watches["故事板图片生成"]["trigger_values"], ["待生成", "生成中"])
+
+        waiting_claim = {"故事板图片生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(waiting_claim, storyboard_watches["故事板图片生成"], "待生成")
+        self.assertEqual(waiting_claim["故事板图片任务ID"], "")
+
+        running_claim = {"故事板图片生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(running_claim, storyboard_watches["故事板图片生成"], "生成中")
+        self.assertNotIn("故事板图片任务ID", running_claim)
 
     def test_resolve_storyboard_table_id_prefers_configured_existing_table_id(self):
         table_id, created = create_table.resolve_storyboard_table_id(
@@ -1328,7 +1378,7 @@ Omni Video Prompt:
             if watch.get("name") in {"故事板图片生成", "故事板Omni视频生成"}
         }
 
-        self.assertIsNone(storyboard_watches["故事板图片生成"]["claim_clear_values"]["分镜视频URL"])
+        self.assertIsNone(storyboard_watches["故事板图片生成"]["claim_clear_values_by_trigger_value"]["待生成"]["分镜视频URL"])
         self.assertIsNone(storyboard_watches["故事板Omni视频生成"]["claim_clear_values"]["分镜视频URL"])
 
     def test_bootstrap_config_creates_only_missing_storyboard_stages(self):

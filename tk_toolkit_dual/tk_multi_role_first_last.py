@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import requests
 from google import genai
+from google.genai import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
@@ -60,13 +61,24 @@ from tk_shot_storyboard import (  # noqa: E402
 )
 from tk_shot_video import (  # noqa: E402
     DEFAULT_ASPECT_RATIO,
+    DEFAULT_GEMINI_API_BASE,
+    DEFAULT_MODEL as DEFAULT_NATIVE_VIDEO_MODEL,
     DEFAULT_OTU_MODEL,
     DEFAULT_OTU_SIZE,
+    call_native_veo_first_frame_task,
     download_video,
+    download_native_veo_video,
+    extract_native_generated_video,
     extract_video_url,
     format_url_field_value,
+    get_native_veo_client,
     get_table_field_types,
+    is_native_veo_operation_id,
+    native_generated_video_uri,
+    normalize_native_veo_resolution,
     normalize_seconds,
+    operation_to_dict,
+    poll_native_veo_operation,
     poll_otu_video_task,
     upload_video_to_feishu,
     video_item_url,
@@ -75,11 +87,13 @@ from tk_shot_video import (  # noqa: E402
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
 from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
 PARSE_STAGE_NAME = "多角色首尾帧解析-Gemini"
 IMAGE_STAGE_NAME = "图片生成-OTU"
 VIDEO_STAGE_NAME = "分镜视频生成-OTU"
+AIHUBMIX_VIDEO_STAGE_NAME = "分镜视频生成-Veo"
 PARENT_RECORD_TYPE = "母任务"
 ASSET_RECORD_TYPE = "参考资产"
 KEYFRAME_RECORD_TYPE = "关键帧"
@@ -165,8 +179,10 @@ DEFAULT_PARSE_PROMPT = """
 - human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄质感、自然光感、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；背景仍必须是 pure white background；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
 - human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
 - human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、character sheet、no contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
+- environment 资产必须是无人无产品的事故现场环境底图，只能描述房间、家具、材质、光线、机位、可行动空间、生活道具和脚本明确写出的固定问题发生点。
 - environment 资产必须根据脚本判断环境图中应该出现什么问题锚点；只保留脚本明确写出的可见问题发生点和位置细节。
 - environment 资产不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。
+- environment prompt 必须是直接给图片模型使用的画面描述，只写场景中可见内容；不得写 source script、if present、if one exists、when present in the script、script-defined 这类元指令。
 - environment 资产严禁出现任何人物、宠物、产品包装、喷雾瓶、手、身体局部、倒影、海报/屏幕中的人物或动物。
 - 如果脚本文档要求“场景图不要出现人物/产品/宠物”，必须完全遵守；不要把角色站位规划写进 environment prompt。
 
@@ -297,8 +313,31 @@ def normalize_role(role: Dict[str, Any], idx: int) -> Dict[str, Any]:
 
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate an empty scene master/background plate for later compositing, with only the explicit visible problem anchor from the source script preserved when one exists. Show only the room, furniture, surfaces, lighting, camera angle, non-character household props, and script-defined problem location details. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Do not add any problem mark that is not explicitly present in the source script.
+Generate one empty lived-in home environment reference image for later compositing. Show only the room, furniture, surfaces, lighting, camera angle, non-character household props, and any visible problem marks explicitly described in Scene details. If Scene details include visible problem marks, render exactly those marks and their described locations. If no problem mark is described, do not invent any visible problem mark or odor source. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks.
 """.strip()
+
+ENVIRONMENT_LEGACY_PREFIX_PATTERNS = [
+    re.compile(r"^Generate one empty but lived-in local home environment reference plate\b", re.IGNORECASE),
+    re.compile(r"^Generate an empty scene master/background plate\b", re.IGNORECASE),
+    re.compile(r"^Generate one empty lived-in home environment reference image\b", re.IGNORECASE),
+    re.compile(r"^Show only the room, furniture, surfaces\b", re.IGNORECASE),
+    re.compile(r"^If Scene details include visible problem marks\b", re.IGNORECASE),
+    re.compile(r"^If no problem mark is described\b", re.IGNORECASE),
+    re.compile(r"^The space should feel like a real local UGC phone photo\b", re.IGNORECASE),
+    re.compile(r"^Do not include any people, pets, product bottles\b", re.IGNORECASE),
+]
+ENVIRONMENT_META_CLEANUP_PATTERNS = [
+    re.compile(r"\bfrom the source script\b", re.IGNORECASE),
+    re.compile(r"\bin the source script\b", re.IGNORECASE),
+    re.compile(r"\bwhen present in the script\b", re.IGNORECASE),
+    re.compile(r"\bif one exists\b", re.IGNORECASE),
+    re.compile(r"\bscript-defined\b", re.IGNORECASE),
+    re.compile(r"\bexplicit visible problem anchor\b", re.IGNORECASE),
+    re.compile(r"\bsource script\b", re.IGNORECASE),
+]
+ENVIRONMENT_EMPTY_META_SENTENCE_PATTERNS = [
+    re.compile(r"^Do not add any problem mark that is not explicitly present\\.?$", re.IGNORECASE),
+]
 
 ENVIRONMENT_FORBIDDEN_TERMS = {
     "person", "people", "human", "woman", "man", "girl", "boy", "lady", "landlord",
@@ -359,13 +398,32 @@ def _has_environment_problem_anchor(text: str) -> bool:
     )
 
 
+def _strip_environment_prefix(prompt: str) -> str:
+    text = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
+    lowered = text.lower()
+    for marker in ("scene details to keep:", "scene details:"):
+        idx = lowered.rfind(marker)
+        if idx >= 0:
+            return text[idx + len(marker):]
+    return text
+
+
 def sanitize_environment_prompt(prompt: str) -> str:
-    source_prompt = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
+    source_prompt = _strip_environment_prefix(prompt)
     cleaned_parts: List[str] = []
     for text in _environment_prompt_parts(source_prompt):
-        if text.strip().lower().rstrip(".。") == "empty environment reference plate only":
+        stripped_marker = text.strip().lower().rstrip(".。:：")
+        if stripped_marker in {"empty environment reference plate only", "scene details to keep", "scene details"}:
             continue
-        if text.strip().lower().rstrip(":：") == "scene details to keep":
+        if any(pattern.search(text) for pattern in ENVIRONMENT_LEGACY_PREFIX_PATTERNS):
+            continue
+        for pattern in ENVIRONMENT_META_CLEANUP_PATTERNS:
+            text = pattern.sub("", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        text = re.sub(r"\s+([,.;:!?。！？])", r"\1", text).strip(" ,")
+        if not text:
+            continue
+        if any(pattern.search(text) for pattern in ENVIRONMENT_EMPTY_META_SENTENCE_PATTERNS):
             continue
         lowered = text.lower()
         has_forbidden_positive = any(term in lowered for term in ENVIRONMENT_FORBIDDEN_TERMS)
@@ -390,7 +448,7 @@ def sanitize_environment_prompt(prompt: str) -> str:
         cleaned_parts.append(text)
     cleaned = "\n".join(cleaned_parts).strip()
     if cleaned:
-        return f"{ENVIRONMENT_EMPTY_SCENE_PREFIX}\n\nScene details to keep:\n{cleaned}"
+        return f"{ENVIRONMENT_EMPTY_SCENE_PREFIX}\n\nScene details:\n{cleaned}"
     return ENVIRONMENT_EMPTY_SCENE_PREFIX
 
 
@@ -692,6 +750,48 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
     return records
 
 
+def apply_child_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        fields = record.get("fields") or {}
+        kind = extract_text(fields.get("记录类型")).strip()
+        if kind == ASSET_RECORD_TYPE:
+            fields = apply_task_default_to_fields(
+                token,
+                fields,
+                app_table=TASK_TABLES["multi_role_first_last"],
+                stage="参考图生成默认",
+                model_field="参考图AI模型",
+                size_field="参考图画面尺寸",
+                ratio_field="参考图画面比例",
+                params_field="参考图AI参数JSON",
+            )
+        elif kind == KEYFRAME_RECORD_TYPE:
+            fields = apply_task_default_to_fields(
+                token,
+                fields,
+                app_table=TASK_TABLES["multi_role_first_last"],
+                stage="关键帧生成默认",
+                model_field="关键帧AI模型",
+                size_field="关键帧画面尺寸",
+                ratio_field="关键帧画面比例",
+                params_field="关键帧AI参数JSON",
+            )
+        elif kind == VIDEO_RECORD_TYPE:
+            fields = apply_task_default_to_fields(
+                token,
+                fields,
+                app_table=TASK_TABLES["multi_role_first_last"],
+                stage="视频片段生成默认",
+                model_field="视频生成模型",
+                size_field="视频画面尺寸",
+                ratio_field="视频画面比例",
+                params_field="视频AI参数JSON",
+                placeholder_values=(f"OTU / {DEFAULT_OTU_MODEL}", "默认（配置表）"),
+            )
+        record["fields"] = fields
+    return records
+
+
 def get_stage_config(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
     for rec in safe_list_records(token, TABLE_CONFIG):
@@ -782,6 +882,16 @@ def resolve_video_generation_model(fields: Dict[str, Any], cfg: Dict[str, Any]) 
     if not ai_model_catalog.is_first_last_video_model(display, provider):
         raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {display}")
     return {"model": model, "provider": provider, "display": display, "source": source}
+
+
+def selected_video_provider_hint(fields: Dict[str, Any]) -> str:
+    raw = _usable_model_choice(fields.get("视频生成模型")) or _usable_model_choice(fields.get("视频AI模型"))
+    bits = ai_routing.parse_model_display(raw)
+    return bits["provider"] or "OTU"
+
+
+def video_channel_for_provider(provider: str) -> str:
+    return "OTU" if provider == "OTU" else "AIHubMix"
 
 
 def maybe_unified_media_summary(
@@ -886,7 +996,7 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
     payload = normalize_plan_payload(raw_model_output)
     batch_id = make_batch_id(record_id)
     deprecated = deprecate_existing_children(token, record_id)
-    child_records = build_child_records(record_id, fields, payload, batch_id=batch_id)
+    child_records = apply_child_default_models(token, build_child_records(record_id, fields, payload, batch_id=batch_id))
     create_records(token, TABLE_MULTI_ROLE_FIRST_LAST, [
         {"fields": filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, item["fields"])}
         for item in child_records
@@ -1090,6 +1200,40 @@ def video_dependencies_ready(records: List[Dict[str, Any]], parent_id: str, vide
     )
 
 
+def trigger_ready_videos_for_parent(token: str, parent_id: str, records: List[Dict[str, Any]]) -> int:
+    triggered = 0
+    for rec in _active_child_records(records, parent_id, VIDEO_RECORD_TYPE):
+        video_fields = rec.get("fields", {})
+        status = extract_text(video_fields.get("视频生成状态")).strip()
+        if status not in {"不触发", "失败", ""}:
+            continue
+        if not video_dependencies_ready(records, parent_id, video_fields):
+            continue
+        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, rec["record_id"], filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "视频生成状态": "待生成",
+            "视频错误信息": "",
+            "错误信息": "",
+        }))
+        triggered += 1
+    return triggered
+
+
+def advance_ready_videos(record_id: str) -> Dict[str, Any]:
+    ensure_multi_role_table()
+    token = get_feishu_token()
+    fields = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
+    ensure_active_record(fields)
+    parent_id = extract_text(fields.get("父任务记录ID")).strip() or record_id
+    records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    triggered_videos = trigger_ready_videos_for_parent(token, parent_id, records)
+    return {
+        "record_id": record_id,
+        "parent_record_id": parent_id,
+        "status": "advanced",
+        "triggered_videos": triggered_videos,
+    }
+
+
 def advance_reference_review(record_id: str) -> Dict[str, Any]:
     ensure_multi_role_table()
     token = get_feishu_token()
@@ -1131,7 +1275,6 @@ def advance_keyframe_review(record_id: str) -> Dict[str, Any]:
     parent_id = extract_text(fields.get("父任务记录ID")).strip()
     records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
     triggered_keyframes = 0
-    triggered_videos = 0
     for rec in _active_child_records(records, parent_id, KEYFRAME_RECORD_TYPE):
         keyframe_fields = rec.get("fields", {})
         if review_passed(keyframe_fields.get("关键帧审核状态")):
@@ -1147,19 +1290,7 @@ def advance_keyframe_review(record_id: str) -> Dict[str, Any]:
             "错误信息": "",
         }))
         triggered_keyframes += 1
-    for rec in _active_child_records(records, parent_id, VIDEO_RECORD_TYPE):
-        video_fields = rec.get("fields", {})
-        status = extract_text(video_fields.get("视频生成状态")).strip()
-        if status not in {"不触发", "失败", ""}:
-            continue
-        if not video_dependencies_ready(records, parent_id, video_fields):
-            continue
-        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, rec["record_id"], filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
-            "视频生成状态": "待生成",
-            "视频错误信息": "",
-            "错误信息": "",
-        }))
-        triggered_videos += 1
+    triggered_videos = trigger_ready_videos_for_parent(token, parent_id, records)
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
         "关键帧审核状态": "已触发下游",
     }))
@@ -1175,6 +1306,19 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_multi_role_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_MULTI_ROLE_FIRST_LAST,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["multi_role_first_last"],
+        stage="参考图生成默认",
+        model_field="参考图AI模型",
+        size_field="参考图画面尺寸",
+        ratio_field="参考图画面比例",
+        params_field="参考图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_record(fields)
     if record_type(fields) != ASSET_RECORD_TYPE:
         raise ValueError("只有参考资产记录可以生成参考图")
@@ -1240,6 +1384,16 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        on_task_submitted=lambda task_id: safe_update_record(
+            token,
+            TABLE_MULTI_ROLE_FIRST_LAST,
+            record_id,
+            filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "参考图任务ID": task_id,
+                "参考图版本": version,
+                "参考图错误信息": f"已提交 {route.provider} 参考图任务，正在轮询。task_id={task_id}",
+            }),
+        ),
     )
     task_id = image_result.task_id
     submit_body = image_result.submit_body
@@ -1278,6 +1432,19 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     ensure_multi_role_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_MULTI_ROLE_FIRST_LAST,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["multi_role_first_last"],
+        stage="关键帧生成默认",
+        model_field="关键帧AI模型",
+        size_field="关键帧画面尺寸",
+        ratio_field="关键帧画面比例",
+        params_field="关键帧AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_record(fields)
     if record_type(fields) != KEYFRAME_RECORD_TYPE:
         raise ValueError("只有关键帧记录可以生成关键帧图")
@@ -1364,6 +1531,16 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        on_task_submitted=lambda task_id: safe_update_record(
+            token,
+            TABLE_MULTI_ROLE_FIRST_LAST,
+            record_id,
+            filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "关键帧任务ID": task_id,
+                "关键帧版本": version,
+                "关键帧错误信息": f"已提交 {route.provider} 关键帧图任务，正在轮询。task_id={task_id}",
+            }),
+        ),
     )
     task_id = image_result.task_id
     submit_body = image_result.submit_body
@@ -1446,6 +1623,19 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     ensure_multi_role_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_MULTI_ROLE_FIRST_LAST,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["multi_role_first_last"],
+        stage="视频片段生成默认",
+        model_field="视频生成模型",
+        size_field="视频画面尺寸",
+        ratio_field="视频画面比例",
+        params_field="视频AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     ensure_active_record(fields)
     if record_type(fields) != VIDEO_RECORD_TYPE:
         raise ValueError("只有视频片段记录可以生成视频")
@@ -1460,13 +1650,22 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     last = _find_keyframe_for_clip(all_records, parent_id, last_type)
     version = current_version(fields, "视频版本")
     work_dir = ensure_stage_work_dir(record_id, "video", version)
-    _, cfg = get_stage_config(VIDEO_STAGE_NAME, default_model=DEFAULT_OTU_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_SIZE)
+    provider_hint = selected_video_provider_hint(fields)
+    stage_name = AIHUBMIX_VIDEO_STAGE_NAME if provider_hint == "AIHubMix" else VIDEO_STAGE_NAME
+    _, cfg = get_stage_config(
+        stage_name,
+        default_model=DEFAULT_NATIVE_VIDEO_MODEL if provider_hint == "AIHubMix" else DEFAULT_OTU_MODEL,
+        default_api_base=DEFAULT_GEMINI_API_BASE if provider_hint == "AIHubMix" else DEFAULT_OTU_API_BASE,
+        default_size=DEFAULT_OTU_SIZE,
+    )
     video_model = resolve_video_generation_model(fields, cfg)
     runtime_cfg = {**cfg, "model": video_model["model"]}
+    channel = video_channel_for_provider(video_model["provider"])
     seconds = normalize_seconds(fields.get("目标时长秒") or 8)
     video_params = resolve_media_dimensions(fields, "视频", runtime_cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
     size = video_params["size"]
     aspect_ratio = video_params["aspect_ratio"]
+    native_resolution = normalize_native_veo_resolution(size) if channel == "AIHubMix" else ""
     output_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
     summary = {
         "record_id": record_id,
@@ -1477,6 +1676,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "model_source": video_model["source"],
         "seconds": seconds,
         "size": size,
+        "native_resolution": native_resolution or None,
         "aspect_ratio": aspect_ratio,
         "output_path": output_path,
     }
@@ -1501,14 +1701,31 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     existing_task_id = extract_text(fields.get("视频任务ID")).strip()
+    if channel == "AIHubMix" and existing_task_id and not is_native_veo_operation_id(existing_task_id):
+        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "视频任务ID": "",
+            "视频原始响应JSON": "",
+            "视频错误信息": f"旧视频任务ID不属于 AIHubMix Gemini/Veo，已忽略并重新提交。old_task_id={existing_task_id}",
+        }))
+        existing_task_id = ""
+    if channel == "OTU" and existing_task_id and not existing_task_id.startswith("task_"):
+        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "视频任务ID": "",
+            "视频原始响应JSON": "",
+            "视频错误信息": f"旧视频任务ID不属于 OTU，已忽略并重新提交。old_task_id={existing_task_id}",
+        }))
+        existing_task_id = ""
     field_types = get_table_field_types(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    native_client: Any = None
     if existing_task_id:
         task_id = existing_task_id
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "视频通道": channel,
+            "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频任务ID": task_id,
             "视频版本": version,
-            "视频错误信息": f"恢复轮询已有 OTU 视频任务。task_id={task_id}",
+            "视频错误信息": f"恢复轮询已有 {channel} 视频任务。task_id={task_id}",
         }))
     else:
         first_path = download_feishu_media(token, first["file_token"], work_dir / f"{record_id}_{first_type}.png")
@@ -1516,25 +1733,66 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "首关键帧file_token": first["file_token"],
             "尾关键帧file_token": last["file_token"],
-            "视频通道": "OTU",
+            "视频通道": channel,
             "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频版本": version,
-            "视频错误信息": "",
+            "视频错误信息": f"准备提交 AIHubMix Gemini/Veo 视频任务... 视频画面尺寸={size}, native_resolution={native_resolution}" if channel == "AIHubMix" else "",
             "错误信息": "",
         }))
-        task_id, submit_body = submit_otu_video_task(runtime_cfg, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
-        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
-            "视频任务ID": task_id,
-            "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
-            "视频错误信息": f"已提交 OTU 视频任务，正在轮询。task_id={task_id}",
-        }))
-    result = poll_otu_video_task(runtime_cfg, task_id)
-    video_url = extract_video_url(result) or (video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content")
-    download_video(video_url, output_path)
+        if channel == "OTU":
+            task_id, submit_body = submit_otu_video_task(runtime_cfg, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
+            safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频任务ID": task_id,
+                "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
+                "视频错误信息": f"已提交 OTU 视频任务，正在轮询。task_id={task_id}",
+            }))
+        else:
+            native_client = get_native_veo_client(runtime_cfg)
+            operation = call_native_veo_first_frame_task(
+                runtime_cfg,
+                prompt,
+                str(first_path),
+                seconds,
+                native_resolution,
+                aspect_ratio,
+                last_frame_path=str(last_path),
+                client=native_client,
+            )
+            task_id = extract_text(getattr(operation, "name", "")).strip()
+            if not task_id:
+                raise RuntimeError(f"Veo 多角色视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
+            safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频任务ID": task_id,
+                "视频原始响应JSON": compact_json({"submit": operation_to_dict(operation), "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
+                "视频错误信息": f"已提交 AIHubMix Gemini/Veo 视频任务，正在轮询。task_id={task_id}; 视频画面尺寸={size}, native_resolution={native_resolution}",
+            }))
+    if channel == "OTU":
+        result = poll_otu_video_task(runtime_cfg, task_id)
+        video_url = extract_video_url(result) or (video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content")
+        download_video(video_url, output_path)
+    else:
+        client = native_client or get_native_veo_client(runtime_cfg)
+        operation = types.GenerateVideosOperation(name=task_id) if existing_task_id else operation
+        completed_operation = poll_native_veo_operation(client, operation)
+        generated_video = extract_native_generated_video(completed_operation)
+        result = operation_to_dict(completed_operation)
+        video_url = native_generated_video_uri(generated_video)
+        download_native_veo_video(client, generated_video, output_path)
+    repair_fields: Dict[str, Any] = {
+        "视频生成状态": "生成中",
+        "视频任务ID": task_id,
+        "视频版本": version,
+        "视频本地路径": output_path,
+        "视频错误信息": "视频已下载到本地，等待飞书上传附件。",
+        "错误信息": "",
+    }
+    if video_url:
+        repair_fields["视频片段URL"] = format_url_field_value(video_url, field_types.get("视频片段URL", 0))
+    safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, repair_fields))
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_multi_role_clip.mp4")
     success_fields: Dict[str, Any] = {
-        "视频通道": "OTU",
+        "视频通道": channel,
         "视频生成模型": video_model["display"],
         "视频生成状态": "成功",
         "视频操作": "不触发",
@@ -1674,6 +1932,7 @@ def main() -> None:
         "video",
         "advance-reference-review",
         "advance-keyframe-review",
+        "advance-ready-videos",
         "regenerate-reference-image",
         "regenerate-keyframe",
         "regenerate-video",
@@ -1695,6 +1954,8 @@ def main() -> None:
             result = advance_reference_review(args.record_id)
         elif args.action == "advance-keyframe-review":
             result = advance_keyframe_review(args.record_id)
+        elif args.action == "advance-ready-videos":
+            result = advance_ready_videos(args.record_id)
         elif args.action == "regenerate-reference-image":
             result = request_reference_regeneration(args.record_id)
         elif args.action == "regenerate-keyframe":

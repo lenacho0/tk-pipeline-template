@@ -10,9 +10,70 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tk_script_doc_shots as doc_shots
 import tk_create_script_doc_shots_table as create_tables
+import tk_dispatcher as dispatcher
 
 
 class ScriptDocShotsTests(unittest.TestCase):
+    def test_dispatcher_reclaims_stale_running_image_stages(self):
+        watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
+
+        for name in ["脚本文档参考底图生成", "脚本文档分镜图生成", "脚本文档尾帧图生成"]:
+            self.assertEqual(watches[name]["trigger_values"], ["待生成", "生成中"])
+
+    def test_script_doc_image_watches_clear_stale_task_state_only_for_waiting_records(self):
+        watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
+
+        reference_waiting = dispatcher.apply_claim_clear_fields(
+            {"参考图生成状态": "生成中"},
+            watches["脚本文档参考底图生成"],
+            "待生成",
+        )
+        self.assertEqual(reference_waiting["参考图任务ID"], "")
+        self.assertEqual(reference_waiting["参考图原始响应JSON"], "")
+        self.assertEqual(reference_waiting["参考图file_token"], "")
+        self.assertEqual(reference_waiting["参考图本地路径"], "")
+        self.assertEqual(reference_waiting["错误信息"], "")
+        reference_running = dispatcher.apply_claim_clear_fields(
+            {"参考图生成状态": "生成中"},
+            watches["脚本文档参考底图生成"],
+            "生成中",
+        )
+        self.assertNotIn("参考图任务ID", reference_running)
+
+        shot_waiting = dispatcher.apply_claim_clear_fields(
+            {"分镜图生成状态": "生成中"},
+            watches["脚本文档分镜图生成"],
+            "待生成",
+        )
+        self.assertEqual(shot_waiting["分镜图任务ID"], "")
+        self.assertEqual(shot_waiting["分镜图原始响应JSON"], "")
+        self.assertEqual(shot_waiting["分镜图file_token"], "")
+        self.assertEqual(shot_waiting["分镜图本地路径"], "")
+        self.assertEqual(shot_waiting["错误信息"], "")
+        shot_running = dispatcher.apply_claim_clear_fields(
+            {"分镜图生成状态": "生成中"},
+            watches["脚本文档分镜图生成"],
+            "生成中",
+        )
+        self.assertNotIn("分镜图任务ID", shot_running)
+
+        tail_waiting = dispatcher.apply_claim_clear_fields(
+            {"尾帧图生成状态": "生成中"},
+            watches["脚本文档尾帧图生成"],
+            "待生成",
+        )
+        self.assertEqual(tail_waiting["尾帧图任务ID"], "")
+        self.assertEqual(tail_waiting["尾帧图原始响应JSON"], "")
+        self.assertEqual(tail_waiting["尾帧图file_token"], "")
+        self.assertEqual(tail_waiting["尾帧图本地路径"], "")
+        self.assertEqual(tail_waiting["错误信息"], "")
+        tail_running = dispatcher.apply_claim_clear_fields(
+            {"尾帧图生成状态": "生成中"},
+            watches["脚本文档尾帧图生成"],
+            "生成中",
+        )
+        self.assertNotIn("尾帧图任务ID", tail_running)
+
     def test_default_parse_prompt_requires_dynamic_environment_problem_anchors(self):
         prompt = doc_shots.DEFAULT_PARSE_PROMPT
 
@@ -21,8 +82,21 @@ class ScriptDocShotsTests(unittest.TestCase):
             "不能默认套用尿渍",
             "不能默认套用虫害",
             "不得编造事故点",
+            "直接给图片模型使用",
         ]:
             self.assertIn(required, prompt)
+
+    def test_environment_asset_prompt_removes_script_meta_before_storage(self):
+        asset = doc_shots.normalize_asset({
+            "asset_type": "environment",
+            "asset_id": "living_room",
+            "prompt": "Living room sofa with visible black fleas, from the source script if one exists. script-defined problem location details.",
+        }, 1)
+        lowered = asset["prompt"].lower()
+
+        self.assertIn("visible black fleas", asset["prompt"])
+        for forbidden in ["source script", "if one exists", "script-defined", "when present in the script"]:
+            self.assertNotIn(forbidden, lowered)
 
     def sample_payload(self):
         return {
@@ -193,6 +267,10 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertNotIn("AIHubMix / seeddance2.0", video_model_options)
         self.assertEqual(fields["视频生成时间"]["type"], "datetime")
         self.assertEqual(fields["生成时间"]["type"], "datetime")
+        self.assertEqual(fields["分镜图任务ID"]["type"], "text")
+        self.assertEqual(fields["分镜图原始响应JSON"]["type"], "text")
+        self.assertEqual(fields["尾帧图任务ID"]["type"], "text")
+        self.assertEqual(fields["尾帧图原始响应JSON"]["type"], "text")
 
         views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_shots")["views"]
         self.assertIn("首尾帧视频模式", views["01-分镜图生成"])
@@ -215,6 +293,24 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("发布平台", views["99-排错"])
         self.assertIn("视频生成模型", views["99-排错"])
         self.assertIn("视频AI模型", views["99-排错"])
+        self.assertIn("分镜图任务ID", views["99-排错"])
+        self.assertIn("分镜图原始响应JSON", views["99-排错"])
+        self.assertIn("尾帧图任务ID", views["99-排错"])
+        self.assertIn("尾帧图原始响应JSON", views["99-排错"])
+
+        asset_fields = {item["name"]: item for item in create_tables.ASSET_FIELDS}
+        self.assertEqual(asset_fields["参考图AI模型"]["type"], "select")
+        self.assertIn("Aitgenne / gpt-image-2", [item["name"] for item in asset_fields["参考图AI模型"]["options"]])
+        self.assertEqual(asset_fields["参考图画面尺寸"]["type"], "select")
+        self.assertEqual(asset_fields["参考图画面比例"]["type"], "select")
+        self.assertEqual(asset_fields["参考图任务ID"]["type"], "text")
+        self.assertEqual(asset_fields["参考图原始响应JSON"]["type"], "text")
+        asset_views = next(item for item in create_tables.TABLE_DEFINITIONS if item["key"] == "script_doc_reference_assets")["views"]
+        self.assertIn("参考图AI模型", asset_views["01-参考图确认"])
+        self.assertIn("参考图AI模型", asset_views["99-参考图排错"])
+        self.assertIn("参考图AI参数JSON", asset_views["99-参考图排错"])
+        self.assertIn("参考图任务ID", asset_views["99-参考图排错"])
+        self.assertIn("参考图原始响应JSON", asset_views["99-参考图排错"])
 
     def test_unified_ai_route_fields_are_optional_and_visible_in_advanced_view(self):
         fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
@@ -299,6 +395,52 @@ class ScriptDocShotsTests(unittest.TestCase):
         getter.assert_called_once_with("token", "rec_script_split")
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["record_id"], "recParent")
+
+    def test_generate_reference_image_routes_by_reference_model_field(self):
+        fields = {
+            "参考提示词": "make a clean reference",
+            "参考图AI模型": "Aitgenne / gpt-image-2",
+            "参考图生成状态": "待生成",
+        }
+        config_records = [
+            {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+        ]
+        image_result = Mock()
+        image_result.task_id = ""
+        image_result.submit_body = {"id": "aitgenne_sync"}
+        image_result.result_body = {"data": [{"b64_json": "x"}]}
+        image_result.request_summary = {"provider": "Aitgenne", "model": "gpt-image-2"}
+        updates = []
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(doc_shots, "WORKSPACE", tmp), \
+             patch.object(doc_shots, "TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=fields), \
+             patch.object(doc_shots, "safe_list_records", return_value=config_records), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             }), \
+             patch.object(doc_shots, "run_image_generation", return_value=image_result) as runner, \
+             patch.object(doc_shots, "upload_image_to_feishu", return_value="ft_image"), \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = doc_shots.generate_reference_image("recAsset")
+
+        runner.assert_called_once()
+        route = runner.call_args.args[0]
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.model, "Aitgenne / gpt-image-2")
+        self.assertEqual(runner.call_args.args[1], doc_shots.build_reference_image_prompt(fields))
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["file_token"], "ft_image")
+        self.assertTrue(any(update.get("参考图生成状态") == "成功" for update in updates))
 
     def test_parse_parent_record_unified_route_uses_prefixed_model_provider(self):
         parent_fields = {
@@ -457,6 +599,74 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
+
+    def test_generate_reference_image_writes_task_id_and_response_json(self):
+        fields = {
+            "参考类型": "pet",
+            "参考名称": "cat",
+            "参考提示词": "white cat reference.",
+            "参考图生成状态": "待生成",
+        }
+        updates = []
+
+        with patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=fields), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             }), \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields), \
+             patch.object(doc_shots, "submit_otu_image_task", return_value=("task_ref", {"id": "task_ref"})) as submitter, \
+             patch.object(doc_shots, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}), \
+             patch.object(doc_shots, "download_otu_image_result"), \
+             patch.object(doc_shots, "upload_image_to_feishu", return_value="ft_out"):
+            result = doc_shots.generate_reference_image("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(updates[0]["参考图生成状态"], "生成中")
+        self.assertEqual(updates[1]["参考图任务ID"], "task_ref")
+        self.assertIn("参考图原始响应JSON", updates[1])
+        self.assertEqual(updates[-1]["参考图任务ID"], "task_ref")
+        self.assertIn("参考图原始响应JSON", updates[-1])
+        submitter.assert_called_once()
+
+    def test_generate_reference_image_resumes_running_task_without_resubmitting(self):
+        fields = {
+            "参考类型": "pet",
+            "参考名称": "cat",
+            "参考提示词": "white cat reference.",
+            "参考图生成状态": "生成中",
+            "参考图任务ID": "task_existing",
+            "参考图原始响应JSON": '{"submit":{"id":"task_existing"}}',
+        }
+        updates = []
+
+        with patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=fields), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             }), \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields), \
+             patch.object(doc_shots, "submit_otu_image_task") as submitter, \
+             patch.object(doc_shots, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}) as poller, \
+             patch.object(doc_shots, "download_otu_image_result"), \
+             patch.object(doc_shots, "upload_image_to_feishu", return_value="ft_out"):
+            result = doc_shots.generate_reference_image("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        self.assertIn("恢复轮询已有 OTU 参考底图任务", updates[0]["错误信息"])
+        submitter.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing")
 
     def test_collect_reference_images_uses_only_shot_requested_assets_and_product(self):
         with tempfile.TemporaryDirectory() as tmp:

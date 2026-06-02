@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
+
+import requests
 
 import ai_routing
 from aitgenne_image import (
@@ -20,6 +23,22 @@ from otu_image import (
     normalize_image_model_choice,
     poll_otu_image_task,
     submit_otu_image_task,
+)
+
+
+AITGENNE_SUBMIT_RETRY_DELAYS_SECONDS = [8, 16]
+AITGENNE_RETRYABLE_ERROR_MARKERS = (
+    "http 429",
+    "rate limit",
+    "too many requests",
+    "负载已饱和",
+    "稍后再试",
+    "network",
+    "网络",
+    "timeout",
+    "timed out",
+    "ssl",
+    "connection",
 )
 
 
@@ -111,6 +130,29 @@ def image_model_name(route: ai_routing.AiRoute) -> str:
     return normalize_image_model_choice(raw) if route.provider == "OTU" else raw
 
 
+def _is_retryable_aitgenne_submit_error(exc: Exception) -> bool:
+    if isinstance(exc, requests.RequestException):
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in AITGENNE_RETRYABLE_ERROR_MARKERS)
+
+
+def _submit_aitgenne_image_with_retry(
+    submitter: Callable[..., Any],
+    config: Dict[str, str],
+    prompt: str,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    for delay in [*AITGENNE_SUBMIT_RETRY_DELAYS_SECONDS, None]:
+        try:
+            return submitter(config, prompt, **kwargs)
+        except Exception as exc:
+            if delay is None or not _is_retryable_aitgenne_submit_error(exc):
+                raise
+            time.sleep(delay)
+    raise RuntimeError("Aitgenne 图片提交重试状态异常")
+
+
 def run_image_generation(
     route: ai_routing.AiRoute,
     prompt: str,
@@ -196,7 +238,8 @@ def run_image_generation(
             reference_count=len(reference_image_paths or []),
             metadata=effective_metadata,
         )
-        body = aitgenne_submitter(
+        body = _submit_aitgenne_image_with_retry(
+            aitgenne_submitter,
             {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_AITGENNE_API_BASE, "model": model_name},
             prompt,
             input_mode=input_mode,

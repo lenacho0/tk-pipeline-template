@@ -39,6 +39,19 @@ SCAN_CFG = DISPATCHER_CFG.get('scan', {})
 TABLE_MIN_INTERVAL_SECONDS = int(SCAN_CFG.get('table_min_interval_seconds', 20) or 20)
 RECORD_STATE_CACHE_TTL_SECONDS = int(SCAN_CFG.get('record_state_cache_ttl_seconds', 300) or 300)
 RUNTIME_LOG_FILE = os.path.join(SCRIPTS_DIR, f'dispatcher-runtime.{INSTANCE}.log')
+_TABLE_FIELD_KINDS_CACHE = {}
+ATTACHMENT_FIELD_TYPE_IDS = {17, '17', 'attachment'}
+KNOWN_ATTACHMENT_FIELD_NAMES = {
+    '参考图',
+    '关键帧图',
+    '视频片段',
+    '首帧图',
+    '尾帧图',
+    '首尾帧视频',
+    '故事板图',
+    '分镜视频',
+    '九宫格图',
+}
 
 log = logging.getLogger('dispatcher')
 log.handlers.clear()
@@ -714,11 +727,11 @@ WATCH_LIST = [
                 '视频本地路径',
                 '视频原始响应JSON',
                 '视频错误信息',
+                '错误信息',
             ],
         },
         'claim_clear_values_by_trigger_value': {
             '待生成': {
-                '视频片段': [],
                 '视频片段URL': None,
             },
         },
@@ -751,6 +764,16 @@ WATCH_LIST = [
         'timeout': 1200,
         'max_concurrency': 1,
         'max_retries': 3,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '参考图': [],
+                '参考图file_token': '',
+                '参考图本地路径': '',
+                '参考图任务ID': '',
+                '参考图原始响应JSON': '',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '脚本文档口播音频生成',
@@ -780,6 +803,32 @@ WATCH_LIST = [
         'timeout': 1200,
         'max_concurrency': 2,
         'max_retries': 2,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '分镜图': [],
+                '分镜图file_token': '',
+                '分镜图本地路径': '',
+                '分镜图任务ID': '',
+                '分镜图原始响应JSON': '',
+                '分镜图错误信息': '',
+                '分镜图生成时间': None,
+                '尾帧图': [],
+                '尾帧图file_token': '',
+                '尾帧图本地路径': '',
+                '尾帧图任务ID': '',
+                '尾帧图原始响应JSON': '',
+                '尾帧图错误信息': '',
+                '尾帧图生成时间': None,
+                '尾帧图生成状态': '不触发',
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '脚本文档尾帧图生成',
@@ -795,6 +844,24 @@ WATCH_LIST = [
         'timeout': 1200,
         'max_concurrency': 2,
         'max_retries': 1,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '尾帧图': [],
+                '尾帧图file_token': '',
+                '尾帧图本地路径': '',
+                '尾帧图任务ID': '',
+                '尾帧图原始响应JSON': '',
+                '尾帧图错误信息': '',
+                '尾帧图生成时间': None,
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '脚本文档分镜视频生成',
@@ -1319,6 +1386,7 @@ def cleanup_finished_processes(token):
 
             if process.returncode == 0:
                 log.info(f"[{watch['name']}] ✅ 完成: {record_id}")
+                refresh_record_state_cache_from_record(token, watch, record_id)
                 clear_retry_count(task_key)
                 clear_circuit_failure(watch)
                 bump_metric('success', watch['name'])
@@ -1372,6 +1440,56 @@ def update_record_state_cache(watch, record_id, status):
     save_record_state_cache(cleaned)
 
 
+def refresh_record_state_cache_from_record(token, watch, record_id):
+    try:
+        latest = safe_get_record(token, watch['table'], record_id)
+        latest_status = extract_text(latest.get(watch['status_field'], '')).strip()
+        update_record_state_cache(watch, record_id, latest_status)
+    except Exception as e:
+        log.warning(f"[{watch['name']}] 完成后刷新状态缓存失败 {record_id}: {e}")
+
+
+def get_table_field_kinds(token, table_id):
+    cache_key = table_id
+    if cache_key in _TABLE_FIELD_KINDS_CACHE:
+        return _TABLE_FIELD_KINDS_CACHE[cache_key]
+    kinds = {}
+    page_token = None
+    while True:
+        url = f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/fields?page_size=100'
+        if page_token:
+            url += f'&page_token={page_token}'
+        data = safe_request('get', url, headers=feishu_headers(token), timeout=30, max_attempts=3, acceptable_codes=(0,))
+        for item in data.get('data', {}).get('items', []):
+            name = item.get('field_name') or item.get('name')
+            if name:
+                kinds[name] = item.get('type') or item.get('ui_type') or item.get('field_type')
+        if not data.get('data', {}).get('has_more'):
+            break
+        page_token = data.get('data', {}).get('page_token')
+    _TABLE_FIELD_KINDS_CACHE[cache_key] = kinds
+    return kinds
+
+
+def sanitize_claim_fields_for_update(token, table_id, claim_fields):
+    if not any(value == [] for value in claim_fields.values()):
+        return claim_fields
+    try:
+        field_kinds = get_table_field_kinds(token, table_id)
+    except Exception as e:
+        log.warning(f"读取字段类型失败，按已知附件字段保护 claim payload: table={table_id} error={e}")
+        field_kinds = {}
+    sanitized = {}
+    for field_name, value in claim_fields.items():
+        kind = field_kinds.get(field_name)
+        is_attachment_field = kind in ATTACHMENT_FIELD_TYPE_IDS or field_name in KNOWN_ATTACHMENT_FIELD_NAMES
+        if value == [] and is_attachment_field:
+            log.info(f"claim payload 跳过附件字段清空: table={table_id} field={field_name}")
+            continue
+        sanitized[field_name] = value
+    return sanitized
+
+
 def apply_claim_clear_fields(claim_fields, watch, trigger_value=None):
     for field_name in watch.get('claim_clear_fields') or []:
         claim_fields[field_name] = ''
@@ -1414,6 +1532,7 @@ def try_claim_task(token, watch, record_id):
             return False
         claim_fields = {watch['status_field']: watch['running_value']}
         apply_claim_clear_fields(claim_fields, watch, latest_status)
+        claim_fields = sanitize_claim_fields_for_update(token, watch['table'], claim_fields)
         safe_update_record(token, watch['table'], record_id, claim_fields)
         update_record_state_cache(watch, record_id, watch['running_value'])
         return True
@@ -1500,16 +1619,19 @@ def check_and_run(token, watch):
             running_state.pop(task_key, None)
             save_running_tasks(running_state)
 
+        stale_running_candidate = False
         if status == watch.get('running_value') and status != watch.get('trigger_value'):
             if has_live_process_for_task_key(task_key, running_info):
                 continue
-            log.info(f"[{watch['name']}] 接管 stale 生成中任务: {record_id}")
+            stale_running_candidate = True
         elif should_skip_claim_by_cache(watch, record_id, status):
             continue
 
         task_id = extract_text(fields.get('任务ID', '')) or extract_text(fields.get('任务名称', '')) or record_id
         if not try_claim_task(token, watch, record_id):
             continue
+        if stale_running_candidate:
+            log.info(f"[{watch['name']}] 接管 stale 生成中任务: {record_id}")
 
         script_path = os.path.join(SCRIPTS_DIR, watch['script'])
         try:

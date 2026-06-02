@@ -174,6 +174,41 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(video.normalize_seconds(7), "8")
         self.assertEqual(video.normalize_seconds(""), "8")
 
+    def test_upload_video_to_feishu_uses_multipart_for_large_files(self):
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
+            tmp.write(b"abcdef")
+            tmp.flush()
+
+            prepare = Mock()
+            prepare.status_code = 200
+            prepare.json.return_value = {"code": 0, "data": {"upload_id": "up_1", "block_size": 2, "block_num": 3}}
+            part = Mock()
+            part.status_code = 200
+            part.json.return_value = {"code": 0, "data": {}}
+            finish = Mock()
+            finish.status_code = 200
+            finish.json.return_value = {"code": 0, "data": {"file_token": "file_token"}}
+
+            with patch("tk_shot_video.FEISHU_UPLOAD_ALL_LIMIT_BYTES", 3), \
+                 patch("tk_shot_video.APP_TOKEN", "app_token"), \
+                 patch("tk_shot_video.requests.post", side_effect=[prepare, part, part, part, finish]) as post:
+                file_token = video.upload_video_to_feishu("tenant_token", tmp.name, "clip.mp4")
+
+        self.assertEqual(file_token, "file_token")
+        urls = [call.args[0] for call in post.call_args_list]
+        self.assertEqual(urls, [
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_prepare",
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_part",
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_part",
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_part",
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_finish",
+        ])
+        first_part = post.call_args_list[1].kwargs
+        self.assertEqual(first_part["data"]["seq"], "0")
+        self.assertEqual(first_part["data"]["size"], "2")
+        self.assertEqual(first_part["data"]["checksum"], str(video.zlib.adler32(b"ab") & 0xFFFFFFFF))
+        self.assertEqual(post.call_args_list[-1].kwargs["json"], {"upload_id": "up_1", "block_num": 3})
+
     def test_build_prompt_requires_video_prompt(self):
         fields = sample_fields()
         fields["视频提示词"] = ""
@@ -339,7 +374,7 @@ class ShotVideoTest(unittest.TestCase):
                 "model": "veo-3.1-fast-generate-preview",
                 "api_key": "sk",
                 "api_base": "https://aihubmix.com/gemini",
-                "size": "720p",
+                "size": "720x1280",
                 "aspect_ratio": "9:16",
             })
             work.return_value = Path("/tmp")
@@ -551,7 +586,7 @@ class ShotVideoTest(unittest.TestCase):
                 "model": "veo-3.1-fast-generate-preview",
                 "api_key": "sk",
                 "api_base": "https://aihubmix.com/gemini",
-                "size": "720p",
+                "size": "720x1280",
                 "aspect_ratio": "9:16",
             })
             work.return_value = Path("/tmp")
@@ -949,7 +984,7 @@ class ShotVideoTest(unittest.TestCase):
                 "model": "veo-3.1-fast-generate-preview",
                 "api_key": "sk",
                 "api_base": "https://aihubmix.com/gemini",
-                "size": "720p",
+                "size": "720x1280",
                 "aspect_ratio": "9:16",
             })
             work.return_value = Path("/tmp")

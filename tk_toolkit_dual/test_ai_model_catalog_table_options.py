@@ -19,8 +19,10 @@ def field_options(fields, field_name):
 class AiModelCatalogTableOptionsTests(unittest.TestCase):
     def test_script_doc_video_model_options_come_from_catalog(self):
         options = field_options(script_doc_tables.SHOT_FIELDS, "视频生成模型")
+        task_options = field_options(script_doc_tables.TASK_FIELDS, "视频生成模型")
 
         self.assertIn("OTU / veo_3_1-fast-fl-hd", options)
+        self.assertEqual(task_options, options)
         self.assertIn("AIHubMix / veo-3.1-fast-generate-preview", options)
         self.assertNotIn("OTU / omni_flash-10s", options)
         self.assertNotIn("Aitgenne / happyhorse-1.0-r2v", options)
@@ -37,6 +39,7 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
         self.assertNotIn("OTU / sora-2-12s", options)
         image_options = field_options(first_last_table.FIRST_LAST_VIDEO_FIELDS, "首帧图AI模型")
         self.assertIn("OTU / gpt-image-2-4K", image_options)
+        self.assertIn("Aitgenne / gpt-image-2", image_options)
         self.assertNotIn("AIHubMix / gpt-image-2", image_options)
 
     def test_multi_role_ai_and_video_model_options_come_from_catalog(self):
@@ -46,6 +49,7 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
 
         self.assertIn("Aitgenne / gpt-5.5", ai_options)
         self.assertIn("OTU / gpt-image-2-4K", ai_options)
+        self.assertIn("Aitgenne / gpt-image-2", ai_options)
         self.assertIn("OTU / veo_3_1-fast-fl-hd", video_options)
         self.assertIn("OTU / veo_3_1-fast-fl-hd", slot_video_options)
         self.assertNotIn("Aitgenne / happyhorse-1.0-r2v", video_options)
@@ -55,6 +59,7 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
 
     def test_reference_video_tables_use_reference_video_model_options(self):
         nine_grid_options = field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频AI模型")
+        nine_grid_generation_options = field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频生成模型")
         storyboard_options = field_options(storyboard_table.STORYBOARD_VIDEO_FIELDS, "视频AI模型")
 
         self.assertEqual(nine_grid_options, [
@@ -62,6 +67,7 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
             "Aitgenne / happyhorse-1.0-r2v",
             "Aitgenne / omni-flash",
         ])
+        self.assertEqual(nine_grid_generation_options, ["默认（配置表）", *nine_grid_options])
         self.assertEqual(storyboard_options, nine_grid_options)
         self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", nine_grid_options)
         self.assertNotIn("OTU / veo_3_1-fast-fl", nine_grid_options)

@@ -44,19 +44,17 @@ TABLE_NAME = "故事板图片视频生成表"
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 SPLIT_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待拆分"), opt("拆分中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("Storyboard分段", "Green")]
-STORYBOARD_IMAGE_MODEL_OPTIONS = [opt("gpt-image-2", "Green"), opt("gpt-image-2-2K", "Blue"), opt("gpt-image-2-4K", "Purple")]
 STORYBOARD_IMAGE_SIZE_OPTIONS = [opt("1280x720", "Green"), opt("720x1280", "Blue"), opt("1024x1024", "Gray")]
 STORYBOARD_IMAGE_ASPECT_RATIO_OPTIONS = [opt("16:9", "Green"), opt("9:16", "Blue"), opt("1:1", "Gray")]
 STORYBOARD_IMAGE_DEFAULT_FIELDS = {
-    "故事板图片模型": "gpt-image-2",
+    "故事板图片AI模型": "OTU / gpt-image-2",
     "故事板图片画面尺寸": "1280x720",
     "故事板图片画面比例": "16:9",
 }
-OMNI_MODEL_OPTIONS = [opt("omni_flash-10s", "Green")]
 OMNI_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1280x720", "Blue")]
 OMNI_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Blue")]
 OMNI_DEFAULT_FIELDS = {
-    "Omni模型": "omni_flash-10s",
+    "视频AI模型": "OTU / omni_flash-10s",
     "Omni画面尺寸": "720x1280",
     "Omni画面比例": "9:16",
 }
@@ -77,6 +75,8 @@ OBSOLETE_FIELDS = [
     "视频生成原始响应JSON",
     "失败分类",
     "生成时间",
+    "故事板图片模型",
+    "Omni模型",
 ]
 
 STORYBOARD_VIDEO_FIELDS = [
@@ -106,7 +106,6 @@ STORYBOARD_VIDEO_FIELDS = [
     number("Storyboard编号"),
     text("Time Range"),
     text("故事板图片提示词"),
-    select("故事板图片模型", STORYBOARD_IMAGE_MODEL_OPTIONS),
     select("故事板图片画面尺寸", STORYBOARD_IMAGE_SIZE_OPTIONS),
     select("故事板图片画面比例", STORYBOARD_IMAGE_ASPECT_RATIO_OPTIONS),
     select("故事板图片生成状态", RUN_STATUS_OPTIONS),
@@ -115,7 +114,6 @@ STORYBOARD_VIDEO_FIELDS = [
     text("故事板图片错误信息"),
     datetime_field("故事板图片生成时间"),
     text("视频提示词"),
-    select("Omni模型", OMNI_MODEL_OPTIONS),
     select("Omni画面尺寸", OMNI_SIZE_OPTIONS),
     select("Omni画面比例", OMNI_ASPECT_RATIO_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),
@@ -138,30 +136,28 @@ TABLE_DEFINITION = {
         ],
         "02-故事板图片": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range",
-            "故事板图片提示词", "故事板图片AI模型", "故事板图片AI参数JSON",
-            "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
+            "故事板图片提示词", "故事板图片AI模型", "故事板图片画面尺寸", "故事板图片画面比例",
             "故事板图片生成状态", "故事板图", "故事板图片错误信息",
         ],
         "03-Omni视频": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号", "Time Range", "故事板图",
-            "视频提示词", "视频AI模型", "视频AI参数JSON", "Omni模型", "Omni画面尺寸", "Omni画面比例",
+            "视频提示词", "视频AI模型", "Omni画面尺寸", "Omni画面比例",
             "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息", "视频生成时间",
         ],
         "高级AI参数": [
             "记录类型", "任务名称", "父任务记录ID", "Storyboard编号",
             "使用统一AI路由", "拆分AI模型", "拆分AI参数JSON",
-            "故事板图片AI模型", "故事板图片AI参数JSON", "视频AI模型", "视频AI参数JSON",
-            "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
-            "Omni模型", "Omni画面尺寸", "Omni画面比例",
+            "故事板图片AI模型", "故事板图片AI参数JSON", "故事板图片画面尺寸", "故事板图片画面比例",
+            "视频AI模型", "视频AI参数JSON", "Omni画面尺寸", "Omni画面比例",
         ],
         "99-排错": [
             "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
             "拆分状态", "拆分结果JSON", "故事板图片提示词",
             "使用统一AI路由", "拆分AI模型", "拆分AI参数JSON",
             "故事板图片AI模型", "故事板图片AI参数JSON", "视频AI模型", "视频AI参数JSON",
-            "故事板图片模型", "故事板图片画面尺寸", "故事板图片画面比例",
+            "故事板图片画面尺寸", "故事板图片画面比例",
             "故事板图片任务ID", "故事板图片错误信息", "故事板图片生成时间",
-            "视频提示词", "Omni模型", "Omni画面尺寸", "Omni画面比例",
+            "视频提示词", "Omni画面尺寸", "Omni画面比例",
             "视频任务ID", "视频错误信息", "视频生成时间", "错误信息",
             "使用统一AI路由", "AI供应商", "AI能力类型", "AI任务类型", "AI模型", "AI参数JSON",
         ],

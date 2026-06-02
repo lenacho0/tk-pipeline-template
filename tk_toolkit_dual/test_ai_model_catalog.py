@@ -15,6 +15,7 @@ class AiModelCatalogTests(unittest.TestCase):
 
         self.assertIn("AIHubMix / gemini-3.1-pro-preview", [item["name"] for item in text_options])
         self.assertIn("OTU / gpt-image-2-4K", [item["name"] for item in image_options])
+        self.assertIn("Aitgenne / gpt-image-2", [item["name"] for item in image_options])
         self.assertIn("OTU / veo_3_1-fast-fl-hd", [item["name"] for item in video_options])
         self.assertNotIn("OTU / gpt-image-2", [item["name"] for item in text_options])
         self.assertNotIn("Aitgenne / gpt-5.5", [item["name"] for item in image_options])
@@ -45,6 +46,10 @@ class AiModelCatalogTests(unittest.TestCase):
         self.assertIn("gpt-image-2", models)
         self.assertIn("gpt-image-2-2K", models)
         self.assertIn("gpt-image-2-4K", models)
+        self.assertIn(
+            "gpt-image-2",
+            [item.model for item in ai_model_catalog.models_for_capability("图片") if item.provider == "Aitgenne"],
+        )
 
     def test_video_model_options_are_split_by_generation_mode(self):
         reference_names = [item["name"] for item in ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS]

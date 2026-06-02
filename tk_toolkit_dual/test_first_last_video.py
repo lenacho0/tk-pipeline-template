@@ -297,13 +297,47 @@ class FirstLastVideoTableTests(unittest.TestCase):
             self.assertEqual(watches[name]["script"], "tk_first_last_video.py")
             self.assertEqual(watches[name]["args"], args)
 
-        self.assertNotIn("claim_clear_fields", watches["首尾帧视频生成"])
-        claim_fields = dispatcher.apply_claim_clear_fields({"视频生成状态": "生成中"}, watches["首尾帧视频生成"])
-        self.assertEqual(claim_fields, {"视频生成状态": "生成中"})
+        claim_fields = dispatcher.apply_claim_clear_fields({"视频生成状态": "生成中"}, watches["首尾帧视频生成"], "待生成")
+        self.assertEqual(claim_fields["视频任务ID"], "")
+        self.assertEqual(claim_fields["首尾帧视频"], [])
+        self.assertIsNone(claim_fields["首尾帧视频URL"])
+        self.assertEqual(claim_fields["首尾帧视频file_token"], "")
+        self.assertEqual(claim_fields["本地视频路径"], "")
+        self.assertEqual(claim_fields["视频生成原始响应JSON"], "")
+        self.assertEqual(claim_fields["视频错误信息"], "")
+        self.assertEqual(claim_fields["错误信息"], "")
+
+        resume_fields = dispatcher.apply_claim_clear_fields({"视频生成状态": "生成中"}, watches["首尾帧视频生成"], "生成中")
+        self.assertEqual(resume_fields, {"视频生成状态": "生成中"})
         self.assertEqual(watches["首尾帧场景重新拆分"]["required_field_values"]["记录类型"], ["", "母任务"])
         self.assertEqual(watches["首尾帧首帧图生成"]["skip_if_field_values"]["记录类型"], ["母任务"])
+        self.assertEqual(watches["首尾帧首帧图生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["首尾帧尾帧图生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(watches["首尾帧视频生成"]["trigger_values"], ["待生成", "生成中"])
+
+        first_waiting_claim = dispatcher.apply_claim_clear_fields({"首帧图生成状态": "生成中"}, watches["首尾帧首帧图生成"], "待生成")
+        self.assertEqual(first_waiting_claim["首帧图任务ID"], "")
+        first_running_claim = dispatcher.apply_claim_clear_fields({"首帧图生成状态": "生成中"}, watches["首尾帧首帧图生成"], "生成中")
+        self.assertNotIn("首帧图任务ID", first_running_claim)
+
+        last_waiting_claim = dispatcher.apply_claim_clear_fields({"尾帧图生成状态": "生成中"}, watches["首尾帧尾帧图生成"], "待生成")
+        self.assertEqual(last_waiting_claim["尾帧图任务ID"], "")
+        last_running_claim = dispatcher.apply_claim_clear_fields({"尾帧图生成状态": "生成中"}, watches["首尾帧尾帧图生成"], "生成中")
+        self.assertNotIn("尾帧图任务ID", last_running_claim)
         self.assertTrue(watches["首尾帧首帧图生成"]["skip_deprecated_records"])
+
+    def test_dispatcher_classifies_otu_resubmit_errors_as_retryable(self):
+        stderr = (
+            "OTU 视频生成失败: {'id': 'task_old', 'error': {'code': 'official_generation_error', "
+            "'message': '官方生成遇到错误，请重新提交'}, 'model': 'veo_3_1-fast-fl', "
+            "'object': 'video', 'status': 'failed', 'progress': 100}"
+        )
+
+        payload = dispatcher.parse_subprocess_error_payload("", stderr, "tk_first_last_video.py")
+
+        self.assertEqual(payload["error_code"], "UPSTREAM_RETRYABLE")
+        self.assertTrue(payload["retryable"])
+        self.assertIn("official_generation_error", payload["message"])
 
     def test_dispatcher_skips_deprecated_first_last_records(self):
         watch = {
@@ -724,6 +758,9 @@ video prompt exactly
         self.assertIsNone(patch_fields["首尾帧视频URL"])
         self.assertEqual(patch_fields["首尾帧视频file_token"], "")
         self.assertEqual(patch_fields["视频任务ID"], "")
+        self.assertEqual(patch_fields["视频生成原始响应JSON"], "")
+        self.assertEqual(patch_fields["视频错误信息"], "")
+        self.assertEqual(patch_fields["错误信息"], "")
         self.assertEqual(patch_fields["视频生成状态"], "待生成")
         self.assertEqual(patch_fields["视频操作"], "不触发")
 
@@ -1003,6 +1040,49 @@ video prompt exactly
         self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
         self.assertEqual(updates[-1]["尾帧图版本"], 3)
 
+    def test_render_last_frame_resumes_existing_otu_task_without_resubmitting(self):
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+                 patch.object(first_last, "get_feishu_token", return_value="token"), \
+                 patch.object(first_last, "safe_get_record", side_effect=[
+                     {
+                         "记录类型": "场景子任务",
+                         "记录状态": "有效",
+                         "尾帧生图提示词": "last prompt",
+                         "尾帧图生成状态": "生成中",
+                         "尾帧图版本": 3,
+                         "尾帧图任务ID": "img_task_existing_last",
+                         "尾帧图原始响应JSON": json.dumps({"submit": {"id": "img_task_existing_last"}}),
+                     },
+                     {"记录状态": "有效", "尾帧图生成状态": "生成中", "尾帧图版本": 3, "尾帧图任务ID": "img_task_existing_last"},
+                 ]), \
+                 patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+                 patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "download_feishu_media") as media_downloader, \
+                 patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2", "size": "1024x1024"})), \
+                 patch.object(first_last, "submit_otu_image_task") as submitter, \
+                 patch.object(first_last, "collect_product_reference_images") as collect_refs, \
+                 patch.object(first_last, "reference_urls_for_refs") as reference_urls, \
+                 patch.object(first_last, "poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}) as poller, \
+                 patch.object(first_last, "download_otu_image_result"), \
+                 patch.object(first_last, "upload_image_to_feishu", return_value="ft_last"):
+                result = first_last.render_last_frame("rec1")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "img_task_existing_last")
+        submitter.assert_not_called()
+        media_downloader.assert_not_called()
+        collect_refs.assert_not_called()
+        reference_urls.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "img_task_existing_last")
+        self.assertEqual(updates[0]["尾帧图任务ID"], "img_task_existing_last")
+        self.assertIn("恢复轮询已有 OTU 尾帧图任务", updates[0]["尾帧图错误信息"])
+        self.assertEqual(updates[-1]["尾帧图生成状态"], "成功")
+        self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
+
     def test_submit_first_last_video_task_uses_two_reference_frames(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
             first.write(b"first")
@@ -1151,6 +1231,67 @@ video prompt exactly
         self.assertEqual(result["model"], "veo_3_1-fl")
         self.assertEqual(result["model_source"], "视频生成模型")
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
+
+    def test_render_video_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "首尾帧生视频提示词": "video prompt",
+            "首帧图file_token": "ft_first",
+            "尾帧图file_token": "ft_last",
+            "视频生成状态": "待生成",
+            "视频任务ID": "",
+            "视频版本": 2,
+            "视频生成模型": "AIHubMix / veo-3.1-fast-generate-preview",
+            "目标时长秒": 6,
+        }
+        operation = Mock(name="operations/op_aihubmix")
+        operation.name = "operations/op_aihubmix"
+        completed = Mock()
+        generated_video = Mock()
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(first_last, "get_stage_config", return_value=("rec_cfg", {
+                 "api_key": "sk",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "model": "veo-3.1-fast-generate-preview",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             })), \
+             patch.object(first_last, "get_table_field_types", return_value={"首尾帧视频URL": 1}), \
+             patch.object(first_last, "get_native_veo_client", return_value="client") as client_factory, \
+             patch.object(first_last, "call_native_veo_first_frame_task", return_value=operation) as native_submitter, \
+             patch.object(first_last, "poll_native_veo_operation", return_value=completed) as native_poller, \
+             patch.object(first_last, "extract_native_generated_video", return_value=generated_video), \
+             patch.object(first_last, "native_generated_video_uri", return_value="https://x.test/native.mp4"), \
+             patch.object(first_last, "download_native_veo_video", return_value="/tmp/video.mp4") as native_downloader, \
+             patch.object(first_last, "submit_first_last_video_task") as otu_submitter, \
+             patch.object(first_last, "poll_otu_video_task") as otu_poller, \
+             patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(first_last, "ensure_current_generation"), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.render_video("rec1")
+
+        otu_submitter.assert_not_called()
+        otu_poller.assert_not_called()
+        client_factory.assert_called_once()
+        native_submitter.assert_called_once()
+        self.assertEqual(native_submitter.call_args.args[0]["model"], "veo-3.1-fast-generate-preview")
+        self.assertEqual(native_submitter.call_args.args[4], "720p")
+        self.assertEqual(native_submitter.call_args.kwargs["last_frame_path"], str(Path(tmp) / "rec1_video_last_frame_v2.png"))
+        native_poller.assert_called_once_with("client", operation)
+        native_downloader.assert_called_once_with("client", generated_video, result["output_path"])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "operations/op_aihubmix")
+        self.assertTrue(any(update.get("视频通道") == "AIHubMix" for update in updates))
+        self.assertTrue(any(update.get("视频生成模型") == "AIHubMix / veo-3.1-fast-generate-preview" for update in updates))
 
 
 if __name__ == "__main__":

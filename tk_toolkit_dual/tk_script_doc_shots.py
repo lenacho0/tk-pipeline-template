@@ -45,6 +45,7 @@ from common import (  # noqa: E402
     with_retry,
 )
 import ai_routing  # noqa: E402
+from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
 from tk_shot_script_gen import (  # noqa: E402
     build_readable_script,
     extract_json_object,
@@ -65,6 +66,7 @@ from tk_shot_storyboard import (  # noqa: E402
     build_image_to_video_prompt,
     filter_existing_fields,
 )
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
 ASSET_TYPES = {"pet", "environment", "human"}
@@ -85,6 +87,7 @@ DEFAULT_PARSE_PROMPT = """
    - human prompt 必须禁止侧脸、背影、低头、遮脸、墨镜、头发/手/道具遮挡脸部、多视角、角色设定表、contact sheet、turnaround、拼图、文字、logo、水印。
    - environment prompt 必须根据脚本判断环境图中应该出现什么问题锚点；只保留脚本明确写出的可见问题发生点和位置细节。
    - environment prompt 不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。
+   - environment prompt 必须是直接给图片模型使用的画面描述，只写场景中可见内容；不得写 source script、if present、if one exists、when present in the script、script-defined 这类元指令。
    - environment prompt 仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印；只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
 2. 按分镜拆成 shots。
 3. 对每条 shot 判断生成分镜图时到底需要哪些参考图：
@@ -173,6 +176,41 @@ def _unique_id(raw: Any, fallback: str) -> str:
     return text or fallback
 
 
+def _compact_json(value: Any, max_chars: int = 10000) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, separators=(",", ":"))[:max_chars]
+
+
+def _parse_json_object(value: Any) -> Dict[str, Any]:
+    raw = extract_text(value).strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+ENVIRONMENT_META_CLEANUP_PATTERNS = [
+    re.compile(r"\bfrom the source script\b", re.IGNORECASE),
+    re.compile(r"\bin the source script\b", re.IGNORECASE),
+    re.compile(r"\bwhen present in the script\b", re.IGNORECASE),
+    re.compile(r"\bif one exists\b", re.IGNORECASE),
+    re.compile(r"\bscript-defined\b", re.IGNORECASE),
+    re.compile(r"\bsource script\b", re.IGNORECASE),
+]
+
+
+def sanitize_environment_asset_prompt(prompt: str) -> str:
+    cleaned = extract_text(prompt).strip()
+    for pattern in ENVIRONMENT_META_CLEANUP_PATTERNS:
+        cleaned = pattern.sub("", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?。！？])", r"\1", cleaned)
+    cleaned = re.sub(r"([,;:])\s*([.;。])", r"\2", cleaned)
+    return cleaned.strip(" ,;:")
+
+
 def normalize_asset(asset: Dict[str, Any], idx: int) -> Dict[str, Any]:
     asset_type = extract_text(asset.get("asset_type") or asset.get("type")).strip().lower()
     if asset_type not in ASSET_TYPES:
@@ -181,6 +219,8 @@ def normalize_asset(asset: Dict[str, Any], idx: int) -> Dict[str, Any]:
     prompt = extract_text(asset.get("prompt") or asset.get("reference_prompt")).strip()
     if not prompt:
         raise ValueError(f"global_assets[{idx}] 缺少 prompt")
+    if asset_type == "environment":
+        prompt = sanitize_environment_asset_prompt(prompt)
     return {
         "asset_id": asset_id,
         "asset_type": asset_type,
@@ -549,6 +589,8 @@ def build_reference_image_prompt(fields: Dict[str, Any]) -> str:
     asset_type = extract_text(fields.get("参考类型")).strip().lower()
     asset_name = extract_text(fields.get("参考名称")).strip()
     prompt = extract_text(fields.get("参考提示词")).strip()
+    if asset_type == "environment":
+        prompt = sanitize_environment_asset_prompt(prompt)
     revision_note = extract_text(fields.get("参考图修改要求")).strip()
     if asset_type == "human":
         revision_block = ""
@@ -628,6 +670,59 @@ def cleanup_children(token: str, table_id: str, parent_record_id: str) -> int:
     return deleted
 
 
+def apply_reference_asset_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        record["fields"] = apply_task_default_to_fields(
+            token,
+            record.get("fields") or {},
+            app_table=TASK_TABLES["script_doc_reference_assets"],
+            stage="参考底图生成默认",
+            model_field="参考图AI模型",
+            size_field="参考图画面尺寸",
+            ratio_field="参考图画面比例",
+            params_field="参考图AI参数JSON",
+        )
+    return records
+
+
+def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        fields = record.get("fields") or {}
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["script_doc_shots"],
+            stage="分镜图生成默认",
+            model_field="分镜图AI模型",
+            size_field="分镜图画面尺寸",
+            ratio_field="分镜图画面比例",
+            params_field="分镜图AI参数JSON",
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["script_doc_shots"],
+            stage="尾帧图生成默认",
+            model_field="尾帧图AI模型",
+            size_field="尾帧图画面尺寸",
+            ratio_field="尾帧图画面比例",
+            params_field="尾帧图AI参数JSON",
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["script_doc_shots"],
+            stage="分镜视频生成默认",
+            model_field="视频生成模型",
+            size_field="视频画面尺寸",
+            ratio_field="视频画面比例",
+            params_field="视频AI参数JSON",
+            placeholder_values=("默认（配置表）",),
+        )
+        record["fields"] = fields
+    return records
+
+
 def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     ensure_script_doc_tables(need_tasks=True, need_assets=True, need_shots=True)
     token = get_feishu_token()
@@ -687,8 +782,8 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     payload = validate_and_normalize_payload(extract_json_object(raw_text), target_seconds)
     readable_script = build_readable_script({"shots": payload["shots"]})
     batch_id = f"SCRIPTDOC-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
-    asset_records = build_reference_asset_records(record_id, payload)
-    shot_records = build_child_shot_records(fields, payload, parent_record_id=record_id, batch_id=batch_id)
+    asset_records = apply_reference_asset_default_models(token, build_reference_asset_records(record_id, payload))
+    shot_records = apply_shot_default_models(token, build_child_shot_records(fields, payload, parent_record_id=record_id, batch_id=batch_id))
 
     deleted = (
         cleanup_children(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id)
@@ -724,60 +819,107 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     ensure_script_doc_tables(need_assets=True)
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["script_doc_reference_assets"],
+        stage="参考底图生成默认",
+        model_field="参考图AI模型",
+        size_field="参考图画面尺寸",
+        ratio_field="参考图画面比例",
+        params_field="参考图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     prompt = extract_text(fields.get("参考提示词")).strip()
     if not prompt:
         raise ValueError("参考提示词为空")
     full_prompt = build_reference_image_prompt(fields)
     cfg = get_model_config(token, CONFIG_RECORDS.get("main_image_otu"))
-    model_name = normalize_image_model_choice(cfg["model"] or DEFAULT_OTU_IMAGE_MODEL)
-    api_key = cfg["api_key"]
-    api_base = cfg["api_base"] or DEFAULT_OTU_API_BASE
-    size = extract_text(cfg.get("size")).strip() or DEFAULT_OTU_IMAGE_SIZE
-    aspect_ratio = extract_text(cfg.get("aspect_ratio")).strip() or "9:16"
-    if not api_key:
-        raise ValueError("分镜图生成配置缺少 API Key")
+    cfg = {
+        **cfg,
+        "provider": cfg.get("provider") or "OTU",
+        "model": cfg.get("model") or DEFAULT_OTU_IMAGE_MODEL,
+    }
+    size = extract_text(fields.get("参考图画面尺寸")).strip() or extract_text(cfg.get("size")).strip() or DEFAULT_OTU_IMAGE_SIZE
+    aspect_ratio = extract_text(fields.get("参考图画面比例")).strip() or extract_text(cfg.get("aspect_ratio")).strip() or "9:16"
+    image_params = {"size": size, "aspect_ratio": aspect_ratio}
+    config_records = config_records_for_image_slot(fields, "参考图", lambda: safe_list_records(token, TABLE_CONFIG))
+    route = resolve_image_route_from_slot(
+        fields,
+        "参考图",
+        cfg,
+        task_type="文生图",
+        params=image_params,
+        config_records=config_records,
+    )
+    current_status = extract_text(fields.get("参考图生成状态")).strip()
+    raw_existing_task_id = extract_text(fields.get("参考图任务ID")).strip() if current_status == "生成中" else ""
+    existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
         "prompt_chars": len(full_prompt),
-        "model": model_name,
+        "model": route.model,
+        "provider": route.provider,
         "size": size,
         "aspect_ratio": aspect_ratio,
+        "existing_task_id": existing_task_id,
     }
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
 
-    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+    start_fields = {
         "参考图生成状态": "生成中",
-        "错误信息": "",
-    }))
+        "参考图任务ID": existing_task_id,
+        "错误信息": f"恢复轮询已有 OTU 参考底图任务。task_id={existing_task_id}" if existing_task_id else "",
+    }
+    if not existing_task_id:
+        start_fields["参考图原始响应JSON"] = ""
+    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, start_fields))
     work_dir = Path(WORKSPACE) / "script_doc_reference_work" / record_id
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / f"{record_id}_reference.png"
-    submit_task_id, submit_body = submit_otu_image_task(
-        {"api_key": api_key, "api_base": api_base, "model": model_name},
+    image_result = run_image_generation(
+        route,
         full_prompt,
+        str(out_path),
         input_mode="text-to-image",
         metadata={"urls": [], "aspectRatio": aspect_ratio, "aspect_ratio": aspect_ratio},
         size=size,
         aspect_ratio=aspect_ratio,
+        existing_task_id=existing_task_id,
+        otu_submitter=submit_otu_image_task,
+        otu_poller=poll_otu_image_task,
+        otu_downloader=download_otu_image_result,
+        on_task_submitted=lambda task_id: safe_update_record(
+            token,
+            TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+            record_id,
+            filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+                "参考图任务ID": task_id,
+                "参考图原始响应JSON": _compact_json({"submit": {"id": task_id}}),
+                "错误信息": f"已提交 {route.provider} 参考底图任务，正在轮询。task_id={task_id}",
+            }),
+        ),
     )
-    result = submit_body if not submit_task_id else poll_otu_image_task({"api_key": api_key, "api_base": api_base, "model": model_name}, submit_task_id)
-    result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
-    if not result_url:
-        raise RuntimeError("OTU 参考图任务完成但未返回图片地址")
-    download_otu_image_result(result_url, str(out_path))
+    submit_task_id = image_result.task_id
+    submit_body = image_result.submit_body
+    result = image_result.result_body
     file_token = upload_image_to_feishu(token, str(out_path), out_path.name)
     safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
         "参考图": [{"file_token": file_token}],
         "参考图file_token": file_token,
         "参考图本地路径": str(out_path),
+        "参考图任务ID": submit_task_id,
+        "参考图原始响应JSON": _compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}),
         "参考图生成状态": "成功",
         "参考图审核状态": "待确认",
         "错误信息": "",
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": str(out_path)})
+    summary.update({"status": "success", "file_token": file_token, "output_path": str(out_path), "task_id": submit_task_id})
     return summary
 
 

@@ -63,16 +63,20 @@ from tk_storyboard_video_prompt import (  # noqa: E402
     STORYBOARD_OMNI_VIDEO_PROMPT,
 )
 import ai_routing  # noqa: E402
+import ai_model_catalog  # noqa: E402
 from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
 SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
 IMAGE_STAGE_NAME = "故事板图片生成-OTU"
 OMNI_STAGE_NAME = "故事板视频生成-Omni"
 DEFAULT_OMNI_MODEL = "omni_flash-10s"
+DEFAULT_OMNI_MODEL_DISPLAY = f"OTU / {DEFAULT_OMNI_MODEL}"
 DEFAULT_OMNI_SIZE = "720x1280"
 DEFAULT_OMNI_ASPECT_RATIO = "9:16"
 DEFAULT_STORYBOARD_IMAGE_MODEL = DEFAULT_OTU_IMAGE_MODEL
+DEFAULT_STORYBOARD_IMAGE_MODEL_DISPLAY = f"OTU / {DEFAULT_STORYBOARD_IMAGE_MODEL}"
 DEFAULT_STORYBOARD_IMAGE_SIZE = "1280x720"
 DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO = "16:9"
 MAX_REFERENCE_IMAGES = 7
@@ -557,12 +561,12 @@ def build_child_storyboard_records(
             "Storyboard编号": no,
             "Time Range": item["time_range"],
             "故事板图片提示词": item["image_prompt"],
-            "故事板图片模型": DEFAULT_STORYBOARD_IMAGE_MODEL,
+            "故事板图片AI模型": DEFAULT_STORYBOARD_IMAGE_MODEL_DISPLAY,
             "故事板图片画面尺寸": DEFAULT_STORYBOARD_IMAGE_SIZE,
             "故事板图片画面比例": DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
             "故事板图片生成状态": "待生成",
             "视频提示词": item.get("video_prompt", ""),
-            "Omni模型": DEFAULT_OMNI_MODEL,
+            "视频AI模型": DEFAULT_OMNI_MODEL_DISPLAY,
             "Omni画面尺寸": DEFAULT_OMNI_SIZE,
             "Omni画面比例": DEFAULT_OMNI_ASPECT_RATIO,
             "视频生成状态": "不触发",
@@ -572,6 +576,35 @@ def build_child_storyboard_records(
         if total:
             fields["总故事板数"] = total
         records.append({"fields": fields})
+    return records
+
+
+def apply_storyboard_child_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        fields = record.get("fields") or {}
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["storyboard_video"],
+            stage="故事板图片生成默认",
+            model_field="故事板图片AI模型",
+            size_field="故事板图片画面尺寸",
+            ratio_field="故事板图片画面比例",
+            params_field="故事板图片AI参数JSON",
+            placeholder_values=(DEFAULT_STORYBOARD_IMAGE_MODEL, DEFAULT_STORYBOARD_IMAGE_MODEL_DISPLAY),
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["storyboard_video"],
+            stage="Omni视频生成默认",
+            model_field="视频AI模型",
+            size_field="Omni画面尺寸",
+            ratio_field="Omni画面比例",
+            params_field="视频AI参数JSON",
+            placeholder_values=(DEFAULT_OMNI_MODEL, DEFAULT_OMNI_MODEL_DISPLAY),
+        )
+        record["fields"] = fields
     return records
 
 
@@ -678,7 +711,10 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
 
     payload = normalize_storyboard_payload(raw_model_output)
     batch_id = f"STORYBOARD-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
-    child_records = build_child_storyboard_records(fields, payload, parent_record_id=record_id, batch_id=batch_id)
+    child_records = apply_storyboard_child_default_models(
+        token,
+        build_child_storyboard_records(fields, payload, parent_record_id=record_id, batch_id=batch_id),
+    )
     deleted = cleanup_child_storyboards(token, record_id)
     create_records(token, TABLE_STORYBOARD_VIDEO, [
         {"fields": filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, item["fields"])}
@@ -904,7 +940,7 @@ def build_reference_contact_sheet(refs: List[Dict[str, str]], out_path: Path) ->
 
 def resolve_storyboard_image_record_parameters(fields: Dict[str, Any]) -> Dict[str, str]:
     return {
-        "model": extract_text(fields.get("故事板图片模型")).strip() or DEFAULT_STORYBOARD_IMAGE_MODEL,
+        "model": extract_text(fields.get("故事板图片AI模型")).strip() or DEFAULT_STORYBOARD_IMAGE_MODEL_DISPLAY,
         "size": extract_text(fields.get("故事板图片画面尺寸")).strip() or DEFAULT_STORYBOARD_IMAGE_SIZE,
         "aspect_ratio": extract_text(fields.get("故事板图片画面比例")).strip() or DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
     }
@@ -912,7 +948,7 @@ def resolve_storyboard_image_record_parameters(fields: Dict[str, Any]) -> Dict[s
 
 def missing_storyboard_image_default_fields(fields: Dict[str, Any]) -> Dict[str, str]:
     defaults = {
-        "故事板图片模型": DEFAULT_STORYBOARD_IMAGE_MODEL,
+        "故事板图片AI模型": DEFAULT_STORYBOARD_IMAGE_MODEL_DISPLAY,
         "故事板图片画面尺寸": DEFAULT_STORYBOARD_IMAGE_SIZE,
         "故事板图片画面比例": DEFAULT_STORYBOARD_IMAGE_ASPECT_RATIO,
     }
@@ -923,6 +959,19 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     ensure_storyboard_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_STORYBOARD_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_STORYBOARD_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["storyboard_video"],
+        stage="故事板图片生成默认",
+        model_field="故事板图片AI模型",
+        size_field="故事板图片画面尺寸",
+        ratio_field="故事板图片画面比例",
+        params_field="故事板图片AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
         raise ValueError("Storyboard分段缺少父任务记录ID")
@@ -930,12 +979,19 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     prompt = extract_text(fields.get("故事板图片提示词")).strip()
     if not prompt:
         raise ValueError("故事板图片提示词为空")
+    current_status = extract_text(fields.get("故事板图片生成状态")).strip()
+    existing_task_id = extract_text(fields.get("故事板图片任务ID")).strip() if current_status == "生成中" else ""
     work_dir = ensure_work_dir(record_id)
-    refs = collect_parent_reference_images(token, parent_fields, work_dir)
-    reference_urls = build_reference_urls(token, refs)
-    prompt = f"{build_image_reference_note(refs)}\n\n{prompt}".strip()
+    if existing_task_id:
+        refs = []
+        reference_urls = []
+    else:
+        refs = collect_parent_reference_images(token, parent_fields, work_dir)
+        reference_urls = build_reference_urls(token, refs)
+        prompt = f"{build_image_reference_note(refs)}\n\n{prompt}".strip()
     record_params = resolve_storyboard_image_record_parameters(fields)
-    model_name = normalize_image_model_choice(record_params["model"])
+    model_bits = ai_routing.parse_model_display(record_params["model"])
+    model_name = model_bits["model"] or normalize_image_model_choice(record_params["model"])
     size = record_params["size"]
     aspect_ratio = record_params["aspect_ratio"]
     _, cfg = get_stage_config(
@@ -949,7 +1005,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     route = resolve_image_route_from_slot(
         fields,
         "故事板图片",
-        {**cfg, "model": model_name},
+        {**cfg, "model": record_params["model"]},
         task_type="图生图/参考图重绘",
         params=image_params,
         config_records=config_records,
@@ -959,7 +1015,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         "dry_run": dry_run,
         "reference_count": len(refs),
         "model": model_name,
-        "model_source": "故事板图片模型",
+        "model_source": "故事板图片AI模型",
         "size": size,
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
@@ -985,14 +1041,23 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
-    primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
+    primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png") if refs else ""
 
-    safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
-        **image_regeneration_reset_fields(),
-        **missing_storyboard_image_default_fields(fields),
-        "故事板图片生成状态": "生成中",
-        "故事板图片错误信息": "",
-    }))
+    if existing_task_id:
+        safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+            **missing_storyboard_image_default_fields(fields),
+            "故事板图片任务ID": existing_task_id,
+            "故事板图片生成状态": "生成中",
+            "故事板图片错误信息": f"恢复轮询已有 OTU 故事板图片任务。task_id={existing_task_id}",
+            "错误信息": "",
+        }))
+    else:
+        safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+            **image_regeneration_reset_fields(),
+            **missing_storyboard_image_default_fields(fields),
+            "故事板图片生成状态": "生成中",
+            "故事板图片错误信息": "",
+        }))
     out_path = str(work_dir / f"{record_id}_storyboard.png")
     image_result = run_image_generation(
         route,
@@ -1008,13 +1073,23 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         },
         size=size,
         aspect_ratio=aspect_ratio,
+        existing_task_id=existing_task_id,
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        on_task_submitted=lambda task_id: safe_update_record(
+            token,
+            TABLE_STORYBOARD_VIDEO,
+            record_id,
+            filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+                "故事板图片任务ID": task_id,
+                "故事板图片错误信息": f"已提交 {route.provider} 故事板图片任务，正在轮询。task_id={task_id}",
+            }),
+        ),
     )
     submit_task_id = image_result.task_id
     submit_body = image_result.submit_body
-    if submit_task_id:
+    if submit_task_id and not existing_task_id:
         safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
             "故事板图片任务ID": submit_task_id,
             "故事板图片错误信息": f"已提交 {route.provider} 故事板图片任务，正在轮询。task_id={submit_task_id}",
@@ -1032,7 +1107,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         "视频生成状态": "待生成",
         "错误信息": "",
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
+    summary.update({"status": "success", "task_id": submit_task_id, "file_token": file_token, "output_path": out_path})
     return summary
 
 
@@ -1042,7 +1117,7 @@ def build_omni_video_prompt(child_fields: Dict[str, Any], parent_fields: Dict[st
 
 def resolve_omni_record_parameters(fields: Dict[str, Any]) -> Dict[str, str]:
     return {
-        "model": extract_text(fields.get("Omni模型")).strip() or DEFAULT_OMNI_MODEL,
+        "model": extract_text(fields.get("视频AI模型")).strip() or DEFAULT_OMNI_MODEL_DISPLAY,
         "size": extract_text(fields.get("Omni画面尺寸")).strip() or DEFAULT_OMNI_SIZE,
         "aspect_ratio": extract_text(fields.get("Omni画面比例")).strip() or DEFAULT_OMNI_ASPECT_RATIO,
     }
@@ -1050,11 +1125,94 @@ def resolve_omni_record_parameters(fields: Dict[str, Any]) -> Dict[str, str]:
 
 def missing_omni_default_fields(fields: Dict[str, Any]) -> Dict[str, str]:
     defaults = {
-        "Omni模型": DEFAULT_OMNI_MODEL,
+        "视频AI模型": DEFAULT_OMNI_MODEL_DISPLAY,
         "Omni画面尺寸": DEFAULT_OMNI_SIZE,
         "Omni画面比例": DEFAULT_OMNI_ASPECT_RATIO,
     }
     return {name: value for name, value in defaults.items() if not extract_text(fields.get(name)).strip()}
+
+
+def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
+    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+
+
+def submit_reference_video_task(
+    route: ai_routing.AiRoute,
+    prompt: str,
+    refs: List[Dict[str, str]],
+    *,
+    size: str = DEFAULT_OMNI_SIZE,
+    aspect_ratio: str = DEFAULT_OMNI_ASPECT_RATIO,
+) -> Tuple[str, Dict[str, Any]]:
+    if not refs:
+        raise ValueError("参考图生视频至少需要 1 张参考图")
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    opened = []
+    files: List[Tuple[str, Tuple[Any, ...]]] = []
+    try:
+        for ref in refs[:7]:
+            path = ref.get("path", "")
+            if not path or not os.path.exists(path):
+                raise ValueError(f"参考图不存在: {ref.get('role')}")
+            handle = open(path, "rb")
+            opened.append(handle)
+            files.append(("input_reference[]", (os.path.basename(path), handle, "image/png")))
+        resp = requests.post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}"},
+            data={
+                "model": model_name,
+                "prompt": prompt,
+                "size": size or DEFAULT_OMNI_SIZE,
+                "aspect_ratio": aspect_ratio or DEFAULT_OMNI_ASPECT_RATIO,
+            },
+            files=files,
+            timeout=SUBMIT_TIMEOUT,
+        )
+    finally:
+        for handle in opened:
+            handle.close()
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"raw_text": resp.text[:1000]}
+    if resp.status_code >= 400:
+        raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+    task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+    if not task_id:
+        raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
+    return task_id, body
+
+
+def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[str, Any]:
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    url = reference_video_item_url(route, task_id)
+    headers = {"Authorization": f"Bearer {route.api_key}"}
+    start = time.time()
+    last_body: Dict[str, Any] = {}
+    while time.time() - start < MAX_POLL_SECONDS:
+        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        last_body = body if isinstance(body, dict) else {"raw": body}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 参考图视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+        status = extract_text(
+            last_body.get("status")
+            or (last_body.get("data") or {}).get("status")
+            or (last_body.get("result") or {}).get("status")
+        ).lower()
+        if status in {"completed", "succeeded", "success", "done"}:
+            return last_body
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"{route.provider} 参考图视频生成失败: {str(last_body)[:1500]}")
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError(f"{route.provider} 参考图视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
 def videos_url(api_base: str) -> str:
@@ -1174,6 +1332,19 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     ensure_storyboard_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_STORYBOARD_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_STORYBOARD_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["storyboard_video"],
+        stage="Omni视频生成默认",
+        model_field="视频AI模型",
+        size_field="Omni画面尺寸",
+        ratio_field="Omni画面比例",
+        params_field="视频AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
         raise ValueError("Storyboard分段缺少父任务记录ID")
@@ -1184,7 +1355,25 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     _, cfg = get_stage_config(OMNI_STAGE_NAME, default_model=DEFAULT_OMNI_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OMNI_SIZE)
     prompt = build_omni_video_prompt(fields, parent_fields, system_prompt=cfg.get("prompt") or OMNI_VIDEO_PROMPT_RULES)
     record_params = resolve_omni_record_parameters(fields)
-    cfg["model"] = record_params["model"]
+    config_records = safe_list_records(token, TABLE_CONFIG)
+    route = ai_routing.route_from_slot(
+        fields,
+        "视频",
+        {
+            **cfg,
+            "provider": "OTU",
+            "capability": "视频",
+            "task_type": "首帧图生视频",
+            "model": record_params["model"],
+        },
+        capability="视频",
+        task_type="首帧图生视频",
+        config_records=config_records,
+    )
+    if not ai_model_catalog.is_reference_video_model(route.model, route.provider):
+        raise ValueError(f"故事板视频只支持参考图生视频模型: {route.model}")
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    cfg["model"] = model_name
     size = record_params["size"]
     aspect_ratio = record_params["aspect_ratio"]
     output_path = str(work_dir / f"{record_id}_omni.mp4")
@@ -1192,8 +1381,9 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "record_id": record_id,
         "dry_run": dry_run,
         "reference_count": len(refs),
-        "model": cfg["model"],
-        "model_source": "Omni模型",
+        "model": model_name,
+        "provider": route.provider,
+        "model_source": "视频AI模型",
         "size": size,
         "aspect_ratio": aspect_ratio,
         "prompt_chars": len(prompt),
@@ -1205,7 +1395,7 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         cfg,
         capability="视频",
         task_type="首帧图生视频",
-        model=cfg["model"],
+        model=model_name,
         slot_name="视频",
         prompt=prompt,
         params={"size": size, "aspect_ratio": aspect_ratio},
@@ -1216,7 +1406,7 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    if route_summary and ai_routing.unified_route_dry_run_only(safe_list_records(token, TABLE_CONFIG)):
+    if route_summary and ai_routing.unified_route_dry_run_only(config_records):
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
@@ -1228,12 +1418,15 @@ def render_omni_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         "视频生成状态": "生成中",
         "视频错误信息": "",
     }))
-    task_id, submit_body = submit_omni_video_task(cfg, prompt, refs, size=size, aspect_ratio=aspect_ratio)
+    if route.provider == "OTU":
+        task_id, submit_body = submit_omni_video_task(cfg, prompt, refs, size=size, aspect_ratio=aspect_ratio)
+    else:
+        task_id, submit_body = submit_reference_video_task(route, prompt, refs, size=size, aspect_ratio=aspect_ratio)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
         "视频任务ID": task_id,
-        "视频错误信息": f"已提交 Omni 图生视频任务，正在轮询。task_id={task_id}",
+        "视频错误信息": f"已提交 {route.provider} 图生视频任务，正在轮询。provider={route.provider} model={model_name} task_id={task_id}",
     }))
-    result = poll_omni_video_task(cfg, task_id)
+    result = poll_omni_video_task(cfg, task_id) if route.provider == "OTU" else poll_reference_video_task(route, task_id)
     video_url = extract_video_url(result)
     if not video_url:
         raise RuntimeError(f"Omni 生成完成但未返回 video_url: {compact_json(result, 1200)}")

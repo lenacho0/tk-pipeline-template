@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -62,6 +63,7 @@ from otu_image import (  # noqa: E402
     split_prefixed_model_choice,
     submit_otu_image_task,
 )
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_record  # noqa: E402
 
 
 STAGE_NAME = "分镜视频生成-Veo"
@@ -83,6 +85,7 @@ SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
 DOWNLOAD_REQUEST_TIMEOUT = (30, 90)
+FEISHU_UPLOAD_ALL_LIMIT_BYTES = 20 * 1024 * 1024
 
 RecordGetter = Callable[[str, str, str], Dict[str, Any]]
 RecordUpdater = Callable[[str, str, str, Dict[str, Any]], Any]
@@ -130,6 +133,25 @@ def normalize_video_channel(value: Any) -> str:
     if raw in {"otu", "otuapi", "otu-api", "outapi", "out-api", "便宜通道"}:
         return "OTU"
     return "AIHubMix"
+
+
+def normalize_native_veo_resolution(value: Any) -> str:
+    raw = extract_text(value).strip().lower().replace(" ", "")
+    if not raw:
+        return DEFAULT_SIZE
+    if raw in {"720p", "1080p"}:
+        return raw
+    dimension_map = {
+        "720x1280": "720p",
+        "1280x720": "720p",
+        "720": "720p",
+        "1080x1920": "1080p",
+        "1920x1080": "1080p",
+        "1080": "1080p",
+    }
+    if raw in dimension_map:
+        return dimension_map[raw]
+    raise ValueError(f"AIHubMix Gemini/Veo resolution 不支持: {extract_text(value).strip() or value}，请使用 720x1280/1280x720/720p 或 1080x1920/1920x1080/1080p")
 
 
 def video_channel_write_value(channel: str) -> str:
@@ -726,7 +748,7 @@ def call_native_veo_first_frame_task(
         image=first_frame,
         config=types.GenerateVideosConfig(
             duration_seconds=int(normalize_seconds(seconds)),
-            resolution=size or DEFAULT_SIZE,
+            resolution=normalize_native_veo_resolution(size),
             aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO,
             last_frame=last_frame,
         ),
@@ -921,7 +943,19 @@ def poll_seeddance_video_task(config: Dict[str, str], task_id: str) -> Dict[str,
     raise TimeoutError(f"SeedDance 2.0 视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
-def upload_video_to_feishu(token: str, file_path: str, file_name: str) -> str:
+def _feishu_upload_body(resp: requests.Response) -> Dict[str, Any]:
+    try:
+        data = resp.json()
+    except Exception:
+        data = {"code": resp.status_code, "msg": resp.text[:1000]}
+    return data if isinstance(data, dict) else {"code": resp.status_code, "data": data}
+
+
+def _raise_feishu_upload_error(prefix: str, data: Dict[str, Any]) -> None:
+    raise RuntimeError(f"{prefix}: {data.get('msg') or data}; response={json.dumps(data, ensure_ascii=False)[:1000]}")
+
+
+def _upload_video_to_feishu_all(token: str, file_path: str, file_name: str, size: int) -> str:
     with open(file_path, "rb") as f:
         resp = requests.post(
             "https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
@@ -930,15 +964,78 @@ def upload_video_to_feishu(token: str, file_path: str, file_name: str) -> str:
                 "file_name": file_name,
                 "parent_type": "bitable_file",
                 "parent_node": APP_TOKEN,
-                "size": str(os.path.getsize(file_path)),
+                "size": str(size),
             },
             files={"file": (file_name, f, "video/mp4")},
             timeout=300,
         )
-    data = resp.json()
+    data = _feishu_upload_body(resp)
     if data.get("code") != 0:
-        raise RuntimeError(f"飞书视频上传失败: {data.get('msg') or data}")
+        _raise_feishu_upload_error("飞书视频上传失败", data)
     return data["data"]["file_token"]
+
+
+def _upload_video_to_feishu_multipart(token: str, file_path: str, file_name: str, size: int) -> str:
+    headers = {"Authorization": f"Bearer {token}"}
+    prepare_resp = requests.post(
+        "https://open.feishu.cn/open-apis/drive/v1/medias/upload_prepare",
+        headers=headers,
+        json={
+            "file_name": file_name,
+            "parent_type": "bitable_file",
+            "parent_node": APP_TOKEN,
+            "size": size,
+        },
+        timeout=60,
+    )
+    prepare = _feishu_upload_body(prepare_resp)
+    if prepare.get("code") != 0:
+        _raise_feishu_upload_error("飞书视频分片预上传失败", prepare)
+    data = prepare.get("data") or {}
+    upload_id = data.get("upload_id")
+    block_size = int(data.get("block_size") or 4 * 1024 * 1024)
+    block_num = int(data.get("block_num") or ((size + block_size - 1) // block_size))
+    if not upload_id or block_size <= 0 or block_num <= 0:
+        _raise_feishu_upload_error("飞书视频分片预上传失败", prepare)
+
+    with open(file_path, "rb") as f:
+        for seq in range(block_num):
+            chunk = f.read(block_size)
+            if not chunk:
+                break
+            part_resp = requests.post(
+                "https://open.feishu.cn/open-apis/drive/v1/medias/upload_part",
+                headers=headers,
+                data={
+                    "upload_id": upload_id,
+                    "seq": str(seq),
+                    "size": str(len(chunk)),
+                    "checksum": str(zlib.adler32(chunk) & 0xFFFFFFFF),
+                },
+                files={"file": ("blob", chunk, "application/octet-stream")},
+                timeout=120,
+            )
+            part = _feishu_upload_body(part_resp)
+            if part.get("code") != 0:
+                _raise_feishu_upload_error(f"飞书视频分片上传失败 seq={seq}", part)
+
+    finish_resp = requests.post(
+        "https://open.feishu.cn/open-apis/drive/v1/medias/upload_finish",
+        headers=headers,
+        json={"upload_id": upload_id, "block_num": block_num},
+        timeout=60,
+    )
+    finish = _feishu_upload_body(finish_resp)
+    if finish.get("code") != 0:
+        _raise_feishu_upload_error("飞书视频分片完成失败", finish)
+    return finish["data"]["file_token"]
+
+
+def upload_video_to_feishu(token: str, file_path: str, file_name: str) -> str:
+    size = os.path.getsize(file_path)
+    if size <= FEISHU_UPLOAD_ALL_LIMIT_BYTES:
+        return _upload_video_to_feishu_all(token, file_path, file_name, size)
+    return _upload_video_to_feishu_multipart(token, file_path, file_name, size)
 
 
 def get_table_field_names(token: str, table_id: str) -> set:
@@ -1041,6 +1138,20 @@ def run_shot_video_generation(
     table_id = resolve_video_table(table)
     token = token or get_feishu_token()
     fields = get_record_fn(token, table_id, record_id)
+    if table == "script_doc" and get_record_fn is safe_get_record and update_record_fn is safe_update_record:
+        fields = apply_task_default_to_record(
+            token,
+            table_id,
+            record_id,
+            fields,
+            app_table=TASK_TABLES["script_doc_shots"],
+            stage="分镜视频生成默认",
+            model_field="视频生成模型",
+            size_field="视频画面尺寸",
+            ratio_field="视频画面比例",
+            params_field="视频AI参数JSON",
+            field_filter=filter_existing_fields,
+        )
     status = extract_text(fields.get("视频生成状态")).strip()
     if status == "成功" and not dry_run:
         raise ValueError(f"003-3 {record_id} 已成功生成视频，拒绝重复生成")
@@ -1076,6 +1187,7 @@ def run_shot_video_generation(
     seconds = normalize_seconds(params.get("seconds") or params.get("视频时长") or fields.get("目标时长秒"))
     size = params.get("size") or params.get("画面尺寸") or config.get("size") or (DEFAULT_OTU_SIZE if channel == "OTU" else DEFAULT_SIZE)
     aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or config.get("aspect_ratio") or DEFAULT_ASPECT_RATIO
+    native_resolution = normalize_native_veo_resolution(size) if channel == "AIHubMix" and provider == "veo3.1" else ""
     output_filename = resolve_shot_video_filename(record_id, fields)
     output_path = str(work_dir / output_filename)
     voiceover_dependency = resolve_voiceover_audio_dependency(fields, provider)
@@ -1099,6 +1211,7 @@ def run_shot_video_generation(
         "prompt_chars": len(prompt),
         "seconds": seconds,
         "size": size,
+        "native_resolution": native_resolution or None,
         "aspect_ratio": aspect_ratio,
         "output_path": output_path,
         "unified_ai_route_enabled": route_enabled,
@@ -1191,7 +1304,7 @@ def run_shot_video_generation(
             "视频通道": video_channel_write_value(channel),
             "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
             "视频生成状态": "生成中",
-            "视频错误信息": "准备提交 AIHubMix Gemini/Veo 首帧视频任务...",
+            "视频错误信息": f"准备提交 AIHubMix Gemini/Veo 首帧视频任务... 视频画面尺寸={size}, native_resolution={native_resolution}",
         }))
         client = native_client_factory(runtime_config)
         if existing_task_id and is_native_veo_operation_id(existing_task_id):
@@ -1209,14 +1322,14 @@ def run_shot_video_generation(
                     "视频任务ID": "",
                     "视频错误信息": f"旧视频任务ID不是 Gemini/Veo operation，已忽略并重新提交。old_task_id={existing_task_id}",
                 }))
-            operation = native_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, last_frame_path=str(last_frame_path) if last_frame_path else None, client=client)
+            operation = native_submitter(runtime_config, prompt, str(image_path), seconds, native_resolution, aspect_ratio, last_frame_path=str(last_frame_path) if last_frame_path else None, client=client)
             task_id = extract_text(getattr(operation, "name", "")).strip()
             if not task_id:
                 raise RuntimeError(f"Veo 首帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
             update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
                 "视频任务ID": task_id,
                 "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}),
-                "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首帧视频任务，正在轮询。task_id={task_id}",
+                "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首帧视频任务，正在轮询。task_id={task_id}; 视频画面尺寸={size}, native_resolution={native_resolution}",
             }))
         completed_operation = native_poller(client, operation)
         generated_video = extract_native_generated_video(completed_operation)

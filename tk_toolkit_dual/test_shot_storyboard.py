@@ -178,6 +178,35 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertIn("尾帧图提示词", updates[-1])
         self.assertEqual(submitter.call_args.kwargs["input_mode"], "image-to-image")
 
+    def test_render_script_doc_last_frame_writes_task_id_and_response_json(self):
+        shot_fields = {
+            "首尾帧视频模式": "启用",
+            "尾帧画面描述": "end pose with product",
+            "分镜图": [{"file_token": "ft_first"}],
+            "画面描述": "start pose",
+        }
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", return_value=shot_fields), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.download_feishu_media", return_value=Path(tmp) / "first.png"), \
+             patch("tk_shot_storyboard.get_tmp_download_url_for_attachment", return_value="https://x.test/first-frame.png"), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
+             patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})), \
+             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
+             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
+            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
+            storyboard.render_script_doc_last_frame("t", "rec1")
+
+        self.assertEqual(updates[1]["尾帧图任务ID"], "img_task_1")
+        self.assertIn("尾帧图原始响应JSON", updates[1])
+        self.assertEqual(updates[-1]["尾帧图任务ID"], "img_task_1")
+        self.assertIn("尾帧图原始响应JSON", updates[-1])
+
     def test_render_script_doc_last_frame_uses_only_first_frame_url_as_visual_reference(self):
         shot_fields = {
             "首尾帧视频模式": "启用",
@@ -214,6 +243,37 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         prompt = submitter.call_args.args[1]
         self.assertIn("ending frame instruction", prompt.lower())
         self.assertNotIn("product reference wins", prompt.lower())
+
+    def test_render_script_doc_last_frame_resumes_existing_task_without_resubmitting(self):
+        shot_fields = {
+            "首尾帧视频模式": "启用",
+            "尾帧画面描述": "end pose with product",
+            "分镜图": [{"file_token": "ft_first"}],
+            "尾帧图生成状态": "生成中",
+            "尾帧图任务ID": "img_task_existing",
+            "尾帧图原始响应JSON": '{"submit":{"id":"img_task_existing"}}',
+        }
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", return_value=shot_fields), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.download_feishu_media", return_value=Path(tmp) / "first.png"), \
+             patch("tk_shot_storyboard.get_tmp_download_url_for_attachment", return_value="https://x.test/first-frame.png"), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
+             patch("tk_shot_storyboard.submit_otu_image_task") as submitter, \
+             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}) as poller, \
+             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
+            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
+            storyboard.render_script_doc_last_frame("t", "rec1")
+
+        self.assertIn("恢复轮询已有 OTU 尾帧图任务", updates[0]["尾帧图错误信息"])
+        submitter.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "img_task_existing")
 
     def test_slot_model_ignores_new_field_when_unified_route_is_disabled(self):
         model = storyboard.selected_slot_model(
@@ -290,6 +350,69 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(result["size"], "4K")
         updater.assert_not_called()
         submitter.assert_not_called()
+
+    def test_render_script_doc_shot_writes_task_id_and_response_json(self):
+        shot_fields = {
+            "父文档记录ID": "parent1",
+            "图片提示词": "clean the sofa with product visible",
+            "画面描述": "cleaning demo",
+        }
+        parent_fields = {"分镜风格": "写实", "解析结果JSON": ""}
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", side_effect=[shot_fields, parent_fields]), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[]), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": "base prompt"}), \
+             patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})), \
+             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/shot.png"}), \
+             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_shot"):
+            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
+            storyboard.render_script_doc_shot("t", "rec1")
+
+        self.assertEqual(updates[1]["分镜图任务ID"], "img_task_1")
+        self.assertIn("分镜图原始响应JSON", updates[1])
+        self.assertEqual(updates[-1]["分镜图任务ID"], "img_task_1")
+        self.assertIn("分镜图原始响应JSON", updates[-1])
+
+    def test_render_script_doc_shot_resumes_existing_task_without_resubmitting(self):
+        shot_fields = {
+            "父文档记录ID": "parent1",
+            "图片提示词": "clean the sofa with product visible",
+            "画面描述": "cleaning demo",
+            "分镜图生成状态": "生成中",
+            "分镜图任务ID": "img_task_existing",
+            "分镜图原始响应JSON": '{"submit":{"id":"img_task_existing"}}',
+        }
+        parent_fields = {"分镜风格": "写实", "解析结果JSON": ""}
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", side_effect=[shot_fields, parent_fields]), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[]), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": "base prompt"}), \
+             patch("tk_shot_storyboard.submit_otu_image_task") as submitter, \
+             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/shot.png"}) as poller, \
+             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_shot"):
+            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
+            storyboard.render_script_doc_shot("t", "rec1")
+
+        self.assertIn("恢复轮询已有 OTU 分镜图任务", updates[0]["分镜图错误信息"])
+        submitter.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "img_task_existing")
 
 
 if __name__ == "__main__":

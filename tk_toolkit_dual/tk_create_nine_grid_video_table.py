@@ -31,7 +31,7 @@ from tk_create_script_doc_shots_table import (
     text,
     update_config,
 )
-from ai_model_catalog import IMAGE_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_OPTIONS, TEXT_MODEL_OPTIONS
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS, TEXT_MODEL_OPTIONS
 
 
 TABLE_NAME = "多图九宫格视频生成表"
@@ -113,11 +113,13 @@ NINE_GRID_VIDEO_FIELDS = [
     datetime_field("图片生成时间"),
     text("视频提示词"),
     *prefixed_field_group("视频", REFERENCE_VIDEO_MODEL_OPTIONS),
+    select("视频生成模型", REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
     select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
     select("视频画面比例", VIDEO_ASPECT_RATIO_OPTIONS),
     select("视频生成状态", RUN_STATUS_OPTIONS),
     attachment("分镜视频"),
     text("视频任务ID"),
+    text("视频本地路径"),
     text("分镜视频URL", url=True),
     text("视频错误信息"),
     datetime_field("视频生成时间"),
@@ -152,7 +154,7 @@ TABLE_DEFINITION = {
         ],
         "04-视频生成": [
             "记录类型", "任务名称", "父任务记录ID", "Board编号", "Time Range", "九宫格图",
-            "视频提示词", "视频AI模型",
+            "视频提示词", "视频生成模型",
             "视频画面尺寸", "视频画面比例", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息",
         ],
         "高级AI参数": [
@@ -162,7 +164,7 @@ TABLE_DEFINITION = {
             "方案AI供应商", "方案AI模型", "方案AI参数JSON",
             "图片AI供应商", "图片AI模型", "图片AI参数JSON",
             "图片画面尺寸", "图片画面比例",
-            "视频AI供应商", "视频AI模型", "视频AI参数JSON",
+            "视频生成模型",
             "视频画面尺寸", "视频画面比例",
         ],
         "99-排错": [
@@ -172,13 +174,13 @@ TABLE_DEFINITION = {
             "参考图本地路径", "参考图错误信息", "参考图生成时间",
             "方案生成状态", "方案JSON", "方案Markdown", "九格摘要JSON",
             "图片任务ID", "图片错误信息", "图片生成时间",
-            "视频任务ID", "视频错误信息", "视频生成时间", "错误信息",
+            "视频任务ID", "视频本地路径", "视频错误信息", "视频生成时间", "错误信息",
             "参考图AI供应商", "参考图AI模型", "参考图AI参数JSON",
             "参考图画面尺寸", "参考图画面比例",
             "方案AI供应商", "方案AI模型", "方案AI参数JSON",
             "图片AI供应商", "图片AI模型", "图片AI参数JSON",
             "图片画面尺寸", "图片画面比例",
-            "视频AI供应商", "视频AI模型", "视频AI参数JSON",
+            "视频生成模型", "视频AI供应商", "视频AI模型", "视频AI参数JSON",
             "视频画面尺寸", "视频画面比例",
         ],
     },

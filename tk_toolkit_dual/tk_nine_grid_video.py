@@ -111,8 +111,30 @@ REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
 ASSET_RECORD_TYPE = "参考资产"
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
-Generate one empty but lived-in local home environment reference plate for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, non-character household props, and the explicit visible problem anchor from the source script if one exists. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks. Do not add any problem mark that is not explicitly present in the source script.
+Generate one empty but lived-in local home environment reference image for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, non-character household props, and any visible problem marks explicitly described in Scene details. If Scene details include visible problem marks, render exactly those marks and their described locations. If no problem mark is described, do not invent any visible problem mark or odor source. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks.
 """.strip()
+ENVIRONMENT_LEGACY_PREFIX_PATTERNS = [
+    re.compile(r"^Generate one empty but lived-in local home environment reference plate\b", re.IGNORECASE),
+    re.compile(r"^Generate one empty lived-in home environment reference image\b", re.IGNORECASE),
+    re.compile(r"^Generate an empty scene master/background plate\b", re.IGNORECASE),
+    re.compile(r"^Show only the room, furniture, surfaces\b", re.IGNORECASE),
+    re.compile(r"^If Scene details include visible problem marks\b", re.IGNORECASE),
+    re.compile(r"^If no problem mark is described\b", re.IGNORECASE),
+    re.compile(r"^The space should feel like a real local UGC phone photo\b", re.IGNORECASE),
+    re.compile(r"^Do not include any people, pets, product bottles\b", re.IGNORECASE),
+]
+ENVIRONMENT_META_CLEANUP_PATTERNS = [
+    re.compile(r"\bfrom the source script\b", re.IGNORECASE),
+    re.compile(r"\bin the source script\b", re.IGNORECASE),
+    re.compile(r"\bwhen present in the script\b", re.IGNORECASE),
+    re.compile(r"\bif one exists\b", re.IGNORECASE),
+    re.compile(r"\bscript-defined\b", re.IGNORECASE),
+    re.compile(r"\bexplicit visible problem anchor\b", re.IGNORECASE),
+    re.compile(r"\bsource script\b", re.IGNORECASE),
+]
+ENVIRONMENT_EMPTY_META_SENTENCE_PATTERNS = [
+    re.compile(r"^Do not add any problem mark that is not explicitly present\\.?$", re.IGNORECASE),
+]
 ENVIRONMENT_FORBIDDEN_SOURCE_TERMS = {
     "dog", "cat", "pet", "animal",
     "狗", "猫", "宠物", "动物",
@@ -271,20 +293,28 @@ def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
     if not refs:
         return ""
     lines = ["Reference image order (highest priority first):"]
+    has_product_ref = any((ref.get("role") or "").startswith("product:") for ref in refs)
     for idx, ref in enumerate(refs, start=1):
         role = ref.get("role", "")
         name = ref.get("name", "").strip()
         name_note = f" ({name})" if name else ""
         if role == "nine_grid":
+            product_guard = (
+                " Treat product appearance inside this storyboard as low priority; use it only for action placement."
+                if has_product_ref else ""
+            )
             lines.append(
                 f"Reference image {idx} = current Board nine-grid storyboard. "
-                "Use it as the highest-priority visual/action sequence and character-position reference; "
+                "Use it as the narrative, action-sequence, composition, and character-position reference; "
                 "do not render it as a split-screen grid, panel layout, border, or UI."
+                f"{product_guard}"
             )
         elif role.startswith("product:"):
             lines.append(
                 f"Reference image {idx} = exact product reference{name_note}. "
-                "Keep the product packaging, label, color, shape, nozzle, logo area, text placement, and proportions unchanged."
+                "This image has highest priority for the product packaging, bottle silhouette, trigger or cap shape, "
+                "label color blocks, logo area, text placement, and proportions. "
+                "If the storyboard image conflicts with the product reference image, the product reference image wins."
             )
         elif role.startswith("human:"):
             lines.append(
@@ -293,6 +323,15 @@ def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
             )
     lines.append("Do not reinterpret later reference images as storyboard panels; use them only for identity and product consistency.")
     return "\n".join(lines)
+
+
+def _is_aitgenne_omni_flash(route: ai_routing.AiRoute, model_name: Optional[str] = None) -> bool:
+    parsed_model = model_name or ai_routing.parse_model_display(route.model)["model"] or route.model
+    return route.provider == "Aitgenne" and parsed_model == "omni-flash"
+
+
+def _reference_roles_summary(refs: List[Dict[str, str]]) -> str:
+    return ",".join(ref.get("role", "") for ref in refs if ref.get("role"))
 
 
 def build_video_model_prompt_for_route(raw_prompt: str, route: ai_routing.AiRoute, refs: Optional[List[Dict[str, str]]] = None) -> str:
@@ -553,10 +592,33 @@ def _environment_term_hits(text: str, terms: Iterable[str]) -> set:
     return {term for term in terms if _contains_environment_term(text, term)}
 
 
+def _strip_environment_reference_prefix(prompt: str) -> str:
+    text = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
+    lowered = text.lower()
+    for marker in ("scene details to keep:", "scene details:"):
+        idx = lowered.rfind(marker)
+        if idx >= 0:
+            return text[idx + len(marker):]
+    return text
+
+
 def sanitize_environment_reference_prompt(prompt: str) -> str:
-    source_prompt = prompt.replace(ENVIRONMENT_EMPTY_SCENE_PREFIX, "")
+    source_prompt = _strip_environment_reference_prefix(prompt)
     cleaned_parts: List[str] = []
     for text in _environment_prompt_parts(source_prompt):
+        stripped_marker = text.strip().lower().rstrip(".。:：")
+        if stripped_marker in {"empty environment reference plate only", "scene details to keep", "scene details"}:
+            continue
+        if any(pattern.search(text) for pattern in ENVIRONMENT_LEGACY_PREFIX_PATTERNS):
+            continue
+        for pattern in ENVIRONMENT_META_CLEANUP_PATTERNS:
+            text = pattern.sub("", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        text = re.sub(r"\s+([,.;:!?。！？])", r"\1", text).strip(" ,")
+        if not text:
+            continue
+        if any(pattern.search(text) for pattern in ENVIRONMENT_EMPTY_META_SENTENCE_PATTERNS):
+            continue
         forbidden_hits = _environment_term_hits(text, ENVIRONMENT_FORBIDDEN_TERMS)
         has_negation = bool(_environment_term_hits(text, ENVIRONMENT_NEGATION_TERMS))
         if forbidden_hits and not has_negation:
@@ -569,7 +631,7 @@ def sanitize_environment_reference_prompt(prompt: str) -> str:
         cleaned_parts.append(text)
     cleaned = "\n".join(cleaned_parts).strip()
     if cleaned:
-        return f"{ENVIRONMENT_EMPTY_SCENE_PREFIX}\n\nScene details to keep:\n{cleaned}"
+        return f"{ENVIRONMENT_EMPTY_SCENE_PREFIX}\n\nScene details:\n{cleaned}"
     return ENVIRONMENT_EMPTY_SCENE_PREFIX
 
 
@@ -1732,6 +1794,8 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     )
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         "九宫格图": [{"file_token": file_token}],
+        "图片AI供应商": route.provider,
+        "图片AI模型": route.model,
         "图片任务ID": task_id,
         "图片生成状态": "成功",
         "图片生成时间": int(time.time() * 1000),
@@ -1797,6 +1861,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         raise ValueError(f"九宫格视频只支持参考图生视频模型: {route.model}")
     if existing_task_id and not existing_video_task_matches_route(fields, route, existing_task_id):
         existing_task_id = ""
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
     will_submit_new_task = not existing_task_id
     prompt_refs: List[Dict[str, str]] = []
     model_prompt = prompt
@@ -1811,6 +1876,8 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             **product_item,
             "type": "product",
         }, *human_items]
+        if _is_aitgenne_omni_flash(route, model_name):
+            prompt_refs = prompt_refs[:2]
         model_prompt = build_video_model_prompt_for_route(prompt, route, prompt_refs)
     summary = {
         "record_id": record_id,
@@ -1825,17 +1892,18 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         return summary
 
     work_dir = ensure_work_dir(record_id)
-    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
     output_path = str(work_dir / f"{record_id}_nine_grid_video.mp4")
     field_types = get_table_field_types(token, TABLE_NINE_GRID_VIDEO)
     task_id = existing_task_id
+    task_detail = ""
 
     video_config = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
     if existing_task_id:
+        task_detail = f"{video_task_route_tag(route)} task_id={task_id}"
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频生成状态": "生成中",
             "视频任务ID": task_id,
-            "视频错误信息": f"恢复轮询已有九宫格视频任务。{video_task_route_tag(route)} task_id={task_id}",
+            "视频错误信息": f"恢复轮询已有九宫格视频任务。{task_detail}",
             "错误信息": "",
         }))
     else:
@@ -1863,8 +1931,9 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             download_fn=safe_download_attachment,
         ))
         submitted_refs = omni_refs
-        if route.provider == "Aitgenne" and model_name == "omni-flash":
+        if _is_aitgenne_omni_flash(route, model_name):
             submitted_refs = omni_refs[:2]
+        submitted_ref_roles = _reference_roles_summary(submitted_refs)
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "分镜视频": [],
             "分镜视频URL": None,
@@ -1891,9 +1960,12 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
                 aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
                 seconds=str(params.get("seconds") or "10"),
             )
+        task_detail = f"{video_task_route_tag(route)} task_id={task_id} Submitted reference roles: {submitted_ref_roles}"
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频任务ID": task_id,
-            "视频错误信息": f"已提交九宫格视频任务，正在轮询。{video_task_route_tag(route)} task_id={task_id}",
+            "视频错误信息": (
+                f"已提交九宫格视频任务，正在轮询。{task_detail}"
+            ),
         }))
     if route.provider == "OTU":
         result = poll_otu_nine_grid_video_task(video_config, task_id)
@@ -1903,9 +1975,21 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     if not video_url:
         raise RuntimeError(f"九宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
     download_video(video_url, output_path)
+    repair_fields = {
+        "视频生成状态": "生成中",
+        "视频任务ID": task_id,
+        "视频本地路径": output_path,
+        "视频错误信息": f"视频已下载到本地，等待飞书上传附件。{task_detail}",
+        "错误信息": "",
+    }
+    repair_fields["分镜视频URL"] = format_url_field_value(video_url, field_types.get("分镜视频URL", 0))
+    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, repair_fields))
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_nine_grid_video.mp4")
     ensure_nine_grid_record_current_generation(token, record_id, "视频生成状态", "生成中", "视频任务ID", task_id)
     success_fields = {
+        "视频AI供应商": route.provider,
+        "视频AI模型": route.model,
+        "视频生成模型": route.model,
         "视频生成状态": "成功",
         "分镜视频": [{"file_token": file_token, "name": Path(output_path).name}],
         "视频任务ID": task_id,
