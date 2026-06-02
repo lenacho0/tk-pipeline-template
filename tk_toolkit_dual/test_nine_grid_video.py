@@ -152,6 +152,93 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual(records[0]["fields"]["图片生成状态"], "不触发")
 
+    def test_reference_approval_does_not_advance_boards_until_all_assets_pass(self):
+        records = [
+            {
+                "record_id": "asset1",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "参考图": [{"file_token": "file1"}],
+                    "参考图审核状态": "通过",
+                },
+            },
+            {
+                "record_id": "asset2",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "参考图": [{"file_token": "file2"}],
+                    "参考图审核状态": "待确认",
+                },
+            },
+            {
+                "record_id": "board1",
+                "fields": {
+                    "记录类型": "Board分段",
+                    "父任务记录ID": "recParent",
+                    "图片生成状态": "不触发",
+                },
+            },
+        ]
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "safe_list_records", return_value=records), \
+             patch.object(nine_grid, "safe_update_record") as update_record:
+            summary = nine_grid.advance_boards_after_reference_approval("token", "recParent")
+
+        self.assertEqual(summary["advanced_boards"], 0)
+        self.assertEqual(summary["status"], "waiting_for_reference_approval")
+        update_record.assert_not_called()
+
+    def test_reference_approval_advances_only_untriggered_boards(self):
+        records = [
+            {
+                "record_id": "asset1",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "参考图": [{"file_token": "file1"}],
+                    "参考图审核状态": "通过",
+                },
+            },
+            {
+                "record_id": "board1",
+                "fields": {
+                    "记录类型": "Board分段",
+                    "父任务记录ID": "recParent",
+                    "图片生成状态": "不触发",
+                },
+            },
+            {
+                "record_id": "board2",
+                "fields": {
+                    "记录类型": "Board分段",
+                    "父任务记录ID": "recParent",
+                    "图片生成状态": "待生成",
+                },
+            },
+            {
+                "record_id": "board3",
+                "fields": {
+                    "记录类型": "Board分段",
+                    "父任务记录ID": "recParent",
+                    "图片生成状态": "失败",
+                },
+            },
+        ]
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "safe_list_records", return_value=records), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))):
+            summary = nine_grid.advance_boards_after_reference_approval("token", "recParent")
+
+        self.assertEqual(summary["status"], "advanced")
+        self.assertEqual(summary["advanced_boards"], 1)
+        self.assertEqual(updates, [("board1", {"图片生成状态": "待生成", "错误信息": ""})])
+
     def test_table_definition_has_clean_entry_review_generation_views(self):
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "nine_grid_video")
         field_names = [field["name"] for field in create_table.NINE_GRID_VIDEO_FIELDS]
@@ -243,15 +330,32 @@ class NineGridVideoTests(unittest.TestCase):
             {"记录类型": ["参考资产"]},
         )
         self.assertEqual(
+            watches["多图九宫格参考图审核推进"]["required_field_values"],
+            {"记录类型": ["参考资产"], "参考图审核状态": ["通过"]},
+        )
+        self.assertEqual(watches["多图九宫格参考图审核推进"]["failed_value"], "通过")
+        self.assertEqual(
             watches["多图九宫格图片生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
         )
+        self.assertEqual(watches["多图九宫格图片生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(
             watches["多图九宫格视频生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
         )
         self.assertEqual(watches["多图九宫格视频生成"]["trigger_values"], ["待生成", "生成中"])
-        self.assertNotIn("视频任务ID", watches["多图九宫格视频生成"]["claim_clear_values"])
+        self.assertEqual(
+            watches["多图九宫格视频生成"]["claim_clear_fields_by_trigger_value"],
+            {"待生成": ["视频任务ID"]},
+        )
+
+        waiting_claim = {"视频生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(waiting_claim, watches["多图九宫格视频生成"], "待生成")
+        self.assertEqual(waiting_claim["视频任务ID"], "")
+
+        running_claim = {"视频生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(running_claim, watches["多图九宫格视频生成"], "生成中")
+        self.assertNotIn("视频任务ID", running_claim)
 
     def test_bootstrap_config_records_are_supplier_neutral_and_do_not_require_api_keys(self):
         wanted = bootstrap_config.build_wanted_config_records()
@@ -680,6 +784,197 @@ class NineGridVideoTests(unittest.TestCase):
         payload = dispatcher.parse_subprocess_error_payload("", stderr, "tk_nine_grid_video.py")
 
         self.assertEqual(payload["message"], "AI模型供应商不匹配: AI供应商=AIHubMix, AI模型=Aitgenne / gpt-5.5")
+
+    def test_otu_upstream_image_retry_message_is_retryable(self):
+        payload = dispatcher.parse_subprocess_error_payload(
+            "",
+            'OTU 图片生成失败: {"error":{"code":"upstream_error","message":"图片生成失败，请重新提交"}}',
+            "tk_nine_grid_video.py",
+        )
+
+        self.assertIn(payload["error_code"], {"UPSTREAM_RATE_LIMIT", "UPSTREAM_RETRYABLE"})
+        self.assertTrue(payload["retryable"])
+
+    def test_dispatcher_retryable_errors_ignore_retry_limit_and_write_error_field(self):
+        watch = {
+            "name": "多图九宫格视频生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "error_field": "视频错误信息",
+            "max_retries": 1,
+        }
+        updates = []
+        retry_counts = []
+        payload = {
+            "status": "failed_retryable",
+            "error_code": "UPSTREAM_RATE_LIMIT",
+            "retryable": True,
+            "message": "Omni upstream failed",
+        }
+
+        with patch.object(dispatcher, "get_retry_count", return_value=5), \
+             patch.object(dispatcher, "set_retry_count", side_effect=lambda task_key, retry_count, **kwargs: retry_counts.append(retry_count)), \
+             patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "生成中"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "bump_metric"):
+            retried = dispatcher.maybe_retry_task("token", watch, "recBoard", "task-key", "failed", error_payload=payload)
+
+        self.assertTrue(retried)
+        self.assertEqual(retry_counts, [6])
+        self.assertEqual(updates[0]["视频生成状态"], "待生成")
+        self.assertIn("自动重试中[UPSTREAM_RATE_LIMIT]", updates[0]["视频错误信息"])
+        self.assertIn("第 6 次失败", updates[0]["视频错误信息"])
+        self.assertIn("Omni upstream failed", updates[0]["视频错误信息"])
+
+    def test_dispatcher_retry_respects_manual_stop_status(self):
+        watch = {
+            "name": "多图九宫格视频生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "error_field": "视频错误信息",
+            "max_retries": 1,
+        }
+        payload = {
+            "status": "failed_retryable",
+            "error_code": "UPSTREAM_RATE_LIMIT",
+            "retryable": True,
+            "message": "Omni upstream failed",
+        }
+
+        with patch.object(dispatcher, "get_retry_count", return_value=2), \
+             patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "不触发"}), \
+             patch.object(dispatcher, "safe_update_record") as update_record, \
+             patch.object(dispatcher, "bump_metric"):
+            handled = dispatcher.maybe_retry_task("token", watch, "recBoard", "task-key", "failed", error_payload=payload)
+
+        self.assertTrue(handled)
+        set_retry_count.assert_not_called()
+        update_record.assert_not_called()
+
+    def test_dispatcher_retryable_error_retries_after_child_failed_writeback(self):
+        watch = {
+            "name": "多图九宫格视频生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "视频错误信息",
+            "max_retries": 1,
+        }
+        updates = []
+        payload = {
+            "status": "failed_retryable",
+            "error_code": "UPSTREAM_RATE_LIMIT",
+            "retryable": True,
+            "message": "Omni upstream failed",
+        }
+
+        with patch.object(dispatcher, "get_retry_count", return_value=0), \
+             patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "失败"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "bump_metric"):
+            retried = dispatcher.maybe_retry_task("token", watch, "recBoard", "task-key", "failed", error_payload=payload)
+
+        self.assertTrue(retried)
+        set_retry_count.assert_called_once()
+        self.assertEqual(updates[0]["视频生成状态"], "待生成")
+        self.assertIn("自动重试中[UPSTREAM_RATE_LIMIT]", updates[0]["视频错误信息"])
+
+    def test_dispatcher_does_not_retry_terminal_errors(self):
+        watch = {
+            "name": "多图九宫格视频生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "error_field": "视频错误信息",
+        }
+        payload = {
+            "status": "failed_terminal",
+            "error_code": "MODEL_CONFIG_INVALID",
+            "retryable": False,
+            "message": "AI模型供应商不匹配",
+        }
+
+        with patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_update_record") as update_record:
+            retried = dispatcher.maybe_retry_task("token", watch, "recBoard", "task-key", "failed", error_payload=payload)
+
+        self.assertFalse(retried)
+        set_retry_count.assert_not_called()
+        update_record.assert_not_called()
+
+    def test_dispatcher_does_not_block_launch_when_circuit_is_open(self):
+        watch = {
+            "name": "测试环节",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "args": ["video"],
+            "max_concurrency": 1,
+        }
+        launched = []
+
+        with patch.object(dispatcher, "apply_stage_policy", side_effect=lambda item: item), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "is_circuit_open", return_value=True), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[{"record_id": "recBoard", "fields": {"视频生成状态": "待生成", "任务名称": "task"}}]), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen", side_effect=lambda *args, **kwargs: launched.append(args) or Mock(poll=lambda: None)), \
+             patch.object(dispatcher, "save_running_tasks"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher, "get_retry_count", return_value=0):
+            dispatcher.check_and_run("token", watch)
+
+        self.assertEqual(len(launched), 1)
+
+    def test_dispatcher_prunes_stale_running_state(self):
+        saved = []
+
+        with patch.object(dispatcher, "running_processes", {}), \
+             patch.object(dispatcher, "load_running_tasks", return_value={
+                 "tk_nine_grid_video.py::stale": {"script": "tk_nine_grid_video.py"},
+             }), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=False), \
+             patch.object(dispatcher, "save_running_tasks", side_effect=lambda data: saved.append(data)):
+            dispatcher.prune_stale_running_state()
+
+        self.assertEqual(saved, [{}])
+
+    def test_dispatcher_keeps_running_state_when_os_process_is_alive(self):
+        saved = []
+
+        with patch.object(dispatcher, "running_processes", {}), \
+             patch.object(dispatcher, "load_running_tasks", return_value={
+                 "tk_nine_grid_video.py::active": {
+                     "script": "tk_nine_grid_video.py",
+                     "record_id": "active",
+                 },
+             }), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher, "save_running_tasks", side_effect=lambda data: saved.append(data)):
+            pruned = dispatcher.prune_stale_running_state()
+
+        self.assertEqual(pruned, 0)
+        self.assertEqual(saved, [])
 
     def test_video_dry_run_uses_video_prefixed_route_fields(self):
         child_fields = {

@@ -129,6 +129,7 @@ def run_image_generation(
     otu_downloader: Callable[..., Any] = download_otu_image_result,
     aitgenne_submitter: Callable[..., Any] = submit_aitgenne_image_generation,
     aitgenne_saver: Callable[..., Any] = save_aitgenne_image_result,
+    on_task_submitted: Optional[Callable[[str], None]] = None,
 ) -> ImageGenerationResult:
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
@@ -176,6 +177,8 @@ def run_image_generation(
                 prompt,
                 **submit_kwargs,
             )
+            if task_id and on_task_submitted:
+                on_task_submitted(task_id)
         result = submit_body if not task_id else otu_poller(cfg, task_id)
         result_url = extract_otu_result_url(result) or extract_otu_result_url(submit_body)
         if not result_url:

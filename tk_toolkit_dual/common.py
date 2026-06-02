@@ -298,7 +298,13 @@ def build_error_payload(error, stage='unknown'):
     retryable = False
     failure_status = 'failed_terminal'
 
-    if '429' in lower or 'rate limit' in lower or 'too many requests' in lower:
+    if (
+        '429' in lower
+        or 'rate limit' in lower
+        or 'too many requests' in lower
+        or 'upstream_error' in lower
+        or '请重新提交' in msg
+    ):
         error_code = 'UPSTREAM_RATE_LIMIT'
         retryable = True
         failure_status = 'failed_retryable'

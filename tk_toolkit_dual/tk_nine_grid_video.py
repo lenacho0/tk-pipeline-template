@@ -78,6 +78,7 @@ from aitgenne_image import (  # noqa: E402
     submit_aitgenne_image_generation,
 )
 from image_generation import run_image_generation  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
 PLAN_STAGE_NAME = "多图九宫格方案生成"
@@ -680,6 +681,51 @@ def build_child_board_records(
     return records
 
 
+def apply_nine_grid_reference_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        record["fields"] = apply_task_default_to_fields(
+            token,
+            record.get("fields") or {},
+            app_table=TASK_TABLES["nine_grid_video"],
+            stage="参考图生成默认",
+            model_field="参考图AI模型",
+            size_field="参考图画面尺寸",
+            ratio_field="参考图画面比例",
+            params_field="参考图AI参数JSON",
+            placeholder_values=(DEFAULT_IMAGE_MODEL,),
+        )
+    return records
+
+
+def apply_nine_grid_board_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+    for record in records:
+        fields = record.get("fields") or {}
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["nine_grid_video"],
+            stage="九宫格图片生成默认",
+            model_field="图片AI模型",
+            size_field="图片画面尺寸",
+            ratio_field="图片画面比例",
+            params_field="图片AI参数JSON",
+            placeholder_values=(DEFAULT_IMAGE_MODEL,),
+        )
+        fields = apply_task_default_to_fields(
+            token,
+            fields,
+            app_table=TASK_TABLES["nine_grid_video"],
+            stage="九宫格视频生成默认",
+            model_field="视频生成模型",
+            size_field="视频画面尺寸",
+            ratio_field="视频画面比例",
+            params_field="视频AI参数JSON",
+            placeholder_values=(DEFAULT_VIDEO_MODEL,),
+        )
+        record["fields"] = fields
+    return records
+
+
 def create_records(token: str, table_id: str, records: List[Dict[str, Dict[str, Any]]]) -> int:
     created = 0
     for i in range(0, len(records), 10):
@@ -707,6 +753,100 @@ def list_reference_asset_records(token: str, parent_record_id: str) -> List[Dict
             continue
         records.append(rec)
     return records
+
+
+def _asset_has_approved_reference(token: str, fields: Dict[str, Any]) -> bool:
+    if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+        return False
+    return bool(_asset_reference_file_token(token, fields))
+
+
+def advance_boards_after_reference_approval(token: str, parent_record_id: str) -> Dict[str, Any]:
+    records = safe_list_records(token, TABLE_NINE_GRID_VIDEO)
+    asset_records: List[Dict[str, Any]] = []
+    board_records: List[Dict[str, Any]] = []
+    for rec in records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        record_type = extract_text(fields.get("记录类型")).strip()
+        if record_type == ASSET_RECORD_TYPE:
+            asset_records.append(rec)
+        elif record_type == "Board分段":
+            board_records.append(rec)
+
+    if not asset_records:
+        return {
+            "status": "no_reference_assets",
+            "parent_record_id": parent_record_id,
+            "asset_count": 0,
+            "board_count": len(board_records),
+            "advanced_boards": 0,
+        }
+
+    approved_assets = [
+        rec for rec in asset_records
+        if _asset_has_approved_reference(token, rec.get("fields") or {})
+    ]
+    if len(approved_assets) != len(asset_records):
+        return {
+            "status": "waiting_for_reference_approval",
+            "parent_record_id": parent_record_id,
+            "asset_count": len(asset_records),
+            "approved_asset_count": len(approved_assets),
+            "board_count": len(board_records),
+            "advanced_boards": 0,
+        }
+
+    advanced = 0
+    for rec in board_records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("图片生成状态")).strip() != "不触发":
+            continue
+        safe_update_record(
+            token,
+            TABLE_NINE_GRID_VIDEO,
+            rec["record_id"],
+            filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+                "图片生成状态": "待生成",
+                "错误信息": "",
+            }),
+        )
+        advanced += 1
+
+    return {
+        "status": "advanced" if advanced else "no_boards_to_advance",
+        "parent_record_id": parent_record_id,
+        "asset_count": len(asset_records),
+        "approved_asset_count": len(approved_assets),
+        "board_count": len(board_records),
+        "advanced_boards": advanced,
+    }
+
+
+def advance_boards_for_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
+    ensure_nine_grid_table()
+    token = get_feishu_token()
+    fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
+        raise ValueError("只有参考资产记录可以推进九宫格图片生成")
+    parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
+    if not parent_record_id:
+        raise ValueError("参考资产缺少父任务记录ID")
+    if dry_run:
+        return {"status": "dry_run_ready", "record_id": record_id, "parent_record_id": parent_record_id}
+    summary = advance_boards_after_reference_approval(token, parent_record_id)
+    safe_update_record(
+        token,
+        TABLE_NINE_GRID_VIDEO,
+        record_id,
+        filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "参考图操作": "不触发",
+            "错误信息": "",
+        }),
+    )
+    summary["record_id"] = record_id
+    return summary
 
 
 def upsert_reference_asset_records(token: str, parent_record_id: str, records: List[Dict[str, Dict[str, Any]]]) -> Dict[str, int]:
@@ -883,14 +1023,20 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         raw_model_output = result.text
     payload = normalize_nine_grid_plan_payload(raw_model_output)
     batch_id = f"NINEGRID-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
-    asset_records = build_reference_asset_records(fields, payload, parent_record_id=record_id, batch_id=batch_id)
+    asset_records = apply_nine_grid_reference_default_models(
+        token,
+        build_reference_asset_records(fields, payload, parent_record_id=record_id, batch_id=batch_id),
+    )
     asset_upsert = upsert_reference_asset_records(token, record_id, asset_records)
-    child_records = build_child_board_records(
-        fields,
-        payload,
-        parent_record_id=record_id,
-        batch_id=batch_id,
-        await_reference_assets=bool(asset_records),
+    child_records = apply_nine_grid_board_default_models(
+        token,
+        build_child_board_records(
+            fields,
+            payload,
+            parent_record_id=record_id,
+            batch_id=batch_id,
+            await_reference_assets=bool(asset_records),
+        ),
     )
     deleted = cleanup_child_boards(token, record_id)
     create_records(token, TABLE_NINE_GRID_VIDEO, [
@@ -1166,6 +1312,19 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_nine_grid_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_NINE_GRID_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["nine_grid_video"],
+        stage="参考图生成默认",
+        model_field="参考图AI模型",
+        size_field="参考图画面尺寸",
+        ratio_field="参考图画面比例",
+        params_field="参考图AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
         raise ValueError("只有参考资产记录可以生成参考图")
     source = extract_text(fields.get("参考图来源")).strip() or REFERENCE_SOURCE_AI
@@ -1281,6 +1440,19 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_nine_grid_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_NINE_GRID_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["nine_grid_video"],
+        stage="九宫格图片生成默认",
+        model_field="图片AI模型",
+        size_field="图片画面尺寸",
+        ratio_field="图片画面比例",
+        params_field="图片AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
         raise ValueError("Board分段缺少父任务记录ID")
@@ -1368,6 +1540,15 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
+        on_task_submitted=lambda task_id: safe_update_record(
+            token,
+            TABLE_NINE_GRID_VIDEO,
+            record_id,
+            filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+                "图片任务ID": task_id,
+                "图片错误信息": f"已提交 {route.provider} 九宫格图片任务，正在轮询。task_id={task_id}",
+            }),
+        ),
     )
     task_id = image_result.task_id
     submit_body = image_result.submit_body
@@ -1404,6 +1585,19 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_nine_grid_table()
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
+    fields = apply_task_default_to_record(
+        token,
+        TABLE_NINE_GRID_VIDEO,
+        record_id,
+        fields,
+        app_table=TASK_TABLES["nine_grid_video"],
+        stage="九宫格视频生成默认",
+        model_field="视频生成模型",
+        size_field="视频画面尺寸",
+        ratio_field="视频画面比例",
+        params_field="视频AI参数JSON",
+        field_filter=filter_existing_fields,
+    )
     prompt = extract_text(fields.get("视频提示词")).strip()
     if not _attachment_token(fields.get("九宫格图")):
         raise ValueError("Board分段缺少九宫格图附件")
@@ -1559,6 +1753,8 @@ def _failure_update_for_action(action: str, message: str) -> Dict[str, Any]:
         return {"方案生成状态": "失败", "错误信息": message[:1000]}
     if action == "reference":
         return {"参考图生成状态": "失败", "参考图错误信息": message[:1000], "错误信息": message[:1000]}
+    if action == "reference-approval":
+        return {"参考图错误信息": message[:1000], "错误信息": message[:1000]}
     if action == "image":
         return {"图片生成状态": "失败", "图片错误信息": message[:1000], "错误信息": message[:1000]}
     if action == "video":
@@ -1568,7 +1764,7 @@ def _failure_update_for_action(action: str, message: str) -> Dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="多图九宫格视频生成")
-    parser.add_argument("action", choices=["plan", "reference", "image", "video"])
+    parser.add_argument("action", choices=["plan", "reference", "reference-approval", "image", "video"])
     parser.add_argument("record_id")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -1578,6 +1774,8 @@ def main() -> int:
             result = split_nine_grid_plan(args.record_id, dry_run=args.dry_run)
         elif args.action == "reference":
             result = render_reference_asset(args.record_id, dry_run=args.dry_run)
+        elif args.action == "reference-approval":
+            result = advance_boards_for_reference_asset(args.record_id, dry_run=args.dry_run)
         elif args.action == "image":
             result = render_nine_grid_image(args.record_id, dry_run=args.dry_run)
         else:
@@ -1588,6 +1786,7 @@ def main() -> int:
         stage = {
             "plan": "nine_grid_plan",
             "reference": "nine_grid_reference",
+            "reference-approval": "nine_grid_reference_approval",
             "image": "nine_grid_image",
             "video": "nine_grid_video",
         }[args.action]

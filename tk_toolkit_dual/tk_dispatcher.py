@@ -129,6 +129,7 @@ WATCH_LIST = [
         'table': TABLE_STORYBOARD_VIDEO,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '视频错误信息',
@@ -141,10 +142,12 @@ WATCH_LIST = [
         'claim_clear_values': {
             '分镜视频': [],
             '分镜视频URL': None,
-            '视频任务ID': '',
             '视频错误信息': '',
             '视频生成时间': None,
             '错误信息': '',
+        },
+        'claim_clear_fields_by_trigger_value': {
+            '待生成': ['视频任务ID'],
         },
     },
     {
@@ -187,6 +190,25 @@ WATCH_LIST = [
         },
     },
     {
+        'name': '多图九宫格参考图审核推进',
+        'table': TABLE_NINE_GRID_VIDEO,
+        'status_field': '参考图审核状态',
+        'trigger_value': '通过',
+        'running_value': '通过',
+        'failed_value': '通过',
+        'error_field': '参考图错误信息',
+        'script': 'tk_nine_grid_video.py',
+        'args': ['reference-approval'],
+        'timeout': 300,
+        'max_concurrency': 1,
+        'max_retries': 0,
+        'required_field_values': {'记录类型': ['参考资产'], '参考图审核状态': ['通过']},
+        'claim_clear_values': {
+            '参考图操作': '不触发',
+            '错误信息': '',
+        },
+    },
+    {
         'name': '多图九宫格参考图重生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '参考图操作',
@@ -216,6 +238,7 @@ WATCH_LIST = [
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '图片生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '图片错误信息',
@@ -244,6 +267,7 @@ WATCH_LIST = [
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '视频错误信息',
@@ -256,10 +280,12 @@ WATCH_LIST = [
         'claim_clear_values': {
             '分镜视频': [],
             '分镜视频URL': None,
-            '视频任务ID': '',
             '视频错误信息': '',
             '视频生成时间': None,
             '错误信息': '',
+        },
+        'claim_clear_fields_by_trigger_value': {
+            '待生成': ['视频任务ID'],
         },
     },
     {
@@ -437,6 +463,22 @@ WATCH_LIST = [
         'max_retries': 1,
         'skip_deprecated_records': True,
         'skip_if_field_values': {'记录类型': ['母任务']},
+        'claim_clear_fields_by_trigger_value': {
+            '待生成': [
+                '视频任务ID',
+                '首尾帧视频file_token',
+                '本地视频路径',
+                '视频生成原始响应JSON',
+                '视频错误信息',
+                '错误信息',
+            ],
+        },
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '首尾帧视频': [],
+                '首尾帧视频URL': None,
+            },
+        },
     },
     {
         'name': '多角色首尾帧解析',
@@ -731,6 +773,23 @@ def apply_stage_policy(watch):
     return merged
 
 
+def normalize_dispatcher_error_payload(payload):
+    message = extract_text(payload.get('message'))[:500]
+    lower = message.lower()
+    retryable_markers = (
+        'official_generation_error',
+        '请重新提交',
+        'no active tokens available in the pool',
+    )
+    if any(marker in lower or marker in message for marker in retryable_markers):
+        payload = dict(payload)
+        payload['status'] = 'failed_retryable'
+        payload['error_code'] = 'UPSTREAM_RETRYABLE'
+        payload['retryable'] = True
+        payload['message'] = message
+    return payload
+
+
 def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
     combined_parts = [x for x in [stdout_text or '', stderr_text or ''] if x]
     combined = '\n'.join(combined_parts).strip()
@@ -749,13 +808,13 @@ def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
             continue
         if not isinstance(payload, dict) or 'message' not in payload:
             continue
-        return {
+        return normalize_dispatcher_error_payload({
             'stage': payload.get('stage') or stage,
             'status': payload.get('status') or 'failed_terminal',
             'error_code': payload.get('error_code') or 'RUNTIME_BUG',
             'retryable': bool(payload.get('retryable')),
             'message': extract_text(payload.get('message'))[:500],
-        }
+        })
 
     structured_line = None
     for line in reversed(lines):
@@ -782,16 +841,16 @@ def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
         except Exception:
             pass
 
-        return {
+        return normalize_dispatcher_error_payload({
             'stage': stage,
             'status': 'failed_retryable' if retryable else 'failed_terminal',
             'error_code': code,
             'retryable': retryable,
             'message': extract_text(message)[:500],
-        }
+        })
 
     err_text = combined[-1000:] if combined else 'subprocess_nonzero_exit'
-    return build_error_payload(err_text, stage=stage)
+    return normalize_dispatcher_error_payload(build_error_payload(err_text, stage=stage))
 
 
 
@@ -950,6 +1009,9 @@ def make_task_key(watch, record_id):
 def count_running_by_watch(watch_name):
     count = 0
     for proc in running_processes.values():
+        process = proc.get('process')
+        if process is not None and process.poll() is not None:
+            continue
         if proc['watch']['name'] == watch_name:
             count += 1
     return count
@@ -963,6 +1025,50 @@ def count_active_running_tasks():
             continue
         count += 1
     return count
+
+
+def has_live_process_for_task_key(task_key, task_info):
+    script = task_info.get('script') or task_key.split('::', 1)[0]
+    record_id = task_info.get('record_id') or (task_key.split('::', 1)[1] if '::' in task_key else '')
+    if not script or not record_id:
+        return False
+    try:
+        result = subprocess.run(
+            ['ps', 'axo', 'pid=,command='],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0:
+        return False
+    current_pid = str(os.getpid())
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        pid, _, command = stripped.partition(' ')
+        if pid == current_pid:
+            continue
+        if script in command and record_id in command:
+            return True
+    return False
+
+
+def prune_stale_running_state():
+    running_state = load_running_tasks()
+    stale_keys = [
+        task_key for task_key, task_info in running_state.items()
+        if task_key not in running_processes and not has_live_process_for_task_key(task_key, task_info)
+    ]
+    if not stale_keys:
+        return 0
+    for task_key in stale_keys:
+        running_state.pop(task_key, None)
+    save_running_tasks(running_state)
+    return len(stale_keys)
 
 
 def get_retry_count(task_key):
@@ -994,24 +1100,37 @@ def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=No
         log.error(f"[{watch['name']}] 错误不可重试，直接终止: {record_id} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
         return False
 
-    retry_count = get_retry_count(task_key)
-    max_retries = watch.get('max_retries', 0)
-    if retry_count < max_retries:
-        new_retry = retry_count + 1
-        set_retry_count(task_key, new_retry, watch=watch, record_id=record_id)
-        try:
-            fallback_trigger = (watch.get('trigger_values') or [watch['trigger_value']])[0]
-            safe_update_record(token, watch['table'], record_id, {
-                watch['status_field']: fallback_trigger
-            })
-            bump_metric('retried', watch['name'])
-            log.warning(f"[{watch['name']}] 任务失败，已回退待重试: {record_id} ({new_retry}/{max_retries}) error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
+    valid_retry_statuses = set(watch.get('trigger_values') or [watch['trigger_value']])
+    valid_retry_statuses.add(watch.get('running_value'))
+    valid_retry_statuses.add(watch.get('failed_value', '失败'))
+    try:
+        latest = safe_get_record(token, watch['table'], record_id)
+        latest_status = extract_text(latest.get(watch['status_field'], '')).strip()
+        if latest_status not in valid_retry_statuses:
+            log.info(f"[{watch['name']}] 检测到用户手动停止重试: {record_id} current_status={latest_status or '<empty>'}")
             return True
-        except Exception as e:
-            log.error(f"[{watch['name']}] 回退重试状态失败: {record_id} error={e}")
-            return False
-    else:
-        log.error(f"[{watch['name']}] 任务失败且超过重试上限: {record_id} retries={retry_count} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
+    except Exception as e:
+        log.warning(f"[{watch['name']}] 重试前读取最新状态失败，继续按可重试错误回退: {record_id} error={e}")
+
+    retry_count = get_retry_count(task_key)
+    new_retry = retry_count + 1
+    set_retry_count(task_key, new_retry, watch=watch, record_id=record_id)
+    try:
+        fallback_trigger = (watch.get('trigger_values') or [watch['trigger_value']])[0]
+        error_message = error_payload.get('message') or str(reason)
+        update_payload = {watch['status_field']: fallback_trigger}
+        error_field = watch.get('error_field')
+        if error_field and error_message:
+            update_payload[error_field] = (
+                f"自动重试中[{error_payload.get('error_code', 'UNKNOWN')}] "
+                f"第 {new_retry} 次失败，将继续重试：{error_message}"
+            )[:1000]
+        safe_update_record(token, watch['table'], record_id, update_payload)
+        bump_metric('retried', watch['name'])
+        log.warning(f"[{watch['name']}] 可重试错误已回退继续重试: {record_id} retry={new_retry} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
+        return True
+    except Exception as e:
+        log.error(f"[{watch['name']}] 回退重试状态失败: {record_id} error={e}")
         return False
 
 
@@ -1020,7 +1139,6 @@ def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout
     append_last_error(watch['name'], record_id, f"{error_payload.get('error_code')}: {error_payload.get('message')}")
     retried = maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=error_payload)
     if retried:
-        record_circuit_failure(watch)
         return
     failed_value = watch.get('failed_value', '失败')
     payload = {
@@ -1035,13 +1153,15 @@ def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout
     except Exception as e:
         log.error(f"[{watch['name']}] 标记失败写回失败: {record_id} payload={payload} error={e}")
     register_dead_letter(watch, record_id, reason, payload=error_payload)
-    record_circuit_failure(watch)
     bump_metric('failed', watch['name'])
     if timeout:
         bump_metric('timeouts', watch['name'])
 
 
 def cleanup_finished_processes(token):
+    pruned = prune_stale_running_state()
+    if pruned:
+        log.warning(f"已清理 stale running state: {pruned}")
     finished = []
     for task_key, proc_info in list(running_processes.items()):
         process = proc_info['process']
@@ -1199,8 +1319,7 @@ def get_table_records_cached(token, table_id, force=False):
 
 def check_and_run(token, watch):
     watch = apply_stage_policy(watch)
-    if is_circuit_open(watch):
-        return
+    cleanup_finished_processes(token)
     current_running = count_running_by_watch(watch['name'])
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
     if GLOBAL_MAX_CONCURRENCY > 0:
