@@ -36,6 +36,7 @@
   "dispatcher": {
     "poll_interval": 30,
     "healthcheck_hour": -1,
+    "global_max_concurrency": 6,
     "circuit_breaker": {
       "window_seconds": 900,
       "threshold": 3,
@@ -52,17 +53,14 @@
         "timeout": 1200
       },
       "tk_first_last_video.py": {
-        "max_concurrency": 1,
         "max_retries": 1,
         "timeout": 2400
       },
       "tk_storyboard_video.py": {
-        "max_concurrency": 1,
         "max_retries": 1,
         "timeout": 2400
       },
       "tk_shot_voiceover.py": {
-        "max_concurrency": 2,
         "max_retries": 2,
         "timeout": 300
       },
@@ -72,9 +70,53 @@
         "timeout": 1200
       },
       "tk_shot_video.py": {
-        "max_concurrency": 2,
         "max_retries": 1,
         "timeout": 2400
+      },
+      "文案音频生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档口播音频生成": {
+        "max_concurrency": 3
+      },
+      "故事板图片生成": {
+        "max_concurrency": 2
+      },
+      "多图九宫格参考图生成": {
+        "max_concurrency": 2
+      },
+      "多图九宫格图片生成": {
+        "max_concurrency": 2
+      },
+      "多图九宫格视频生成": {
+        "max_concurrency": 2
+      },
+      "首尾帧首帧图生成": {
+        "max_concurrency": 2
+      },
+      "首尾帧尾帧图生成": {
+        "max_concurrency": 2
+      },
+      "多角色参考图生成": {
+        "max_concurrency": 2
+      },
+      "多角色关键帧生成": {
+        "max_concurrency": 2
+      },
+      "脚本文档分镜图生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档尾帧图生成": {
+        "max_concurrency": 2
+      },
+      "首尾帧视频生成": {
+        "max_concurrency": 2
+      },
+      "脚本文档分镜视频生成": {
+        "max_concurrency": 2
+      },
+      "多角色视频片段生成": {
+        "max_concurrency": 2
       }
     }
   },

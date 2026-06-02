@@ -747,13 +747,18 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             watches["多角色视频片段生成"]["claim_clear_fields_by_trigger_value"]["待生成"],
             [
                 "视频任务ID",
-                "视频片段",
-                "视频片段URL",
                 "视频片段file_token",
                 "视频本地路径",
                 "视频原始响应JSON",
                 "视频错误信息",
             ],
+        )
+        self.assertEqual(
+            watches["多角色视频片段生成"]["claim_clear_values_by_trigger_value"]["待生成"],
+            {
+                "视频片段": [],
+                "视频片段URL": None,
+            },
         )
 
     def test_video_plan_uses_shared_keyframe_for_both_clips(self):

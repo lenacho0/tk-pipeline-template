@@ -32,6 +32,75 @@ def sample_fields():
 
 
 class ShotVideoTest(unittest.TestCase):
+    def test_dispatcher_stage_policy_prefers_watch_name_then_script_config(self):
+        watch = {
+            "name": "首尾帧首帧图生成",
+            "script": "tk_first_last_video.py",
+            "max_concurrency": 1,
+            "max_retries": 1,
+            "timeout": 1200,
+        }
+        with patch.object(dispatcher, "STAGE_CFG", {
+            "tk_first_last_video.py": {"max_concurrency": 4, "timeout": 2400},
+            "首尾帧首帧图生成": {"max_concurrency": 2},
+        }):
+            applied = dispatcher.apply_stage_policy(watch)
+
+        self.assertEqual(applied["max_concurrency"], 2)
+        self.assertEqual(applied["timeout"], 2400)
+
+    def test_dispatcher_stage_policy_keeps_script_level_config_compatible(self):
+        watch = {
+            "name": "脚本文档分镜视频生成",
+            "script": "tk_shot_video.py",
+            "max_concurrency": 1,
+            "max_retries": 1,
+            "timeout": 1200,
+        }
+        with patch.object(dispatcher, "STAGE_CFG", {
+            "tk_shot_video.py": {"max_concurrency": 2, "timeout": 2400},
+        }):
+            applied = dispatcher.apply_stage_policy(watch)
+
+        self.assertEqual(applied["max_concurrency"], 2)
+        self.assertEqual(applied["timeout"], 2400)
+
+    def test_dispatcher_global_concurrency_limit_blocks_new_launches(self):
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        dispatcher.running_processes = {
+            f"other::{idx}": {
+                "process": RunningProcess(),
+                "watch": {"name": f"其它环节{idx}"},
+            }
+            for idx in range(6)
+        }
+        watch = {
+            "name": "脚本文档分镜视频生成",
+            "table": "tbl1",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "max_concurrency": 2,
+            "script": "tk_shot_video.py",
+            "args": [],
+        }
+        record = {"record_id": "rec1", "fields": {"视频生成状态": "待生成", "任务名称": "任务1"}}
+
+        with patch.object(dispatcher, "GLOBAL_MAX_CONCURRENCY", 6, create=True), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "is_circuit_open", return_value=False), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "should_skip_claim_by_cache", return_value=False), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
     def test_dispatcher_counts_running_tasks_by_watch_not_script(self):
         dispatcher.running_processes = {
             "tk_shot_video.py::a": {"watch": {"script": "tk_shot_video.py", "name": "脚本文档分镜视频生成"}},

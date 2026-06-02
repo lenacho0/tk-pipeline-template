@@ -32,6 +32,7 @@ DEAD_LETTER_FILE = os.path.join(SCRIPTS_DIR, f'.dead_letter_tasks.{INSTANCE}.jso
 CIRCUIT_BREAKER_FILE = os.path.join(SCRIPTS_DIR, f'.circuit_breakers.{INSTANCE}.json')
 STAGE_CFG = DISPATCHER_CFG.get('stages', {})
 CIRCUIT_CFG = DISPATCHER_CFG.get('circuit_breaker', {})
+GLOBAL_MAX_CONCURRENCY = int(DISPATCHER_CFG.get('global_max_concurrency') or 0)
 TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, f'.table_scan_state.{INSTANCE}.json')
 RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, f'.record_state_cache.{INSTANCE}.json')
 SCAN_CFG = DISPATCHER_CFG.get('scan', {})
@@ -589,13 +590,17 @@ WATCH_LIST = [
         'claim_clear_fields_by_trigger_value': {
             '待生成': [
                 '视频任务ID',
-                '视频片段',
-                '视频片段URL',
                 '视频片段file_token',
                 '视频本地路径',
                 '视频原始响应JSON',
                 '视频错误信息',
             ],
+        },
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '视频片段': [],
+                '视频片段URL': None,
+            },
         },
     },
     {
@@ -710,11 +715,19 @@ def save_circuit_breakers(data):
 
 
 def apply_stage_policy(watch):
-    cfg = STAGE_CFG.get(watch['script'], {})
     merged = dict(watch)
-    for key in ('max_concurrency', 'max_retries', 'timeout'):
-        if key in cfg and key not in merged:
-            merged[key] = cfg[key]
+    args_key = ' '.join(watch.get('args') or [])
+    stage_keys = [watch.get('script')]
+    if args_key:
+        stage_keys.append(f"{watch.get('script')} {args_key}")
+    stage_keys.append(watch.get('name'))
+    for stage_key in stage_keys:
+        cfg = STAGE_CFG.get(stage_key) if stage_key else None
+        if not cfg:
+            continue
+        for key in ('max_concurrency', 'max_retries', 'timeout'):
+            if key in cfg:
+                merged[key] = cfg[key]
     return merged
 
 
@@ -942,6 +955,16 @@ def count_running_by_watch(watch_name):
     return count
 
 
+def count_active_running_tasks():
+    count = 0
+    for proc in running_processes.values():
+        process = proc.get('process')
+        if process is not None and process.poll() is not None:
+            continue
+        count += 1
+    return count
+
+
 def get_retry_count(task_key):
     state = load_retry_state()
     return int(state.get(task_key, {}).get('retry_count', 0) or 0)
@@ -1106,6 +1129,8 @@ def apply_claim_clear_fields(claim_fields, watch, trigger_value=None):
         claim_fields[field_name] = ''
     for field_name, value in (watch.get('claim_clear_values') or {}).items():
         claim_fields[field_name] = value
+    for field_name, value in (watch.get('claim_clear_values_by_trigger_value') or {}).get(trigger_value, {}).items():
+        claim_fields[field_name] = value
     return claim_fields
 
 
@@ -1178,6 +1203,9 @@ def check_and_run(token, watch):
         return
     current_running = count_running_by_watch(watch['name'])
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
+    if GLOBAL_MAX_CONCURRENCY > 0:
+        global_slots = max(0, GLOBAL_MAX_CONCURRENCY - count_active_running_tasks())
+        available_slots = min(available_slots, global_slots)
     if available_slots <= 0:
         return
 
