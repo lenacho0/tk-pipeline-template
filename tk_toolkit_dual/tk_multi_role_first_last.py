@@ -161,10 +161,10 @@ DEFAULT_PARSE_PROMPT = """
 
 参考资产规则：
 - human / pet / object 资产只生成该资产本身，不要混入其他角色、产品或完整剧情。
-- human 资产必须生成 single person 的真实人物参考图：one angle, front-facing, full face visible；人物必须正对镜头，完整露出全脸，双眼、鼻子、嘴巴清晰可见。
-- human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄、自然光、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
+- human 资产必须生成 single person 的真实人物参考图：one angle, front-facing upper-body portrait, full unobstructed face visible, pure white background；人物必须正对镜头，腰部以上半身构图，完整露出全脸，双眼、鼻子、嘴巴清晰可见。
+- human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄质感、自然光感、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；背景仍必须是 pure white background；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
 - human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
-- human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
+- human 资产必须明确禁止 no multi-view、多视角拼图、角色设定表、character sheet、no contact sheet、turnaround、正侧背多角度、before/after split、海报、字幕、logo、水印。
 - environment 资产必须是无人无产品的事故现场环境底图，只能描述房间、家具、材质、光线、机位、可行动空间、生活道具和脚本明确写出的固定问题发生点。
 - environment 资产如果脚本提到 urine stain、pee stain、污渍、尿渍、wet patch、湿痕、破损、脏污区域、visible problem area、accident point、问题区域、事故点或异味来源位置，prompt 必须写清楚位置、大小、所在材质表面和可见状态。
 - environment 资产不要删除尿渍/污渍/湿痕/事故点；不能因为“空场景”而删除问题痕迹；不能把尿渍改成普通干净地面、沙发或地毯。
@@ -561,6 +561,39 @@ def build_parse_prompt(parent_fields: Dict[str, Any], script: str, *, system_pro
 
 ## 输入脚本
 {script}
+""".strip()
+
+
+HUMAN_REFERENCE_IMAGE_RULES = """
+Human reference image hard rules:
+- Generate exactly one single person only.
+- Use a pure white background.
+- Use a front-facing upper-body portrait, framed from waist or chest up.
+- The person must look straight at the camera.
+- The full unobstructed face visible: both eyes, nose, and mouth must be clear and sharp.
+- Keep natural skin texture, pores, fine lines, minor blemishes, everyday clothing, and ordinary local UGC realism.
+- no side profile, no back view, no looking down, no covered face, no sunglasses, no hair/hand/prop blocking the face.
+- no multi-view, no contact sheet, no character sheet, no turnaround, no collage, no split panels, no before/after split.
+- No text, subtitles, labels, logo, watermark, product, pets, or extra people.
+""".strip()
+
+
+def _is_human_reference_fields(fields: Dict[str, Any]) -> bool:
+    asset_type = extract_text(fields.get("参考类型") or fields.get("资产类型")).strip().lower()
+    return asset_type in {"human", "person", "人物", "角色"}
+
+
+def build_reference_image_generation_prompt(fields: Dict[str, Any]) -> str:
+    prompt = extract_text(fields.get("参考提示词")).strip()
+    if not _is_human_reference_fields(fields):
+        return prompt
+    if all(phrase in prompt for phrase in ["pure white background", "front-facing upper-body", "full unobstructed face visible"]):
+        return prompt
+    return f"""
+{HUMAN_REFERENCE_IMAGE_RULES}
+
+Character source prompt:
+{prompt}
 """.strip()
 
 
@@ -1146,9 +1179,10 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_active_record(fields)
     if record_type(fields) != ASSET_RECORD_TYPE:
         raise ValueError("只有参考资产记录可以生成参考图")
-    prompt = extract_text(fields.get("参考提示词")).strip()
-    if not prompt:
+    raw_prompt = extract_text(fields.get("参考提示词")).strip()
+    if not raw_prompt:
         raise ValueError("参考提示词为空")
+    prompt = build_reference_image_generation_prompt(fields)
     version = current_version(fields, "参考图版本")
     work_dir = ensure_stage_work_dir(record_id, "reference_image", version)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)

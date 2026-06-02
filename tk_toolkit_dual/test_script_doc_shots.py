@@ -385,7 +385,7 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertIn("## 目标参数", prompt)
         self.assertIn("0-4s: hook", prompt)
 
-    def test_human_reference_prompt_uses_character_sheet_layout(self):
+    def test_human_reference_prompt_uses_single_front_facing_white_background_portrait(self):
         prompt = doc_shots.build_reference_image_prompt({
             "参考类型": "human",
             "参考名称": "owner",
@@ -393,13 +393,16 @@ class ScriptDocShotsTests(unittest.TestCase):
         })
 
         self.assertIn("以脚本人物描述/参考提示词为唯一角色设定锚点", prompt)
-        self.assertIn("左侧(约60%宽度):三张大图横排列", prompt)
-        self.assertIn("右侧(约40%宽度):2x3网格六张头部小图", prompt)
-        self.assertIn("全身正视站姿", prompt)
-        self.assertIn("全身90°侧视站姿", prompt)
-        self.assertIn("全身后视站姿", prompt)
-        self.assertIn("同一张脸同一发际线", prompt)
-        self.assertNotIn("collage, or split panels", prompt)
+        self.assertIn("单张白底半身正脸身份照", prompt)
+        self.assertIn("pure white background", prompt)
+        self.assertIn("front-facing upper-body", prompt)
+        self.assertIn("full unobstructed face visible", prompt)
+        self.assertIn("禁止侧脸", prompt)
+        self.assertNotIn("全身90°侧视站姿", prompt)
+        self.assertNotIn("全身后视站姿", prompt)
+        self.assertNotIn("2x3网格", prompt)
+        self.assertNotIn("九视图人物设定图", prompt)
+        self.assertNotIn("character sheet", prompt)
 
     def test_human_reference_prompt_appends_revision_note_without_relaxing_constraints(self):
         prompt = doc_shots.build_reference_image_prompt({
@@ -411,7 +414,7 @@ class ScriptDocShotsTests(unittest.TestCase):
 
         self.assertIn("本次重生成修改要求", prompt)
         self.assertIn("衣服改成浅蓝色，但不要改变年龄感", prompt)
-        self.assertIn("不能破坏同一角色、超干净白底、无文字水印、九视图人物设定图版式", prompt)
+        self.assertIn("不能放松白底、正对镜头、完整露出全脸", prompt)
 
     def test_non_human_reference_prompt_keeps_single_image_logic(self):
         prompt = doc_shots.build_reference_image_prompt({

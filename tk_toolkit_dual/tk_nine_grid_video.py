@@ -493,14 +493,50 @@ def build_reference_asset_prompt(reference: Dict[str, Any]) -> str:
             "Show only this pet, no product, no extra animals, no text, no watermark."
         )
     return (
-        "Generate one realistic full-body human identity reference image for later video consistency. "
+        "Generate one realistic front-facing upper-body human identity reference portrait for later video consistency on a white background. "
         f"Character name/role: {name or 'selected character'}. "
         f"Visual purpose: {purpose or 'lock face, hair, outfit, body type, age impression, and everyday UGC style'}. "
-        "The person must look like an ordinary non-professional local person in a UGC phone snapshot, not a studio model, influencer ad model, beauty campaign, or polished catalog render. "
-        "Keep visible natural skin texture, pores, fine lines, minor blemishes, uneven skin tone, natural expression, casual posture, practical everyday clothing, and imperfect real-life grooming. "
-        "Use natural available light and a simple everyday background; avoid airbrushed skin, plastic-smooth face, heavy retouching, fashion editorial posing, perfect studio lighting, and luxury-ad styling. "
-        "Show only this character, no product, no extra people, no pets, no text, no watermark."
+        "Use exactly one single person, pure white background, waist-or-chest-up framing, and a straight-to-camera pose. "
+        "The full unobstructed face visible: both eyes, nose, and mouth must be clear and sharp. "
+        "The person must look like an ordinary non-professional local person with ordinary local UGC realism and phone snapshot texture, not a studio model, influencer ad model, beauty campaign, or polished catalog render. "
+        "Keep visible natural skin texture, pores, fine lines, minor blemishes, uneven skin tone, natural expression, and practical everyday clothing. "
+        "no side profile, no back view, no looking down, no covered face, no sunglasses, no hair/hand/prop blocking the face. "
+        "no multi-view, no contact sheet, no character sheet, no turnaround, no collage, no split panels, no before/after split. "
+        "Show only this character, no product, no extra people, no pets, no text, no logo, no watermark."
     )
+
+
+HUMAN_REFERENCE_IMAGE_RULES = """
+Human reference image hard rules:
+- Generate exactly one single person only.
+- Use a pure white background.
+- Use a front-facing upper-body portrait, framed from waist or chest up.
+- The person must look straight at the camera.
+- The full unobstructed face visible: both eyes, nose, and mouth must be clear and sharp.
+- Keep natural skin texture, pores, fine lines, minor blemishes, everyday clothing, and ordinary local UGC realism.
+- no side profile, no back view, no looking down, no covered face, no sunglasses, no hair/hand/prop blocking the face.
+- no multi-view, no contact sheet, no character sheet, no turnaround, no collage, no split panels, no before/after split.
+- No text, subtitles, labels, logo, watermark, product, pets, or extra people.
+""".strip()
+
+
+def _is_human_reference_fields(fields: Dict[str, Any]) -> bool:
+    asset_type = _reference_role_to_asset_type(fields.get("参考类型") or fields.get("资产类型"))
+    return asset_type == "human"
+
+
+def build_reference_image_generation_prompt(fields: Dict[str, Any]) -> str:
+    prompt = extract_text(fields.get("参考提示词")).strip()
+    if not _is_human_reference_fields(fields):
+        return prompt
+    if all(phrase in prompt for phrase in ["pure white background", "front-facing upper-body", "full unobstructed face visible"]):
+        return prompt
+    return f"""
+{HUMAN_REFERENCE_IMAGE_RULES}
+
+Character source prompt:
+{prompt}
+""".strip()
 
 
 def build_plan_generation_request(fields: Dict[str, Any], *, system_prompt: str = "") -> str:
@@ -1330,9 +1366,10 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
     source = extract_text(fields.get("参考图来源")).strip() or REFERENCE_SOURCE_AI
     if source != REFERENCE_SOURCE_AI:
         raise ValueError("只有参考图来源=AI自动生成 的资产可以自动生成参考图")
-    prompt = extract_text(fields.get("参考提示词")).strip()
-    if not prompt:
+    raw_prompt = extract_text(fields.get("参考提示词")).strip()
+    if not raw_prompt:
         raise ValueError("参考提示词为空")
+    prompt = build_reference_image_generation_prompt(fields)
     _, cfg = get_config_record(REFERENCE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
     params = {
         "size": DEFAULT_IMAGE_SIZE,

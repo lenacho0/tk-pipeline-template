@@ -499,9 +499,29 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual([item["资产ID"] for item in fields], ["owner", "landlord", "golden_dog", "living_room"])
         self.assertEqual(fields[0]["参考图来源"], "AI自动生成")
         self.assertEqual(fields[0]["参考图生成状态"], "待生成")
+        self.assertIn("white background", fields[0]["参考提示词"])
+        self.assertIn("front-facing upper-body", fields[0]["参考提示词"])
+        self.assertIn("full unobstructed face visible", fields[0]["参考提示词"])
+        self.assertIn("no side profile", fields[0]["参考提示词"])
+        self.assertIn("no multi-view", fields[0]["参考提示词"])
+        self.assertNotIn("full-body human", fields[0]["参考提示词"])
+        self.assertNotIn("everyday background", fields[0]["参考提示词"])
         self.assertEqual(fields[-1]["参考图来源"], "手动上传")
         self.assertEqual(fields[-1]["参考图生成状态"], "不触发")
         self.assertIn("EMPTY ENVIRONMENT REFERENCE PLATE ONLY", fields[-1]["参考提示词"])
+
+    def test_human_reference_asset_prompt_is_wrapped_before_rendering(self):
+        prompt = nine_grid.build_reference_image_generation_prompt({
+            "资产类型": "human",
+            "参考提示词": "Generate the owner reference.",
+        })
+
+        self.assertIn("white background", prompt)
+        self.assertIn("front-facing upper-body", prompt)
+        self.assertIn("full unobstructed face visible", prompt)
+        self.assertIn("no side profile", prompt)
+        self.assertIn("no multi-view", prompt)
+        self.assertIn("Generate the owner reference.", prompt)
 
     def test_reference_manifest_product_only_falls_back_to_script_assets(self):
         payload = sample_plan_payload()
@@ -740,7 +760,11 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.args[0]["api_key"], "sk-aitgenne")
         self.assertEqual(submitter.call_args.args[0]["api_base"], "https://api.aitgenne.com")
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2")
-        self.assertEqual(submitter.call_args.args[1], "Generate the owner reference.")
+        submitted_prompt = submitter.call_args.args[1]
+        self.assertIn("pure white background", submitted_prompt)
+        self.assertIn("front-facing upper-body", submitted_prompt)
+        self.assertIn("full unobstructed face visible", submitted_prompt)
+        self.assertIn("Generate the owner reference.", submitted_prompt)
         self.assertEqual(submitter.call_args.kwargs["size"], "720x1280")
         saver.assert_called_once()
 

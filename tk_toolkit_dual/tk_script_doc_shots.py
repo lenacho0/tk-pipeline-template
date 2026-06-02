@@ -81,6 +81,8 @@ DEFAULT_PARSE_PROMPT = """
    - environment：无人无宠物无产品的事故现场环境底图提示词，不是干净空房间
    - human：人类角色参考底图提示词
    如果全文中有多个宠物、环境或人类角色，要分别创建多个 asset。
+   - human prompt 必须写成单人、白底、半身/腰上、正对镜头、完整露出全脸的身份参考图：pure white background, front-facing upper-body, full unobstructed face visible；双眼、鼻子、嘴巴必须清晰可见。
+   - human prompt 必须禁止侧脸、背影、低头、遮脸、墨镜、头发/手/道具遮挡脸部、多视角、角色设定表、contact sheet、turnaround、拼图、文字、logo、水印。
    - environment prompt 必须保留脚本里的可见问题发生点：urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点。
    - 如果脚本提到尿渍/污渍/湿痕/破损/脏污/问题区域，environment prompt 必须写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
    - 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。
@@ -556,30 +558,20 @@ def build_reference_image_prompt(fields: Dict[str, Any]) -> str:
 
 本次重生成修改要求:
 {revision_note}
-该修改要求只能微调当前人物设定，不能破坏同一角色、超干净白底、无文字水印、九视图人物设定图版式，以及五官、发际线、年龄气质的一致性。
+该修改要求只能微调当前人物设定，不能放松白底、正对镜头、完整露出全脸、无遮挡脸部、单人单图、无文字水印，以及五官、发际线、年龄气质的一致性。
 """.rstrip()
         return f"""
-纯白干净棚拍背景。以脚本人物描述/参考提示词为唯一角色设定锚点:脸型轮廓(下颌线、颧骨、下巴形状)、眼型、眉形、鼻梁与鼻翼、嘴唇厚薄与嘴角形状、年龄气质必须严格一致;发际线与发型尽量一致。只允许同一个角色，禁止换脸、禁止五官漂移。
+单张白底半身正脸身份照。以脚本人物描述/参考提示词为唯一角色设定锚点:脸型轮廓(下颌线、颧骨、下巴形状)、眼型、眉形、鼻梁与鼻翼、嘴唇厚薄与嘴角形状、年龄气质必须严格一致;发际线与发型尽量一致。只允许同一个角色，禁止换脸、禁止五官漂移。
 
 角色名称: {asset_name or "human"}
 脚本人物描述/参考提示词:
 {prompt}
 
-版式(单张合成图，干净网格，统一光影与色彩):
-左侧(约60%宽度):三张大图横排列:
-1)全身正视站姿(中性站姿，手臂自然下垂)
-2)全身90°侧视站姿(中性站姿，注意头脚方向要一致)
-3)全身后视站姿(中性站姿，手臂自然下垂)
-右侧(约40%宽度):2x3网格六张头部小图:
-1)头部正面(neutral)
-2)头部背面(back of head，用于发型与头型一致性)
-3)头部左45°(neutral)
-4)头部右45°(neutral)
-5)表情特写:开心/愉悦(happy，笑但克制不夸张)
-6)表情特写:生气/愤怒(angry，眉眼紧张但不夸张变形)
-
-质感与画质:高端写实棚拍/电影级人像质感，眼睛清晰锐利对焦，真实皮肤微观质感(毛孔与细纹，不磨皮不塑料)，全图各分区曝光与色彩一致，8K细节，轻胶片颗粒，超干净白底，脚下干净柔和投影。
-强约束:画面内不允许任何可读文字，不要FRONT/SIDE等标签，不要字幕、不要logo、不要UI叠层、不要水印块;不要多余人物;不要畸形手指/多肢体/脸崩;六张小图必须是同一张脸同一发际线。
+Output: one single portrait image only, not a collage.
+Framing: front-facing upper-body portrait, waist-or-chest-up framing, straight-to-camera pose, pure white background.
+Face: full unobstructed face visible; both eyes, nose, and mouth must be clear, sharp, and centered.
+质感与画质:真实皮肤微观质感(毛孔与细纹，不磨皮不塑料)，自然表情，日常衣着，本地素人感，脸部清晰锐利对焦，白底曝光干净一致。
+强约束:禁止侧脸、背影、低头、遮脸、墨镜、头发/手/道具遮挡脸部;禁止多视角、角色设定表、contact sheet、turnaround、拼图、分屏、before/after;画面内不允许任何可读文字，不要FRONT/SIDE等标签，不要字幕、不要logo、不要UI叠层、不要水印块;不要多余人物;不要畸形手指/多肢体/脸崩。
 {revision_block}
 """.strip()
 

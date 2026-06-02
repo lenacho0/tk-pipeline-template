@@ -14,6 +14,7 @@ NINE_GRID_PLAN_SYSTEM_PROMPT = """
 6. 多张 Board 时，前一张 Board 第 9 格必须等于后一张 Board 第 1 格，作为视觉衔接锚点。
 7. environment reference 是无人无宠物无产品的事故现场环境底图，不是干净空房间；如果脚本提到 urine stain、pee stain、wet patch、yellow stain、visible problem area、accident point、污渍、尿渍、湿痕、破损、脏污区域、问题区域、事故点，必须在环境参考目的、environment_anchor 和 image_prompt 中写清楚问题发生点的位置、大小、材质表面、颜色/湿润/破损/可见状态。
 8. 不要删除尿渍、污渍、湿痕、破损或事故点；不能因为要求空场景，就把它改成普通干净地面、沙发、床垫或地毯。环境参考图仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印，只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
+9. human reference 必须用于生成单人白底半身正脸身份参考图：front-facing upper-body, pure white background, full unobstructed face visible；禁止侧脸、背影、遮脸、多视角、角色设定表、contact sheet、拼图、文字、logo、水印。
 
 脚本类型可选：
 - 剧情反应型

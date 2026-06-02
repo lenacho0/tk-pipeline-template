@@ -136,21 +136,41 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in record_type_options], ["母任务", "参考资产", "关键帧", "视频片段"])
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "multi_role_first_last")
 
-    def test_default_parse_prompt_constrains_human_reference_images_to_front_facing_ugc(self):
+    def test_default_parse_prompt_constrains_human_reference_images_to_front_facing_white_background(self):
         prompt = multi_role.DEFAULT_PARSE_PROMPT
 
         for phrase in [
             "single person",
             "front-facing",
-            "full face visible",
+            "front-facing upper-body",
+            "full unobstructed face visible",
+            "pure white background",
             "no side profile",
             "one angle",
             "no multi-view",
+            "no contact sheet",
             "UGC smartphone",
             "natural skin texture",
             "not studio",
         ]:
             self.assertIn(phrase, prompt)
+
+    def test_human_reference_image_prompt_is_wrapped_before_rendering(self):
+        prompt = multi_role.build_reference_image_generation_prompt({
+            "参考类型": "human",
+            "参考提示词": "Thai renter, worried expression, blue shirt",
+        })
+
+        for phrase in [
+            "pure white background",
+            "front-facing upper-body",
+            "full unobstructed face visible",
+            "no side profile",
+            "no multi-view",
+            "no contact sheet",
+        ]:
+            self.assertIn(phrase, prompt)
+        self.assertIn("Thai renter, worried expression, blue shirt", prompt)
 
     def test_default_parse_prompt_preserves_environment_problem_anchor(self):
         prompt = multi_role.DEFAULT_PARSE_PROMPT
