@@ -97,6 +97,10 @@ DEFAULT_ASPECT_RATIO = "9:16"
 BASE_WORK_DIR = Path(WORKSPACE) / "nine_grid_video_work"
 MAX_REFERENCE_IMAGES = 7
 REFERENCE_VIDEO_MAX_IMAGES = 9
+OTU_NINE_GRID_VIDEO_MAX_POLL_SECONDS = 2400
+OTU_NINE_GRID_VIDEO_POLL_INTERVAL = 15
+OTU_NINE_GRID_VIDEO_POLL_TIMEOUT = 45
+OTU_NINE_GRID_QUEUED_ZERO_PROGRESS_TIMEOUT_SECONDS = 600
 NINE_GRID_VIDEO_TRANSLATION_INSTRUCTION = (
     "Faithfully translate any Chinese visual/action directions into English while preserving all Thai dialogue exactly. "
     "Do not rewrite, soften, add, remove, or sanitize story details."
@@ -305,6 +309,23 @@ def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
     return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
 
 
+def video_task_route_tag(route: ai_routing.AiRoute) -> str:
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    return f"provider={route.provider} model={model_name}"
+
+
+def existing_video_task_matches_route(fields: Dict[str, Any], route: ai_routing.AiRoute, task_id: str) -> bool:
+    if not task_id:
+        return False
+    error_text = extract_text(fields.get("视频错误信息")).strip()
+    tag = video_task_route_tag(route)
+    if tag in error_text:
+        return True
+    if "provider=" in error_text or "model=" in error_text:
+        return False
+    return route.provider == "OTU" and task_id.startswith("task_")
+
+
 def submit_reference_video_task(
     route: ai_routing.AiRoute,
     prompt: str,
@@ -384,6 +405,73 @@ def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[s
             raise RuntimeError(f"{route.provider} 参考图视频生成失败: {str(last_body)[:1500]}")
         time.sleep(15)
     raise TimeoutError(f"{route.provider} 参考图视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
+
+
+def _progress_number(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def poll_otu_nine_grid_video_task(
+    config: Dict[str, str],
+    task_id: str,
+    *,
+    queued_zero_progress_timeout_seconds: int = OTU_NINE_GRID_QUEUED_ZERO_PROGRESS_TIMEOUT_SECONDS,
+    max_poll_seconds: int = OTU_NINE_GRID_VIDEO_MAX_POLL_SECONDS,
+    poll_interval: int = OTU_NINE_GRID_VIDEO_POLL_INTERVAL,
+    poll_timeout: int = OTU_NINE_GRID_VIDEO_POLL_TIMEOUT,
+    now_fn: Callable[[], float] = time.time,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Dict[str, Any]:
+    if not config.get("api_key"):
+        raise ValueError(f"OTU / {config.get('model') or DEFAULT_VIDEO_MODEL} 缺少 API Key")
+    url = f"{(config.get('api_base') or DEFAULT_OTU_API_BASE).rstrip('/')}/v1/videos/{task_id}"
+    headers = {"Authorization": f"Bearer {config['api_key']}"}
+    start = now_fn()
+    queued_zero_started_at: Optional[float] = None
+    last_body: Dict[str, Any] = {}
+    while True:
+        now = now_fn()
+        if now - start >= max_poll_seconds:
+            raise TimeoutError(f"OTU 九宫格视频任务超时: task_id={task_id}, last={compact_json(last_body, 1200)}")
+        resp = requests.get(url, headers=headers, timeout=poll_timeout)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        last_body = body if isinstance(body, dict) else {"raw": body}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OTU 九宫格视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+
+        nested = last_body.get("data") if isinstance(last_body.get("data"), dict) else {}
+        status = extract_text(last_body.get("status") or nested.get("status")).lower()
+        progress = _progress_number(last_body.get("progress", nested.get("progress")))
+        if status in {"completed", "succeeded", "success", "done"}:
+            return last_body
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"OTU 九宫格视频生成失败: {str(last_body)[:1500]}")
+
+        if status == "queued" and progress == 0:
+            created_at = _progress_number(last_body.get("created_at", nested.get("created_at")))
+            if created_at is not None and now >= created_at and now - created_at >= queued_zero_progress_timeout_seconds:
+                raise TimeoutError(
+                    f"OTU 九宫格视频 queued progress=0 timeout，自 created_at 已超过 "
+                    f"{queued_zero_progress_timeout_seconds}s: task_id={task_id}, last={compact_json(last_body, 1200)}"
+                )
+            if queued_zero_started_at is None:
+                queued_zero_started_at = now
+            elif now - queued_zero_started_at >= queued_zero_progress_timeout_seconds:
+                raise TimeoutError(
+                    f"OTU 九宫格视频 queued progress=0 timeout，超过 {queued_zero_progress_timeout_seconds}s: "
+                    f"task_id={task_id}, last={compact_json(last_body, 1200)}"
+                )
+        else:
+            queued_zero_started_at = None
+        sleep_fn(poll_interval)
 
 
 def _field_with_default(fields: Dict[str, Any], name: str, default: str) -> str:
@@ -1377,6 +1465,8 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
     raw_prompt = extract_text(fields.get("参考提示词")).strip()
     if not raw_prompt:
         raise ValueError("参考提示词为空")
+    current_status = extract_text(fields.get("参考图生成状态")).strip()
+    raw_existing_task_id = extract_text(fields.get("参考图任务ID")).strip() if current_status == "生成中" else ""
     prompt = build_reference_image_generation_prompt(fields)
     _, cfg = get_config_record(REFERENCE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
     params = {
@@ -1397,6 +1487,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         config_records=_stage_config_records(token),
     )
     route.params.update(params)
+    existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1412,36 +1503,48 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
     work_dir = ensure_work_dir(record_id)
     model_name = normalize_image_model_choice(ai_routing.parse_model_display(route.model)["model"] or route.model)
     out_path = str(work_dir / f"{record_id}_reference.png")
-    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-        "参考图": [],
-        "参考图file_token": "",
-        "参考图本地路径": "",
-        "参考图任务ID": "",
-        "参考图错误信息": "",
-        "参考图生成时间": None,
-        "参考图生成状态": "生成中",
-        "错误信息": "",
-    }))
+    if existing_task_id:
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "参考图任务ID": existing_task_id,
+            "参考图生成状态": "生成中",
+            "参考图错误信息": f"恢复轮询已有 OTU 参考图任务。task_id={existing_task_id}",
+            "错误信息": "",
+        }))
+    else:
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "参考图": [],
+            "参考图file_token": "",
+            "参考图本地路径": "",
+            "参考图任务ID": "",
+            "参考图错误信息": "",
+            "参考图生成时间": None,
+            "参考图生成状态": "生成中",
+            "错误信息": "",
+        }))
     task_id = ""
     if route.provider == "OTU":
-        task_id, submit_body = submit_otu_image_task(
-            {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
-            prompt,
-            input_mode="text-to-image",
-            metadata={
-                "urls": [],
-                "reference_roles": [],
-                "aspectRatio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
-                "aspect_ratio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
-            },
-            size=params.get("size") or DEFAULT_IMAGE_SIZE,
-            aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
-        )
-        if task_id:
-            safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-                "参考图任务ID": task_id,
-                "参考图错误信息": f"已提交参考图任务，正在轮询。task_id={task_id}",
-            }))
+        if existing_task_id:
+            task_id = existing_task_id
+            submit_body = {"id": task_id}
+        else:
+            task_id, submit_body = submit_otu_image_task(
+                {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
+                prompt,
+                input_mode="text-to-image",
+                metadata={
+                    "urls": [],
+                    "reference_roles": [],
+                    "aspectRatio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+                    "aspect_ratio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+                },
+                size=params.get("size") or DEFAULT_IMAGE_SIZE,
+                aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+            )
+            if task_id:
+                safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+                    "参考图任务ID": task_id,
+                    "参考图错误信息": f"已提交参考图任务，正在轮询。task_id={task_id}",
+                }))
         result = submit_body if not task_id else poll_otu_image_task(
             {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name},
             task_id,
@@ -1477,7 +1580,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         "参考图错误信息": "",
         "错误信息": "",
     }))
-    summary.update({"status": "success", "file_token": file_token, "output_path": out_path})
+    summary.update({"status": "success", "task_id": task_id, "file_token": file_token, "output_path": out_path})
     return summary
 
 
@@ -1505,6 +1608,8 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     prompt = extract_text(fields.get("九宫格图片提示词")).strip()
     if not prompt:
         raise ValueError("九宫格图片提示词为空")
+    current_status = extract_text(fields.get("图片生成状态")).strip()
+    raw_existing_task_id = extract_text(fields.get("图片任务ID")).strip() if current_status == "生成中" else ""
     _, cfg = get_config_record(IMAGE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
     json_params = _parse_params(extract_text(fields.get("图片AI参数JSON")).strip())
     params = {
@@ -1523,6 +1628,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         config_records=_stage_config_records(token),
     )
     route.params.update(params)
+    existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1533,19 +1639,26 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         summary["status"] = "dry_run_ready"
         return summary
     work_dir = ensure_work_dir(record_id)
-    refs = collect_nine_grid_reference_images(
-        token,
-        parent_fields,
-        parent_record_id,
-        work_dir,
-        max_count=MAX_REFERENCE_IMAGES,
-        download_fn=safe_download_attachment,
-    )
-    reference_image_paths = [ref["path"] for ref in refs]
-    reference_urls = build_reference_urls(token, refs)
-    product_lock_prompt = build_product_reference_lock_prompt(refs)
-    prompt = "\n\n".join(part for part in [NINE_GRID_IMAGE_SYSTEM_PROMPT, product_lock_prompt, prompt] if part).strip()
-    summary["route"] = ai_routing.build_media_request_summary(route, prompt, reference_count=len(refs))
+    if existing_task_id:
+        refs = []
+        reference_urls = []
+        reference_image_paths = []
+        prompt = "\n\n".join(part for part in [NINE_GRID_IMAGE_SYSTEM_PROMPT, prompt] if part).strip()
+        summary["route"] = ai_routing.build_media_request_summary(route, prompt, reference_count=0)
+    else:
+        refs = collect_nine_grid_reference_images(
+            token,
+            parent_fields,
+            parent_record_id,
+            work_dir,
+            max_count=MAX_REFERENCE_IMAGES,
+            download_fn=safe_download_attachment,
+        )
+        reference_image_paths = [ref["path"] for ref in refs]
+        reference_urls = build_reference_urls(token, refs)
+        product_lock_prompt = build_product_reference_lock_prompt(refs)
+        prompt = "\n\n".join(part for part in [NINE_GRID_IMAGE_SYSTEM_PROMPT, product_lock_prompt, prompt] if part).strip()
+        summary["route"] = ai_routing.build_media_request_summary(route, prompt, reference_count=len(refs))
     out_path = str(work_dir / f"{record_id}_nine_grid.png")
     primary_reference_path = ""
     submitted_reference_image_paths: Optional[List[str]] = reference_image_paths
@@ -1553,20 +1666,28 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
         submitted_reference_image_paths = None
 
-    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-        "九宫格图": [],
-        "图片任务ID": "",
-        "图片错误信息": "",
-        "图片生成时间": None,
-        "分镜视频": [],
-        "分镜视频URL": None,
-        "视频任务ID": "",
-        "视频错误信息": "",
-        "视频生成时间": None,
-        "视频生成状态": "不触发",
-        "图片生成状态": "生成中",
-        "错误信息": "",
-    }))
+    if existing_task_id:
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "图片任务ID": existing_task_id,
+            "图片生成状态": "生成中",
+            "图片错误信息": f"恢复轮询已有 OTU 九宫格图片任务。task_id={existing_task_id}",
+            "错误信息": "",
+        }))
+    else:
+        safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "九宫格图": [],
+            "图片任务ID": "",
+            "图片错误信息": "",
+            "图片生成时间": None,
+            "分镜视频": [],
+            "分镜视频URL": None,
+            "视频任务ID": "",
+            "视频错误信息": "",
+            "视频生成时间": None,
+            "视频生成状态": "不触发",
+            "图片生成状态": "生成中",
+            "错误信息": "",
+        }))
     image_result = run_image_generation(
         route,
         prompt,
@@ -1582,6 +1703,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         },
         size=params.get("size") or DEFAULT_IMAGE_SIZE,
         aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+        existing_task_id=existing_task_id,
         otu_submitter=submit_otu_image_task,
         otu_poller=poll_otu_image_task,
         otu_downloader=download_otu_image_result,
@@ -1619,6 +1741,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     }))
     summary.update({
         "status": "success",
+        "task_id": task_id,
         "file_token": file_token,
         "output_path": out_path,
         "reference_count": len(refs),
@@ -1672,9 +1795,12 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     route.params.update(params)
     if not ai_model_catalog.is_reference_video_model(route.model, route.provider):
         raise ValueError(f"九宫格视频只支持参考图生视频模型: {route.model}")
+    if existing_task_id and not existing_video_task_matches_route(fields, route, existing_task_id):
+        existing_task_id = ""
+    will_submit_new_task = not existing_task_id
     prompt_refs: List[Dict[str, str]] = []
     model_prompt = prompt
-    if not existing_task_id:
+    if will_submit_new_task:
         product_item = first_product_reference_item(token, parent_fields)
         human_items = collect_nine_grid_video_human_reference_items(token, parent_record_id)
         prompt_refs = [{
@@ -1709,7 +1835,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频生成状态": "生成中",
             "视频任务ID": task_id,
-            "视频错误信息": f"恢复轮询已有九宫格视频任务。task_id={task_id}",
+            "视频错误信息": f"恢复轮询已有九宫格视频任务。{video_task_route_tag(route)} task_id={task_id}",
             "错误信息": "",
         }))
     else:
@@ -1767,10 +1893,10 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             )
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频任务ID": task_id,
-            "视频错误信息": f"已提交九宫格视频任务，正在轮询。task_id={task_id}",
+            "视频错误信息": f"已提交九宫格视频任务，正在轮询。{video_task_route_tag(route)} task_id={task_id}",
         }))
     if route.provider == "OTU":
-        result = poll_omni_video_task(video_config, task_id)
+        result = poll_otu_nine_grid_video_task(video_config, task_id)
     else:
         result = poll_reference_video_task(route, task_id)
     video_url = extract_video_url(result)

@@ -328,6 +328,14 @@ class NineGridVideoTests(unittest.TestCase):
             watches["多图九宫格参考图生成"]["required_field_values"],
             {"记录类型": ["参考资产"]},
         )
+        self.assertEqual(watches["多图九宫格参考图生成"]["trigger_values"], ["待生成", "生成中"])
+        reference_waiting_claim = {"参考图生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(reference_waiting_claim, watches["多图九宫格参考图生成"], "待生成")
+        self.assertEqual(reference_waiting_claim["参考图任务ID"], "")
+
+        reference_running_claim = {"参考图生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(reference_running_claim, watches["多图九宫格参考图生成"], "生成中")
+        self.assertNotIn("参考图任务ID", reference_running_claim)
         self.assertEqual(
             watches["多图九宫格参考图审核推进"]["required_field_values"],
             {"记录类型": ["参考资产"], "参考图审核状态": ["通过"]},
@@ -338,6 +346,13 @@ class NineGridVideoTests(unittest.TestCase):
             {"记录类型": ["Board分段"]},
         )
         self.assertEqual(watches["多图九宫格图片生成"]["trigger_values"], ["待生成", "生成中"])
+        image_waiting_claim = {"图片生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(image_waiting_claim, watches["多图九宫格图片生成"], "待生成")
+        self.assertEqual(image_waiting_claim["图片任务ID"], "")
+
+        image_running_claim = {"图片生成状态": "生成中"}
+        dispatcher.apply_claim_clear_fields(image_running_claim, watches["多图九宫格图片生成"], "生成中")
+        self.assertNotIn("图片任务ID", image_running_claim)
         self.assertEqual(
             watches["多图九宫格视频生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
@@ -471,6 +486,45 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(kwargs["metadata"]["reference_roles"], ["product:1", "human:owner", "environment:main_room"])
         self.assertIn("PRODUCT REFERENCE LOCK", submitter.call_args.args[1])
         self.assertNotIn("exact_product_overlay_cells", result)
+
+    def test_render_nine_grid_image_resumes_existing_otu_task_without_resubmitting(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图片提示词": "Show the selected spray product in the nine-grid.",
+            "图片AI供应商": "OTU",
+            "图片AI模型": "OTU / gpt-image-2",
+            "图片生成状态": "生成中",
+            "图片任务ID": "task_existing_image",
+            "图片原始响应JSON": '{"submit":{"id":"task_existing_image"}}',
+        }
+        updates = []
+
+        with patch.object(nine_grid, "ensure_nine_grid_table"), \
+             patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, {"记录类型": "母任务"}]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "collect_nine_grid_reference_images") as collect_refs, \
+             patch.object(nine_grid, "build_reference_urls") as build_urls, \
+             patch.object(nine_grid, "build_reference_contact_sheet") as contact_sheet, \
+             patch.object(nine_grid, "submit_otu_image_task") as submitter, \
+             patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}) as poller, \
+             patch.object(nine_grid, "download_otu_image_result"), \
+             patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_nine_grid_image("recBoard")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_existing_image")
+        submitter.assert_not_called()
+        collect_refs.assert_not_called()
+        build_urls.assert_not_called()
+        contact_sheet.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing_image")
+        self.assertIn("恢复轮询已有 OTU 九宫格图片任务", updates[0]["图片错误信息"])
 
     def test_build_reference_asset_records_creates_separate_humans_pet_and_environment(self):
         payload = sample_plan_payload()
@@ -630,7 +684,6 @@ class NineGridVideoTests(unittest.TestCase):
         for forbidden in ["urine", "pee", "wet patch", "fleas", "ticks", "insects", "damaged spot", "dirty area"]:
             self.assertNotIn(forbidden, lowered)
 
-
     def test_environment_reference_prompt_keeps_urine_stain_without_pet_subject(self):
         prompt = nine_grid.build_reference_asset_prompt({
             "asset_type": "environment",
@@ -640,8 +693,8 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertIn("urine stain", prompt)
         self.assertIn("wet patch", prompt)
-        self.assertIn("Do not include any people, pets, product bottles", prompt)
         self.assertNotIn("cat urine stain", prompt)
+        self.assertIn("Do not include any people, pets, product bottles", prompt)
 
     def test_environment_reference_prompt_filters_character_product_action(self):
         prompt = nine_grid.build_reference_asset_prompt({
@@ -762,6 +815,46 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
 
+    def test_render_reference_asset_resumes_existing_otu_task_without_resubmitting(self):
+        fields = {
+            "记录类型": "参考资产",
+            "父任务记录ID": "recParent",
+            "资产类型": "human",
+            "资产ID": "owner",
+            "参考图来源": "AI自动生成",
+            "参考提示词": "Generate the owner reference.",
+            "参考图AI模型": "OTU / gpt-image-2",
+            "参考图生成状态": "生成中",
+            "参考图任务ID": "task_existing_ref",
+            "参考图原始响应JSON": '{"submit":{"id":"task_existing_ref"}}',
+        }
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=fields), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "submit_otu_image_task") as submitter, \
+             patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}) as poller, \
+             patch.object(nine_grid, "download_otu_image_result"), \
+             patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_reference_asset("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_existing_ref")
+        submitter.assert_not_called()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_existing_ref")
+        self.assertIn("恢复轮询已有 OTU 参考图任务", updates[0]["参考图错误信息"])
+
     def test_render_reference_asset_submits_aitgenne_image_generation(self):
         fields = {
             "记录类型": "参考资产",
@@ -858,7 +951,92 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn(payload["error_code"], {"UPSTREAM_RATE_LIMIT", "UPSTREAM_RETRYABLE"})
         self.assertTrue(payload["retryable"])
 
-    def test_dispatcher_retryable_errors_ignore_retry_limit_and_write_error_field(self):
+    def test_poll_otu_nine_grid_video_task_times_out_when_queued_zero_progress_stalls(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"queued","progress":0}'
+        response.json.return_value = {"id": "task_stuck", "status": "queued", "progress": 0}
+        times = iter([0, 0, 601])
+
+        with patch("tk_nine_grid_video.requests.get", return_value=response), \
+             self.assertRaisesRegex(TimeoutError, "queued progress=0"):
+            nine_grid.poll_otu_nine_grid_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_stuck",
+                queued_zero_progress_timeout_seconds=600,
+                max_poll_seconds=2400,
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        payload = nine_grid.build_error_payload(TimeoutError("OTU queued progress=0 timeout"), stage="nine_grid_video")
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+
+    def test_poll_otu_nine_grid_video_task_times_out_from_upstream_created_at_after_restart(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"queued","progress":0,"created_at":0}'
+        response.json.return_value = {"id": "task_old", "status": "queued", "progress": 0, "created_at": 0}
+        times = iter([601, 601])
+
+        with patch("tk_nine_grid_video.requests.get", return_value=response), \
+             self.assertRaisesRegex(TimeoutError, "created_at") as caught:
+            nine_grid.poll_otu_nine_grid_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_old",
+                queued_zero_progress_timeout_seconds=600,
+                max_poll_seconds=2400,
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        payload = nine_grid.build_error_payload(caught.exception, stage="nine_grid_video")
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+
+    def test_poll_otu_nine_grid_video_task_continues_when_queued_zero_progress_is_under_threshold(self):
+        queued = Mock()
+        queued.status_code = 200
+        queued.text = '{"status":"queued","progress":0}'
+        queued.json.return_value = {"id": "task_ok", "status": "queued", "progress": 0}
+        completed = Mock()
+        completed.status_code = 200
+        completed.text = '{"status":"completed","video_url":"https://x.test/video.mp4"}'
+        completed.json.return_value = {"id": "task_ok", "status": "completed", "video_url": "https://x.test/video.mp4"}
+        times = iter([0, 0, 599])
+
+        with patch("tk_nine_grid_video.requests.get", side_effect=[queued, completed]) as get:
+            result = nine_grid.poll_otu_nine_grid_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_ok",
+                queued_zero_progress_timeout_seconds=600,
+                max_poll_seconds=2400,
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(get.call_count, 2)
+
+    def test_poll_otu_nine_grid_video_task_returns_completed_video(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"completed","video_url":"https://x.test/video.mp4"}'
+        response.json.return_value = {"id": "task_done", "status": "completed", "video_url": "https://x.test/video.mp4"}
+
+        with patch("tk_nine_grid_video.requests.get", return_value=response) as get:
+            result = nine_grid.poll_otu_nine_grid_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_done",
+                now_fn=lambda: 0,
+                sleep_fn=lambda seconds: None,
+            )
+
+        self.assertEqual(result["video_url"], "https://x.test/video.mp4")
+        self.assertEqual(get.call_count, 1)
+
+    def test_dispatcher_retryable_errors_stop_after_retry_limit(self):
         watch = {
             "name": "多图九宫格视频生成",
             "script": "tk_nine_grid_video.py",
@@ -870,7 +1048,6 @@ class NineGridVideoTests(unittest.TestCase):
             "error_field": "视频错误信息",
             "max_retries": 1,
         }
-        updates = []
         retry_counts = []
         payload = {
             "status": "failed_retryable",
@@ -882,16 +1059,13 @@ class NineGridVideoTests(unittest.TestCase):
         with patch.object(dispatcher, "get_retry_count", return_value=5), \
              patch.object(dispatcher, "set_retry_count", side_effect=lambda task_key, retry_count, **kwargs: retry_counts.append(retry_count)), \
              patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "生成中"}), \
-             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(dispatcher, "safe_update_record") as update_record, \
              patch.object(dispatcher, "bump_metric"):
             retried = dispatcher.maybe_retry_task("token", watch, "recBoard", "task-key", "failed", error_payload=payload)
 
-        self.assertTrue(retried)
+        self.assertFalse(retried)
         self.assertEqual(retry_counts, [6])
-        self.assertEqual(updates[0]["视频生成状态"], "待生成")
-        self.assertIn("自动重试中[UPSTREAM_RATE_LIMIT]", updates[0]["视频错误信息"])
-        self.assertIn("第 6 次失败", updates[0]["视频错误信息"])
-        self.assertIn("Omni upstream failed", updates[0]["视频错误信息"])
+        update_record.assert_not_called()
 
     def test_dispatcher_retry_respects_manual_stop_status(self):
         watch = {
@@ -1008,6 +1182,91 @@ class NineGridVideoTests(unittest.TestCase):
             dispatcher.check_and_run("token", watch)
 
         self.assertEqual(len(launched), 1)
+
+    def test_dispatcher_skips_running_record_when_live_process_exists(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 1,
+        }
+        record = {"record_id": "recImage", "fields": {"图片生成状态": "生成中", "任务名称": "image task"}}
+
+        with patch.object(dispatcher, "apply_stage_policy", side_effect=lambda item: item), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
+    def test_dispatcher_claims_stale_running_record_when_no_live_process_exists(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 1,
+        }
+        record = {"record_id": "recImage", "fields": {"图片生成状态": "生成中", "任务名称": "image task"}}
+        launched = []
+
+        with patch.object(dispatcher, "apply_stage_policy", side_effect=lambda item: item), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_active_running_tasks", return_value=0), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=False), \
+             patch.object(dispatcher, "should_skip_claim_by_cache", return_value=True), \
+             patch.object(dispatcher, "safe_get_record", return_value=record["fields"]), \
+             patch.object(dispatcher, "safe_update_record"), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen", side_effect=lambda *args, **kwargs: launched.append(args) or Mock(poll=lambda: None)), \
+             patch.object(dispatcher, "save_running_tasks"), \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher, "get_retry_count", return_value=0):
+            dispatcher.check_and_run("token", watch)
+
+        self.assertEqual(len(launched), 1)
+
+    def test_dispatcher_does_not_treat_trigger_equal_running_as_stale(self):
+        watch = {
+            "name": "测试审核推进",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "参考图审核状态",
+            "trigger_value": "通过",
+            "running_value": "通过",
+            "args": ["reference-approval"],
+            "max_concurrency": 1,
+        }
+        record = {"record_id": "recAsset", "fields": {"参考图审核状态": "通过", "任务名称": "approval task"}}
+
+        with patch.object(dispatcher, "apply_stage_policy", side_effect=lambda item: item), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=False), \
+             patch.object(dispatcher, "should_skip_claim_by_cache", return_value=True), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
 
     def test_dispatcher_prunes_stale_running_state(self):
         saved = []
@@ -1233,7 +1492,7 @@ class NineGridVideoTests(unittest.TestCase):
              patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path) as download_attachment, \
              patch.object(nine_grid, "collect_nine_grid_reference_images") as collect_all_refs, \
              patch.object(nine_grid, "submit_omni_video_task", return_value=("task_omni", {"id": "task_omni"}), create=True) as omni_submitter, \
-             patch.object(nine_grid, "poll_omni_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
+             patch.object(nine_grid, "poll_otu_nine_grid_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
              patch.object(nine_grid, "download_video"), \
              patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video"), \
              patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
@@ -1389,7 +1648,7 @@ class NineGridVideoTests(unittest.TestCase):
              patch.object(nine_grid, "collect_nine_grid_video_product_reference") as product_ref, \
              patch.object(nine_grid, "collect_nine_grid_video_human_references") as human_refs, \
              patch.object(nine_grid, "submit_omni_video_task") as submitter, \
-             patch.object(nine_grid, "poll_omni_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}) as poller, \
+             patch.object(nine_grid, "poll_otu_nine_grid_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}) as poller, \
              patch.object(nine_grid, "download_video") as downloader, \
              patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video") as uploader, \
              patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
@@ -1411,6 +1670,62 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("恢复轮询", updates[0]["视频错误信息"])
         self.assertEqual(updates[-1]["视频生成状态"], "成功")
         self.assertEqual(updates[-1]["分镜视频"][0]["file_token"], "ft_video")
+
+    def test_render_nine_grid_video_resubmits_when_existing_task_belongs_to_other_route(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Use the current Aitgenne model.",
+            "视频AI模型": "Aitgenne / omni-flash",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+            "视频生成状态": "生成中",
+            "视频任务ID": "task_old_otu",
+            "视频错误信息": "已提交九宫格视频任务，正在轮询。provider=OTU model=omni_flash-10s task_id=task_old_otu",
+        }
+        parent_fields = {"记录类型": "母任务", "关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+        latest_fields = {"视频生成状态": "生成中", "视频任务ID": "task_new_aitgenne"}
+        updates = []
+        board_reads = 0
+
+        def fake_get_record(token, table_id, record_id):
+            nonlocal board_reads
+            if record_id == "recBoard":
+                board_reads += 1
+                if board_reads > 1:
+                    return latest_fields
+                return child_fields
+            if record_id == "recParent":
+                return parent_fields
+            if record_id == "recProduct":
+                return product_fields
+            return latest_fields
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=fake_get_record), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[
+                 {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
+             ]), \
+             patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "submit_reference_video_task", return_value=("task_new_aitgenne", {"id": "task_new_aitgenne"}), create=True) as submitter, \
+             patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True) as poller, \
+             patch.object(nine_grid, "download_video"), \
+             patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = nine_grid.render_nine_grid_video("recBoard")
+
+        submitter.assert_called_once()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_new_aitgenne")
+        self.assertEqual(result["task_id"], "task_new_aitgenne")
+        self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
+        self.assertIn("provider=Aitgenne", updates[-2]["视频错误信息"])
 
     def test_video_dry_run_caps_human_references_at_five_after_grid_and_product(self):
         child_fields = {

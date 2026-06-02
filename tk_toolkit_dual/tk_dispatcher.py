@@ -101,6 +101,7 @@ WATCH_LIST = [
         'table': TABLE_STORYBOARD_VIDEO,
         'status_field': '故事板图片生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '故事板图片错误信息',
@@ -110,18 +111,20 @@ WATCH_LIST = [
         'max_concurrency': 1,
         'max_retries': 2,
         'required_field_values': {'记录类型': ['Storyboard分段']},
-        'claim_clear_values': {
-            '故事板图': [],
-            '故事板图片任务ID': '',
-            '故事板图片错误信息': '',
-            '故事板图片生成时间': None,
-            '分镜视频': [],
-            '分镜视频URL': None,
-            '视频任务ID': '',
-            '视频错误信息': '',
-            '视频生成时间': None,
-            '视频生成状态': '不触发',
-            '错误信息': '',
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '故事板图': [],
+                '故事板图片任务ID': '',
+                '故事板图片错误信息': '',
+                '故事板图片生成时间': None,
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
         },
     },
     {
@@ -170,6 +173,7 @@ WATCH_LIST = [
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '参考图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '参考图错误信息',
@@ -179,14 +183,16 @@ WATCH_LIST = [
         'max_concurrency': 1,
         'max_retries': 1,
         'required_field_values': {'记录类型': ['参考资产']},
-        'claim_clear_values': {
-            '参考图': [],
-            '参考图file_token': '',
-            '参考图本地路径': '',
-            '参考图任务ID': '',
-            '参考图错误信息': '',
-            '参考图生成时间': None,
-            '错误信息': '',
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '参考图': [],
+                '参考图file_token': '',
+                '参考图本地路径': '',
+                '参考图任务ID': '',
+                '参考图错误信息': '',
+                '参考图生成时间': None,
+                '错误信息': '',
+            },
         },
     },
     {
@@ -248,18 +254,20 @@ WATCH_LIST = [
         'max_concurrency': 1,
         'max_retries': 1,
         'required_field_values': {'记录类型': ['Board分段']},
-        'claim_clear_values': {
-            '九宫格图': [],
-            '图片任务ID': '',
-            '图片错误信息': '',
-            '图片生成时间': None,
-            '分镜视频': [],
-            '分镜视频URL': None,
-            '视频任务ID': '',
-            '视频错误信息': '',
-            '视频生成时间': None,
-            '视频生成状态': '不触发',
-            '错误信息': '',
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '九宫格图': [],
+                '图片任务ID': '',
+                '图片错误信息': '',
+                '图片生成时间': None,
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
         },
     },
     {
@@ -356,6 +364,7 @@ WATCH_LIST = [
         'table': TABLE_FIRST_LAST_VIDEO,
         'status_field': '首帧图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '首帧图错误信息',
@@ -366,6 +375,31 @@ WATCH_LIST = [
         'max_retries': 2,
         'skip_deprecated_records': True,
         'skip_if_field_values': {'记录类型': ['母任务']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '首帧图': [],
+                '首帧图file_token': '',
+                '首帧图本地路径': '',
+                '首帧图任务ID': '',
+                '首帧图原始响应JSON': '',
+                '首帧图错误信息': '',
+                '首帧图生成时间': None,
+                '尾帧图': [],
+                '尾帧图file_token': '',
+                '尾帧图本地路径': '',
+                '尾帧图任务ID': '',
+                '尾帧图原始响应JSON': '',
+                '尾帧图错误信息': '',
+                '尾帧图生成时间': None,
+                '尾帧图生成状态': '不触发',
+                '首尾帧视频': [],
+                '首尾帧视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '首尾帧首帧审核推进',
@@ -404,6 +438,7 @@ WATCH_LIST = [
         'table': TABLE_FIRST_LAST_VIDEO,
         'status_field': '尾帧图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '尾帧图错误信息',
@@ -414,6 +449,23 @@ WATCH_LIST = [
         'max_retries': 2,
         'skip_deprecated_records': True,
         'skip_if_field_values': {'记录类型': ['母任务']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '尾帧图': [],
+                '尾帧图file_token': '',
+                '尾帧图本地路径': '',
+                '尾帧图任务ID': '',
+                '尾帧图原始响应JSON': '',
+                '尾帧图错误信息': '',
+                '尾帧图生成时间': None,
+                '首尾帧视频': [],
+                '首尾帧视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '首尾帧尾帧审核推进',
@@ -522,6 +574,7 @@ WATCH_LIST = [
         'table': TABLE_MULTI_ROLE_FIRST_LAST,
         'status_field': '参考图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '参考图错误信息',
@@ -532,6 +585,18 @@ WATCH_LIST = [
         'max_retries': 2,
         'required_field_values': {'记录类型': ['参考资产']},
         'skip_deprecated_records': True,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '参考图': [],
+                '参考图file_token': '',
+                '参考图本地路径': '',
+                '参考图任务ID': '',
+                '参考图原始响应JSON': '',
+                '参考图错误信息': '',
+                '参考图生成时间': None,
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '多角色参考图审核推进',
@@ -570,6 +635,7 @@ WATCH_LIST = [
         'table': TABLE_MULTI_ROLE_FIRST_LAST,
         'status_field': '关键帧生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '关键帧错误信息',
@@ -580,6 +646,18 @@ WATCH_LIST = [
         'max_retries': 2,
         'required_field_values': {'记录类型': ['关键帧']},
         'skip_deprecated_records': True,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '关键帧图': [],
+                '关键帧图file_token': '',
+                '关键帧图本地路径': '',
+                '关键帧任务ID': '',
+                '关键帧原始响应JSON': '',
+                '关键帧错误信息': '',
+                '关键帧生成时间': None,
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '多角色关键帧审核推进',
@@ -664,6 +742,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
         'status_field': '参考图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -692,6 +771,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_SHOTS,
         'status_field': '分镜图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '分镜图错误信息',
@@ -706,6 +786,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_SHOTS,
         'status_field': '尾帧图生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '尾帧图错误信息',
@@ -1115,6 +1196,14 @@ def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=No
     retry_count = get_retry_count(task_key)
     new_retry = retry_count + 1
     set_retry_count(task_key, new_retry, watch=watch, record_id=record_id)
+    max_retries = int(watch.get('max_retries', 1) or 0)
+    if new_retry > max_retries:
+        log.error(
+            f"[{watch['name']}] 可重试错误已超过重试上限: {record_id} "
+            f"retries={retry_count}/{max_retries} error_code={error_payload.get('error_code')} "
+            f"reason={error_payload.get('message')}"
+        )
+        return False
     try:
         fallback_trigger = (watch.get('trigger_values') or [watch['trigger_value']])[0]
         error_message = error_payload.get('message') or str(reason)
@@ -1352,11 +1441,26 @@ def check_and_run(token, watch):
             update_record_state_cache(watch, record_id, status)
             continue
 
-        if should_skip_claim_by_cache(watch, record_id, status):
-            continue
-
         task_key = make_task_key(watch, record_id)
-        if task_key in running_processes or task_key in running_state:
+        running_info = {'script': watch['script'], 'record_id': record_id}
+        if task_key in running_processes:
+            process = running_processes[task_key].get('process')
+            if process is None or process.poll() is None:
+                continue
+
+        if task_key in running_state:
+            running_info = running_state.get(task_key) or running_info
+            if has_live_process_for_task_key(task_key, running_info):
+                continue
+            log.warning(f"[{watch['name']}] 清理无活跃进程的 running state，准备接管: {record_id}")
+            running_state.pop(task_key, None)
+            save_running_tasks(running_state)
+
+        if status == watch.get('running_value') and status != watch.get('trigger_value'):
+            if has_live_process_for_task_key(task_key, running_info):
+                continue
+            log.info(f"[{watch['name']}] 接管 stale 生成中任务: {record_id}")
+        elif should_skip_claim_by_cache(watch, record_id, status):
             continue
 
         task_id = extract_text(fields.get('任务ID', '')) or extract_text(fields.get('任务名称', '')) or record_id
