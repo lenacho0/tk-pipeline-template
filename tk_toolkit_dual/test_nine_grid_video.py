@@ -1067,6 +1067,23 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(retry_counts, [6])
         update_record.assert_not_called()
 
+    def test_dispatcher_task_key_distinguishes_same_script_record_by_action(self):
+        image_watch = {
+            "name": "多图九宫格图片生成",
+            "script": "tk_nine_grid_video.py",
+            "args": ["image"],
+        }
+        video_watch = {
+            "name": "多图九宫格视频生成",
+            "script": "tk_nine_grid_video.py",
+            "args": ["video"],
+        }
+
+        self.assertNotEqual(
+            dispatcher.make_task_key(image_watch, "recBoard"),
+            dispatcher.make_task_key(video_watch, "recBoard"),
+        )
+
     def test_dispatcher_retry_respects_manual_stop_status(self):
         watch = {
             "name": "多图九宫格视频生成",
@@ -1203,6 +1220,41 @@ class NineGridVideoTests(unittest.TestCase):
              patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
              patch.object(dispatcher, "load_running_tasks", return_value={}), \
              patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
+    def test_dispatcher_counts_persisted_live_tasks_against_concurrency(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 1,
+        }
+        running_state = {
+            dispatcher.make_task_key(watch, "recLive"): {
+                "script": "tk_nine_grid_video.py",
+                "args": ["image"],
+                "record_id": "recLive",
+            },
+        }
+        waiting_record = {"record_id": "recWait", "fields": {"图片生成状态": "待生成", "任务名称": "waiting task"}}
+
+        with patch.object(dispatcher, "apply_stage_policy", side_effect=lambda item: item), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value=running_state), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[waiting_record]), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher, "save_running_tasks"), \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher, "get_retry_count", return_value=0), \
              patch.object(dispatcher.subprocess, "Popen") as popen:
             dispatcher.check_and_run("token", watch)
 

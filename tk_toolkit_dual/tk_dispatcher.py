@@ -1084,7 +1084,25 @@ def log_metrics_snapshot():
 
 
 def make_task_key(watch, record_id):
+    args = watch.get('args') or []
+    action_key = ' '.join(str(arg) for arg in args)
+    return f"{watch['script']}::{action_key}::{record_id}"
+
+
+def legacy_task_key(watch, record_id):
     return f"{watch['script']}::{record_id}"
+
+
+def pop_legacy_running_state(running_state, watch, record_id):
+    old_key = legacy_task_key(watch, record_id)
+    if old_key not in running_state:
+        return False
+    task_info = running_state.get(old_key) or {}
+    if has_live_process_for_task_key(old_key, task_info):
+        return True
+    running_state.pop(old_key, None)
+    save_running_tasks(running_state)
+    return False
 
 
 def count_running_by_watch(watch_name):
@@ -1108,9 +1126,31 @@ def count_active_running_tasks():
     return count
 
 
+def running_state_entry_matches_watch(task_info, watch):
+    if task_info.get('script') != watch.get('script'):
+        return False
+    stored_args = [str(arg) for arg in (task_info.get('args') or [])]
+    watch_args = [str(arg) for arg in (watch.get('args') or [])]
+    if stored_args:
+        return stored_args == watch_args
+    return False
+
+
+def count_live_persisted_by_watch(watch, running_state):
+    count = 0
+    for task_key, task_info in (running_state or {}).items():
+        if task_key in running_processes:
+            continue
+        if not running_state_entry_matches_watch(task_info or {}, watch):
+            continue
+        if has_live_process_for_task_key(task_key, task_info or {}):
+            count += 1
+    return count
+
+
 def has_live_process_for_task_key(task_key, task_info):
     script = task_info.get('script') or task_key.split('::', 1)[0]
-    record_id = task_info.get('record_id') or (task_key.split('::', 1)[1] if '::' in task_key else '')
+    record_id = task_info.get('record_id') or (task_key.rsplit('::', 1)[1] if '::' in task_key else '')
     if not script or not record_id:
         return False
     try:
@@ -1163,6 +1203,7 @@ def set_retry_count(task_key, retry_count, watch=None, record_id=None):
         'retry_count': retry_count,
         'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'script': watch['script'] if watch else state.get(task_key, {}).get('script'),
+        'args': watch.get('args', []) if watch else state.get(task_key, {}).get('args', []),
         'record_id': record_id or state.get(task_key, {}).get('record_id'),
     }
     save_retry_state(state)
@@ -1409,7 +1450,8 @@ def get_table_records_cached(token, table_id, force=False):
 def check_and_run(token, watch):
     watch = apply_stage_policy(watch)
     cleanup_finished_processes(token)
-    current_running = count_running_by_watch(watch['name'])
+    running_state = load_running_tasks()
+    current_running = count_running_by_watch(watch['name']) + count_live_persisted_by_watch(watch, running_state)
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
     if GLOBAL_MAX_CONCURRENCY > 0:
         global_slots = max(0, GLOBAL_MAX_CONCURRENCY - count_active_running_tasks())
@@ -1425,7 +1467,6 @@ def check_and_run(token, watch):
         return
 
     launched = 0
-    running_state = load_running_tasks()
 
     for rec in records:
         if launched >= available_slots:
@@ -1447,6 +1488,9 @@ def check_and_run(token, watch):
             process = running_processes[task_key].get('process')
             if process is None or process.poll() is None:
                 continue
+
+        if pop_legacy_running_state(running_state, watch, record_id):
+            continue
 
         if task_key in running_state:
             running_info = running_state.get(task_key) or running_info
@@ -1486,6 +1530,7 @@ def check_and_run(token, watch):
             }
             running_state[task_key] = {
                 'script': watch['script'],
+                'args': extra_args,
                 'record_id': record_id,
                 'task_id': task_id,
                 'started_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
