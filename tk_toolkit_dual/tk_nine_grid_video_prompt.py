@@ -112,6 +112,10 @@ JSON Schema：
 - 如果某格包含人物或宠物说话，dialogue_or_voiceover 必须使用冒号直接承接台词，不得用英文引号包住台词，例如：The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
 - 如果某格是画外旁白，dialogue_or_voiceover 使用：Thai voiceover: [泰语口播]
 - 如果某格无口播，dialogue_or_voiceover 留空或写 No speech.
+- board.video_prompt 必须采用 Timeline beats 结构，把每个 Cell 或时间段写成独立 beat，并在对应 beat 内写 Visual / Action / Camera / Dialogue or Voiceover / SFX or Ambient；不能只写视觉动作。
+- dialogue / voiceover 必须跟随对应画面 beat 出现，不得只在 video_prompt 末尾集中列出台词。
+- 如果原脚本提供泰语台词，board.video_prompt 必须在对应 beat 中逐字保留泰语原文，只可说明谁说、用什么语气说；不得翻译成中文或英文，不得改写、删减或概括为 loudly complains / says something。
+- 中文理解稿只用于审核理解，不得进入 board.video_prompt 的口播文本。
 """.strip()
 
 
@@ -204,6 +208,8 @@ NINE_GRID_VIDEO_SYSTEM_PROMPT = """
 - 动作自然连贯，不要突然换场景、换人、换产品。
 - 如果有产品使用动作，要完整呈现使用前、使用中、使用后。
 - 如果有口播或对白，按输入提示词中的目标语言自然说出；不要生成屏幕字幕。
+- 如果输入提示词含 Timeline beats，必须按 beat 顺序执行；每条 Dialogue/Voiceover 只在其对应 beat 中发声，不要提前、延后或集中到片尾。
+- 如果输入提示词含 Audio constraints，必须逐字使用 Timeline beats 中的泰语台词作为音频；不得翻译、改写、删减、摘要或替换为中文/英文。
 - Use a colon after the speaker action and do not wrap spoken lines in quotation marks. Correct: The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
 - 如果是画外旁白，使用 Thai voiceover: [泰语口播]，不要强制画面人物张嘴。
 - 如果没有口播，就保持自然环境声或无明显语音，不要自行编写新台词。

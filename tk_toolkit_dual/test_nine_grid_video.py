@@ -74,6 +74,61 @@ def sample_plan_payload():
     }
 
 
+def sample_thai_script_text():
+    return """
+分镜
+时间
+画面
+说话人
+说话方式
+完整声纹描述
+本地化口播文案 (泰语)
+中文理解
+S01
+0.0-2.0s
+中景：客人刚进门，指着地毯。特写地毯黄渍。客人夸张捂鼻倒退。
+客人
+嫌弃大喊
+Young Thai male, loud, disgusted
+客人：เฮ้ย! ทำไมพรมแกเหลืองงี้ กลิ่นฉี่หึ่งเลย!
+客人：我去！你家地毯怎么黄了，还一股尿骚味！
+S02
+2.0-3.5s
+近景：主人急满头大汗，从背后光速掏出带有黄绿标签的喷雾瓶。
+主人
+急促打断
+Young Thai male, panicked but fast
+主人：แป๊บนะ! ขอเวลา 3 วินาที!
+主人：等下！给我三秒钟！
+S03
+3.5-5.5s
+特写：对准地毯黄渍狂喷，白泡瞬间覆盖。
+主人
+边做边说
+Young Thai male, fast
+主人：สเปรย์สลายกลิ่นฉี่ จัดการคราบฝังลึกโดยเฉพาะ!
+主人：尿味分解喷雾，专门对付陈年尿渍！
+S04
+5.5-7.5s
+特写：主人拿纸巾用力一按一擦，黄渍瞬间消失，地毯变干净。
+无
+无口播
+强烈的摩擦声和清脆的“叮”音效
+（无）
+纯视觉展示去黄效果。
+S05
+7.5-10.0s
+中景：客人蹲下深吸一口气，震惊脸。小狗在旁边摇尾巴。
+客人/主人
+震惊/得意
+Young Thai male, shocked / proud
+客人：เอ๊ะ? ไม่มีกลิ่นแล้วจริงดิ?
+主人：สลายกลิ่นฉี่ ไม่ทิ้งคราบเหลือง!
+客人：咦？真没味了？
+主人：分解尿味，不留黄印！
+""".strip()
+
+
 class NineGridVideoTests(unittest.TestCase):
     def test_plan_system_prompt_requires_dynamic_environment_problem_anchors(self):
         prompt = prompts.NINE_GRID_PLAN_SYSTEM_PROMPT
@@ -97,6 +152,8 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("Ambient noise", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
         self.assertIn("Dialogue", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
         self.assertIn("do not wrap spoken lines in quotation marks", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
+        self.assertIn("Timeline beats", prompts.NINE_GRID_PLAN_SYSTEM_PROMPT)
+        self.assertIn("Dialogue/Voiceover", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
         self.assertNotIn("OTU", prompts.NINE_GRID_IMAGE_SYSTEM_PROMPT)
         self.assertNotIn("Omni", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
 
@@ -114,6 +171,46 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(len(normalized["boards"]), 1)
         self.assertEqual(len(normalized["boards"][0]["cells"]), 9)
         self.assertEqual(normalized["boards"][0]["board_index"], 1)
+
+    def test_build_board_video_prompt_binds_cell_thai_dialogue_to_timeline_beat(self):
+        payload = sample_plan_payload()
+        board = payload["boards"][0]
+        board["cells"][2]["dialogue_or_voiceover"] = "Guest says in Thai: เฮ้ย! ทำไมพรมแกเหลืองงี้"
+        board.pop("video_prompt", None)
+
+        prompt = nine_grid.build_board_video_prompt(board)
+
+        self.assertIn("Timeline beats:", prompt)
+        self.assertIn("Cell 3 / approx", prompt)
+        self.assertIn("Dialogue/Voiceover: เฮ้ย! ทำไมพรมแกเหลืองงี้", prompt)
+        self.assertLess(prompt.index("Cell 3 / approx"), prompt.index("Dialogue/Voiceover: เฮ้ย! ทำไมพรมแกเหลืองงี้"))
+        self.assertNotIn("Guest says in Thai", prompt)
+        self.assertIn("Cell 1 / approx", prompt)
+        self.assertIn("Dialogue/Voiceover: No speech; natural room tone only.", prompt)
+        self.assertIn("Audio constraints:", prompt)
+
+    def test_extract_script_thai_dialogue_removes_inline_chinese_translation(self):
+        script = (
+            "老公烦躁抱怨young Thai male, annoyed, loud"
+            "เหม็นฉี่หมาไม่ไหวแล้ว! เบาะรถพังหมด แวะจอดเลย!"
+            "狗尿味受不了了！车座全毁了，快停车！"
+        )
+
+        lines = nine_grid.extract_script_thai_dialogue(script)
+
+        self.assertEqual(lines[0]["text"], "เหม็นฉี่หมาไม่ไหวแล้ว! เบาะรถพังหมด แวะจอดเลย!")
+
+    def test_audio_constraints_do_not_duplicate_dialogue_as_tail_list(self):
+        prompt = "Thai dialogue timing: owner says 'ฉันทนกลิ่นไม่ไหวแล้ว ต้องยกให้คนอื่น!' in the opening."
+
+        result = nine_grid.append_audio_dialogue_to_video_prompt(
+            prompt,
+            ["ฉันทนกลิ่นไม่ไหวแล้ว ต้องยกให้คนอื่น!"],
+        )
+
+        self.assertIn("Thai dialogue timing", result)
+        self.assertIn("Audio constraints:", result)
+        self.assertNotIn("- ฉันทนกลิ่นไม่ไหวแล้ว ต้องยกให้คนอื่น!", result)
 
     def test_build_child_board_records_uses_record_ids_and_supplier_neutral_fields(self):
         parent_fields = {
@@ -140,6 +237,69 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("图片AI模型", fields)
         self.assertIn("视频AI供应商", fields)
         self.assertIn("视频AI模型", fields)
+
+    def test_child_board_video_prompt_binds_original_thai_dialogue_to_timeline_beats(self):
+        parent_fields = {
+            "任务名称": "nine-grid task",
+            "脚本内容": sample_thai_script_text(),
+        }
+        payload = sample_plan_payload()
+        payload["boards"][0]["video_prompt"] = "Generate a 10-second scene with the guest complaining and the host cleaning."
+        payload["boards"][0]["cells"][2]["dialogue_or_voiceover"] = "客人嫌弃大喊：我去！你家地毯怎么黄了，还一股尿骚味！"
+
+        records = nine_grid.build_child_board_records(
+            parent_fields,
+            payload,
+            parent_record_id="recParent",
+            batch_id="NINEGRID-1",
+        )
+
+        prompt = records[0]["fields"]["视频提示词"]
+        self.assertIn("Timeline beats:", prompt)
+        self.assertIn("Cell 3 / approx", prompt)
+        self.assertIn("Dialogue/Voiceover: เฮ้ย! ทำไมพรมแกเหลืองงี้ กลิ่นฉี่หึ่งเลย!", prompt)
+        self.assertIn("Cell 4 / approx", prompt)
+        self.assertIn("Dialogue/Voiceover: แป๊บนะ! ขอเวลา 3 วินาที!", prompt)
+        self.assertIn("เฮ้ย! ทำไมพรมแกเหลืองงี้ กลิ่นฉี่หึ่งเลย!", prompt)
+        self.assertIn("แป๊บนะ! ขอเวลา 3 วินาที!", prompt)
+        self.assertIn("สเปรย์สลายกลิ่นฉี่ จัดการคราบฝังลึกโดยเฉพาะ!", prompt)
+        self.assertIn("เอ๊ะ? ไม่มีกลิ่นแล้วจริงดิ?", prompt)
+        self.assertIn("สลายกลิ่นฉี่ ไม่ทิ้งคราบเหลือง!", prompt)
+        self.assertNotIn("客人：", prompt)
+        self.assertNotIn("主人：", prompt)
+        self.assertNotIn("我去！你家地毯怎么黄了", prompt)
+        self.assertNotIn("Audio / spoken dialogue:", prompt)
+
+    def test_child_board_video_prompt_filters_thai_dialogue_by_board_time_range(self):
+        parent_fields = {
+            "任务名称": "two-board task",
+            "脚本内容": sample_thai_script_text(),
+        }
+        payload = sample_plan_payload()
+        first_board = payload["boards"][0]
+        first_board["time_range"] = "0-3.5s"
+        first_board["video_prompt"] = "Generate board one."
+        second_board = dict(first_board)
+        second_board["board_index"] = 2
+        second_board["time_range"] = "3.5-10s"
+        second_board["video_prompt"] = "Generate board two."
+        payload["boards"] = [first_board, second_board]
+
+        records = nine_grid.build_child_board_records(
+            parent_fields,
+            payload,
+            parent_record_id="recParent",
+            batch_id="NINEGRID-1",
+        )
+
+        first_prompt = records[0]["fields"]["视频提示词"]
+        second_prompt = records[1]["fields"]["视频提示词"]
+        self.assertIn("Dialogue/Voiceover: เฮ้ย! ทำไมพรมแกเหลืองงี้ กลิ่นฉี่หึ่งเลย!", first_prompt)
+        self.assertIn("Dialogue/Voiceover: แป๊บนะ! ขอเวลา 3 วินาที!", first_prompt)
+        self.assertNotIn("สเปรย์สลายกลิ่นฉี่", first_prompt)
+        self.assertIn("Dialogue/Voiceover: สเปรย์สลายกลิ่นฉี่ จัดการคราบฝังลึกโดยเฉพาะ!", second_prompt)
+        self.assertIn("Dialogue/Voiceover: เอ๊ะ? ไม่มีกลิ่นแล้วจริงดิ?", second_prompt)
+        self.assertNotIn("แป๊บนะ! ขอเวลา 3 วินาที!", second_prompt)
 
     def test_child_board_records_wait_when_reference_assets_need_review(self):
         records = nine_grid.build_child_board_records(

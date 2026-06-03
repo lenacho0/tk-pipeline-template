@@ -101,6 +101,12 @@ OTU_NINE_GRID_VIDEO_MAX_POLL_SECONDS = 2400
 OTU_NINE_GRID_VIDEO_POLL_INTERVAL = 15
 OTU_NINE_GRID_VIDEO_POLL_TIMEOUT = 45
 OTU_NINE_GRID_QUEUED_ZERO_PROGRESS_TIMEOUT_SECONDS = 600
+THAI_TEXT_RE = re.compile(r"[\u0E00-\u0E7F]")
+CJK_TEXT_RE = re.compile(r"[\u3400-\u9FFF]")
+TIME_RANGE_RE = re.compile(
+    r"(?P<start>\d+(?:\.\d+)?)\s*[-–—]\s*(?P<end>\d+(?:\.\d+)?)\s*s?",
+    re.IGNORECASE,
+)
 NINE_GRID_VIDEO_TRANSLATION_INSTRUCTION = (
     "Faithfully translate any Chinese visual/action directions into English while preserving all Thai dialogue exactly. "
     "Do not rewrite, soften, add, remove, or sanitize story details."
@@ -275,18 +281,245 @@ def build_board_image_prompt(board: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def contains_thai_text(text: Any) -> bool:
+    return bool(THAI_TEXT_RE.search(extract_text(text)))
+
+
+def parse_seconds_time_range(text: Any) -> Optional[Tuple[float, float]]:
+    match = TIME_RANGE_RE.search(extract_text(text))
+    if not match:
+        return None
+    start = float(match.group("start"))
+    end = float(match.group("end"))
+    if end < start:
+        start, end = end, start
+    return start, end
+
+
+def ranges_overlap(left: Tuple[float, float], right: Tuple[float, float]) -> bool:
+    left_start, left_end = left
+    right_start, right_end = right
+    return left_start < right_end and left_end > right_start
+
+
+def sanitize_script_thai_dialogue_line(line: str) -> str:
+    thai_match = THAI_TEXT_RE.search(line)
+    if not thai_match:
+        return ""
+    tail = line[thai_match.start():]
+    cjk_match = CJK_TEXT_RE.search(tail)
+    if cjk_match:
+        tail = tail[:cjk_match.start()]
+    tail = tail.strip(" \t\r\n,，;；")
+    if not tail:
+        return ""
+    return tail
+
+
+def extract_script_thai_dialogue(script: str) -> List[Dict[str, Any]]:
+    lines: List[Dict[str, Any]] = []
+    current_time_range: Optional[Tuple[float, float]] = None
+    seen = set()
+    for raw_line in script.replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        parsed_range = parse_seconds_time_range(line)
+        if parsed_range:
+            current_time_range = parsed_range
+        if not contains_thai_text(line):
+            continue
+        dialogue = sanitize_script_thai_dialogue_line(line)
+        if not dialogue or dialogue in seen:
+            continue
+        seen.add(dialogue)
+        lines.append({"text": dialogue, "time_range": current_time_range})
+    return lines
+
+
+def select_script_thai_dialogue_for_board(script: str, board: Dict[str, Any]) -> List[str]:
+    dialogue_items = extract_script_thai_dialogue(script)
+    if not dialogue_items:
+        return []
+    board_range = parse_seconds_time_range(board.get("time_range"))
+    if not board_range:
+        return [item["text"] for item in dialogue_items]
+    selected = [
+        item["text"]
+        for item in dialogue_items
+        if item.get("time_range") and ranges_overlap(item["time_range"], board_range)
+    ]
+    return selected or [item["text"] for item in dialogue_items]
+
+
+def script_dialogue_items_for_board(script: str, board: Dict[str, Any]) -> List[Dict[str, Any]]:
+    dialogue_items = extract_script_thai_dialogue(script)
+    if not dialogue_items:
+        return []
+    board_range = parse_seconds_time_range(board.get("time_range"))
+    if not board_range:
+        return dialogue_items
+    selected = [
+        item for item in dialogue_items
+        if item.get("time_range") and ranges_overlap(item["time_range"], board_range)
+    ]
+    return selected or dialogue_items
+
+
+def extract_board_cell_thai_dialogue(board: Dict[str, Any]) -> List[str]:
+    lines: List[str] = []
+    seen = set()
+    for cell in _as_list(board.get("cells")):
+        dialogue = sanitize_script_thai_dialogue_line(extract_text(cell.get("dialogue_or_voiceover")).strip())
+        if not dialogue or not contains_thai_text(dialogue):
+            continue
+        if dialogue in seen:
+            continue
+        seen.add(dialogue)
+        lines.append(dialogue)
+    return lines
+
+
+def extract_cell_thai_dialogue(cell: Dict[str, Any]) -> List[str]:
+    dialogue = sanitize_script_thai_dialogue_line(extract_text(cell.get("dialogue_or_voiceover")).strip())
+    if not dialogue or not contains_thai_text(dialogue):
+        return []
+    return [dialogue]
+
+
+def _format_seconds(value: float) -> str:
+    text = f"{value:.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
+def board_cell_time_range(board: Dict[str, Any], cell_index: int) -> Optional[Tuple[float, float]]:
+    board_range = parse_seconds_time_range(board.get("time_range"))
+    cells = _as_list(board.get("cells"))
+    total_cells = len(cells) or 9
+    if not board_range or total_cells <= 0:
+        return None
+    start, end = board_range
+    duration = max(end - start, 0.0)
+    step = duration / total_cells if total_cells else 0.0
+    offset = max(cell_index - 1, 0)
+    cell_start = start + step * offset
+    cell_end = end if cell_index >= total_cells else start + step * (offset + 1)
+    return cell_start, cell_end
+
+
+def format_cell_time_label(board: Dict[str, Any], cell_index: int) -> str:
+    cell_range = board_cell_time_range(board, cell_index)
+    if not cell_range:
+        return f"Cell {cell_index} / approx storyboard beat {cell_index}"
+    return f"Cell {cell_index} / approx {_format_seconds(cell_range[0])}-{_format_seconds(cell_range[1])}s"
+
+
+def dialogue_for_cell(
+    board: Dict[str, Any],
+    cell: Dict[str, Any],
+    script_dialogue_items: List[Dict[str, Any]],
+) -> List[str]:
+    cell_index = int(cell.get("cell_index") or 0)
+    cell_range = board_cell_time_range(board, cell_index)
+    selected: List[str] = []
+    if cell_range:
+        selected = [
+            item["text"]
+            for item in script_dialogue_items
+            if item.get("time_range") and ranges_overlap(item["time_range"], cell_range)
+        ]
+    if selected:
+        return selected
+    return extract_cell_thai_dialogue(cell)
+
+
+def build_audio_dialogue_section(dialogue_lines: List[str]) -> str:
+    if not dialogue_lines:
+        return ""
+    lines = [
+        "Audio constraints:",
+        "All Thai dialogue lines above are exact audio lines; preserve them verbatim, in order, and in the same language.",
+        "Do not translate, rewrite, summarize, add, remove, or move dialogue.",
+        "Dialogue and voiceover are audio only. No subtitles, captions, stickers, labels, or visible Thai text.",
+        "Use natural local Thai TikTok delivery matched to each character's emotion.",
+    ]
+    return "\n".join(lines)
+
+
+def append_audio_dialogue_to_video_prompt(prompt: str, dialogue_lines: List[str]) -> str:
+    clean_prompt = extract_text(prompt).strip()
+    if "Audio / spoken dialogue" in clean_prompt:
+        section_lines = [line for line in dialogue_lines if line and line not in clean_prompt]
+    else:
+        section_lines = [line for line in dialogue_lines if line]
+    section = build_audio_dialogue_section(section_lines)
+    if not section:
+        return clean_prompt
+    if clean_prompt:
+        return f"{clean_prompt}\n\n{section}"
+    return section
+
+
+def build_board_video_prompt_for_record(parent_fields: Dict[str, Any], board: Dict[str, Any]) -> str:
+    return build_timed_board_video_prompt_for_record(parent_fields, board)
+
+
+def build_timed_board_video_prompt_for_record(parent_fields: Dict[str, Any], board: Dict[str, Any]) -> str:
+    script = extract_text(parent_fields.get("脚本内容")).strip()
+    script_items = script_dialogue_items_for_board(script, board)
+    fallback_lines = extract_board_cell_thai_dialogue(board)
+    prompt_intro = extract_text(board.get("video_prompt")).strip()
+    board_time = extract_text(board.get("time_range")).strip()
+    narrative_task = extract_text(board.get("narrative_task")).strip()
+    lines = [
+        f"Generate one continuous {board_time or '8-12s'} vertical 9:16 TikTok UGC smartphone video from the current Board nine-grid storyboard.",
+        "Use the nine-grid image as a narrative order reference only; do not render a split-screen, grid, panel borders, UI, or captions.",
+        "Follow the cells left to right, top to bottom, while keeping one continuous scene and natural action flow.",
+        "Reference / consistency guard:",
+        "- Keep the same person, pet, product, room, furniture, lighting, problem location, and product package from the uploaded references.",
+        "- If the visual storyboard conflicts with the product reference image, the product reference image wins.",
+    ]
+    if narrative_task:
+        lines.append(f"- Narrative task: {narrative_task}")
+    if prompt_intro:
+        lines.append(f"- Existing board direction to preserve visually: {prompt_intro}")
+    lines.append("")
+    lines.append("Timeline beats:")
+    used_dialogue: List[str] = []
+    cells = _as_list(board.get("cells"))
+    for idx, cell in enumerate(cells, start=1):
+        cell_index = int(cell.get("cell_index") or idx)
+        cell_dialogue = dialogue_for_cell(board, cell, script_items)
+        if not cell_dialogue and not script_items and fallback_lines:
+            cell_dialogue = extract_cell_thai_dialogue(cell)
+        used_dialogue.extend(cell_dialogue)
+        dialogue_text = " / ".join(cell_dialogue) if cell_dialogue else "No speech; natural room tone only."
+        lines.extend([
+            "",
+            f"{format_cell_time_label(board, cell_index)}:",
+            f"Visual: {extract_text(cell.get('visual_node')).strip() or 'Continue the storyboard action.'}",
+            f"Action: {extract_text(cell.get('character_action')).strip() or 'Keep the characters moving naturally according to the storyboard.'}",
+            f"Camera: {extract_text(cell.get('camera')).strip() or 'Natural handheld smartphone framing.'}",
+            f"Emotion: {extract_text(cell.get('emotion')).strip() or 'Natural UGC reaction.'}",
+            f"Dialogue/Voiceover: {dialogue_text}",
+            "SFX/Ambient: Use realistic home room tone and only the product/action sounds implied by this beat.",
+        ])
+    lines.append("")
+    lines.append(build_audio_dialogue_section(used_dialogue or fallback_lines))
+    lines.extend([
+        "",
+        "Negative constraints:",
+        "No subtitles, captions, labels, stickers, watermarks, logos, poster text, visible Thai text, split-screen grid, panel borders, or reference-sheet layout.",
+    ])
+    return "\n".join(part for part in lines if part is not None).strip()
+
+
 def build_board_video_prompt(board: Dict[str, Any]) -> str:
-    cells = "; ".join(
-        f"Cell {cell.get('cell_index')} {cell.get('visual_node')}"
-        for cell in _as_list(board.get("cells"))
+    return build_timed_board_video_prompt_for_record(
+        {},
+        board,
     )
-    return (
-        "Use the current Board nine-grid image as a narrative sequence reference, not as a final split-screen layout. "
-        "Read the nine cells left to right, top to bottom, then turn them into one continuous vertical 9:16 TikTok UGC smartphone video. "
-        "Keep the same person, pet, product, room, furniture, lighting, and problem location from the uploaded references. "
-        f"Action sequence: {cells}. "
-        "No grid layout, no split screen, no panel borders, no subtitles, no stickers, no watermarks, no UI, no poster text."
-    )
+
 
 
 def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
@@ -857,7 +1090,7 @@ def build_child_board_records(
             "图片画面尺寸": DEFAULT_IMAGE_SIZE,
             "图片画面比例": DEFAULT_ASPECT_RATIO,
             "图片生成状态": "不触发" if await_reference_assets else "待生成",
-            "视频提示词": extract_text(board.get("video_prompt")).strip(),
+            "视频提示词": build_board_video_prompt_for_record(parent_fields, board),
             "视频AI供应商": _field_with_default(parent_fields, "视频AI供应商", DEFAULT_VIDEO_PROVIDER),
             "视频AI模型": _field_with_default(parent_fields, "视频AI模型", DEFAULT_VIDEO_MODEL),
             "视频生成模型": (
