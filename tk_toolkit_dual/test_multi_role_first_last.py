@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -308,6 +309,17 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(shared_refs["depends_on_keyframe_type"], "S01_FIRST")
         self.assertIn("role_5", tail_refs["asset_ids"])
 
+    def test_normalize_plan_forces_product_reference_when_keyframe_shows_product(self):
+        plan = sample_plan()
+        plan["keyframes"][0]["prompt"] = "Role 1 holds the branded spray bottle next to the stained sofa."
+        plan["keyframes"][0]["reference_requirements"]["use_product_reference"] = False
+        plan["keyframes"][0]["reference_requirements"]["reason"] = "The product bottle is visible in the first hook frame."
+
+        payload = multi_role.normalize_plan_payload(plan)
+
+        first_refs = payload["keyframes"][0]["reference_requirements"]
+        self.assertTrue(first_refs["use_product_reference"])
+
     def test_normalize_plan_enforces_keyframe_dependency_chain(self):
         plan = sample_plan()
         plan["keyframes"][1]["reference_requirements"]["depends_on_keyframe_type"] = ""
@@ -597,6 +609,83 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         poll.assert_called_once()
         self.assertEqual(result["task_id"], "task_existing")
         self.assertTrue(any(update.get("关键帧生成状态") == "成功" for update in updates))
+
+    def test_keyframe_image_passes_non_primary_references_to_image_generation(self):
+        fields = {
+            "记录类型": "关键帧",
+            "记录状态": "有效",
+            "关键帧提示词": "show the product rescue moment",
+            "关键帧版本": 1,
+            "父任务记录ID": "parent",
+            "关键帧AI模型": "Aitgenne / gpt-image-2",
+        }
+        refs = [
+            {"role": "product:1", "url": "https://tmp.test/product.png", "path": "/tmp/product.png", "file_token": "ft_product", "primary": False},
+            {"role": "human:role_1", "url": "https://tmp.test/role.png", "path": "/tmp/role.png", "file_token": "ft_role", "primary": False},
+        ]
+        image_result = SimpleNamespace(
+            task_id="",
+            submit_body={"ok": True},
+            result_body={"ok": True},
+            request_summary={"reference_count": 2},
+        )
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
+             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://api.aitgenne.com", "api_key": "key", "model": "gpt-image-2"})), \
+             patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
+             patch.object(multi_role, "run_image_generation", return_value=image_result) as run_image, \
+             patch.object(multi_role, "upload_image_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record"), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            multi_role.render_keyframe_image("keyframe_rec")
+
+        kwargs = run_image.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], "")
+        self.assertEqual(kwargs["reference_image_paths"], ["/tmp/product.png", "/tmp/role.png"])
+
+    def test_keyframe_image_keeps_primary_as_image_path_and_sends_other_references(self):
+        fields = {
+            "记录类型": "关键帧",
+            "记录状态": "有效",
+            "关键帧提示词": "continue from first frame with product",
+            "关键帧版本": 1,
+            "父任务记录ID": "parent",
+            "关键帧AI模型": "Aitgenne / gpt-image-2",
+        }
+        refs = [
+            {"role": "base_keyframe:S01_FIRST", "url": "https://tmp.test/base.png", "path": "/tmp/base.png", "file_token": "ft_base", "primary": True},
+            {"role": "product:1", "url": "https://tmp.test/product.png", "path": "/tmp/product.png", "file_token": "ft_product", "primary": False},
+            {"role": "environment:room", "url": "https://tmp.test/room.png", "path": "/tmp/room.png", "file_token": "ft_room", "primary": False},
+        ]
+        image_result = SimpleNamespace(
+            task_id="",
+            submit_body={"ok": True},
+            result_body={"ok": True},
+            request_summary={"reference_count": 3},
+        )
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
+             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://api.aitgenne.com", "api_key": "key", "model": "gpt-image-2"})), \
+             patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
+             patch.object(multi_role, "run_image_generation", return_value=image_result) as run_image, \
+             patch.object(multi_role, "upload_image_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record"), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            multi_role.render_keyframe_image("keyframe_rec")
+
+        kwargs = run_image.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], "/tmp/base.png")
+        self.assertEqual(kwargs["reference_image_paths"], ["/tmp/product.png", "/tmp/room.png"])
 
     def test_video_clip_resumes_existing_task_id(self):
         fields = {

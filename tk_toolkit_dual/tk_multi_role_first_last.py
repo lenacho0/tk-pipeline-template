@@ -207,6 +207,8 @@ DEFAULT_PARSE_PROMPT = """
 - S02_TAIL 的 depends_on_keyframe_type 必须是 S01_TAIL_SHARED_S02_FIRST。
 
 但每张关键帧使用哪些产品/角色/环境参考图，必须根据脚本画面内容决定，不按帧位硬编码。
+- 如果关键帧画面出现产品本体、产品包装、瓶身、喷雾瓶、清洁剂/除味剂/除臭剂/去味剂，或出现拿起、展示、喷洒、倒出、擦拭等产品使用动作，该关键帧 reference_requirements.use_product_reference 必须为 true，即使它是 S01_FIRST。
+- 只有纯人物/宠物/环境铺垫、且明确没有产品出镜或产品使用动作的关键帧，才允许 use_product_reference 为 false。
 """.strip()
 
 
@@ -496,6 +498,69 @@ def normalize_reference_requirements(raw: Any) -> Dict[str, Any]:
     }
 
 
+PRODUCT_REFERENCE_TERMS = (
+    "product",
+    "branded",
+    "package",
+    "packaging",
+    "label",
+    "bottle",
+    "spray",
+    "sprayer",
+    "cleaner",
+    "deodorizer",
+    "deodoriser",
+    "odor remover",
+    "odour remover",
+    "enzyme",
+    "detergent",
+    "产品",
+    "包装",
+    "瓶身",
+    "瓶子",
+    "喷雾",
+    "喷瓶",
+    "清洁剂",
+    "除味剂",
+    "除臭剂",
+    "祛味剂",
+    "去味剂",
+    "除味",
+    "除臭",
+    "祛味",
+    "去味",
+    "喷洒",
+    "展示产品",
+    "拿着产品",
+    "使用产品",
+)
+PRODUCT_REFERENCE_NEGATIONS = (
+    "no product",
+    "without product",
+    "product not visible",
+    "no bottle",
+    "without bottle",
+    "no spray bottle",
+    "without spray bottle",
+    "无产品",
+    "没有产品",
+    "不出现产品",
+    "产品不出镜",
+    "无瓶",
+    "没有瓶",
+    "没有喷雾",
+)
+
+
+def keyframe_text_implies_product_reference(*values: Any) -> bool:
+    text = " ".join(extract_text(value).strip() for value in values if extract_text(value).strip()).lower()
+    if not text:
+        return False
+    if any(negation in text for negation in PRODUCT_REFERENCE_NEGATIONS):
+        return False
+    return any(term in text for term in PRODUCT_REFERENCE_TERMS)
+
+
 def normalize_keyframe(frame: Dict[str, Any], idx: int) -> Dict[str, Any]:
     frame_type = extract_text(frame.get("keyframe_type") or frame.get("type")).strip() or KEYFRAME_TYPES[idx - 1]
     if frame_type not in KEYFRAME_TYPES:
@@ -504,6 +569,8 @@ def normalize_keyframe(frame: Dict[str, Any], idx: int) -> Dict[str, Any]:
     if not prompt:
         raise ValueError(f"keyframes[{idx}] 缺少 prompt")
     refs = normalize_reference_requirements(frame.get("reference_requirements"))
+    if not refs["use_product_reference"] and keyframe_text_implies_product_reference(prompt, frame.get("title"), refs.get("reason")):
+        refs["use_product_reference"] = True
     visible_role_ids = [extract_text(x).strip() for x in _as_list(frame.get("visible_role_ids")) if extract_text(x).strip()]
     return {
         "keyframe_type": frame_type,
@@ -1537,14 +1604,17 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         "reference_roles": [ref["role"] for ref in refs],
         "reference_manifest": manifest,
     }
+    reference_image_paths = [ref["path"] for ref in refs if ref.get("path") and not ref.get("primary")]
+    input_mode = "image-to-image" if primary.get("path") or reference_image_paths else "text-to-image"
     existing_task_id = extract_text(fields.get("关键帧任务ID")).strip()
     image_result = run_image_generation(
         route,
         prompt,
         output_path,
-        input_mode="image-to-image" if primary else "text-to-image",
+        input_mode=input_mode,
         image_path=primary.get("path", ""),
         image_url=primary.get("url", ""),
+        reference_image_paths=reference_image_paths,
         metadata=metadata,
         size=size,
         aspect_ratio=aspect_ratio,
