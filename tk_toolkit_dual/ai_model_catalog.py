@@ -180,7 +180,16 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
     _entry("Aitgenne", "视频", "happyhorse-1.0-i2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合单张九宫格图转视频"),
     _entry("Aitgenne", "视频", "omni-flash", "视频统一格式", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合 Omni 视频候选"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-t2v", "happyhorse视频", STATUS_CANDIDATE, "官网模型广场", notes="文生视频，不适合当前九宫格主链路。"),
-    _entry("Aitgenne", "视频", "happyhorse-1.0-video-edit", "happyhorse视频", STATUS_DISCARD, "用户明确不接", notes="视频编辑，不适合生成主链路。"),
+    _entry(
+        "Aitgenne",
+        "视频编辑",
+        "happyhorse-1.0-video-edit",
+        "happyhorse视频编辑",
+        STATUS_ENABLED,
+        "官网模型广场/用户确认",
+        notes="仅供 006 视频编辑任务表使用，不进入普通视频生成下拉。",
+        call_types=("happyhorse视频编辑",),
+    ),
     _entry("Aitgenne", "视频", "veo-3.1-fast", "Google 音视频待验证", STATUS_CANDIDATE, "官网模型广场待确认", notes="Aitgenne /v1/models 未返回，先不进生产下拉。"),
     _entry("Aitgenne", "视频", "kling-video", "视频统一格式", STATUS_DISCARD, "用户明确不接"),
     _entry("Aitgenne", "视频", "pixverse-video", "视频统一格式", STATUS_DISCARD, "用户明确不接"),
@@ -271,16 +280,21 @@ FIRST_LAST_VIDEO_MODEL_NAMES = (
     "OTU / veo_3_1-fast-fl-hd",
     "OTU / veo_3_1-fl",
     "OTU / veo_3_1-hd-fl",
+    "Aitgenne / happyhorse-1.0-i2v",
+)
+
+VIDEO_EDIT_MODEL_NAMES = (
+    "Aitgenne / happyhorse-1.0-video-edit",
 )
 
 
-def _options_for_display_names(names: Sequence[str]) -> List[Dict[str, str]]:
-    by_name = {entry.display_name: entry for entry in production_models("视频")}
+def _options_for_display_names(names: Sequence[str], capability: str = "视频") -> List[Dict[str, str]]:
+    by_name = {entry.display_name: entry for entry in production_models(capability)}
     options: List[Dict[str, str]] = []
     for name in names:
         entry = by_name.get(name)
         if not entry:
-            raise ValueError(f"生产视频模型不存在或未启用: {name}")
+            raise ValueError(f"生产{capability}模型不存在或未启用: {name}")
         options.append(option_for_model(entry))
     return options
 
@@ -304,7 +318,7 @@ def is_first_last_video_model(value: str, provider: str = "") -> bool:
 
 
 AI_PROVIDER_OPTIONS = [opt("AIHubMix"), opt("Aitgenne", "Purple"), opt("OTU", "Green")]
-AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("语音", "Purple")]
+AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("视频编辑", "Purple"), opt("语音", "Purple")]
 AI_TASK_TYPE_OPTIONS = [
     opt("脚本解析拆分"),
     opt("故事板提示词拆分"),
@@ -324,6 +338,7 @@ IMAGE_MODEL_OPTIONS = select_options_for_capability("图片")
 VIDEO_AI_MODEL_OPTIONS = select_options_for_capability("视频")
 REFERENCE_VIDEO_MODEL_OPTIONS = _options_for_display_names(REFERENCE_VIDEO_MODEL_NAMES)
 FIRST_LAST_VIDEO_MODEL_OPTIONS = _options_for_display_names(FIRST_LAST_VIDEO_MODEL_NAMES)
+VIDEO_EDIT_MODEL_OPTIONS = _options_for_display_names(VIDEO_EDIT_MODEL_NAMES, "视频编辑")
 VOICE_MODEL_OPTIONS = select_options_for_capability("语音")
 VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), *VIDEO_AI_MODEL_OPTIONS]
 REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *REFERENCE_VIDEO_MODEL_OPTIONS]

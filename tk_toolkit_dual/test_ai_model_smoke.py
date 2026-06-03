@@ -7,6 +7,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ai_model_smoke
+import ai_model_catalog
 
 
 class AiModelSmokeTests(unittest.TestCase):
@@ -14,7 +15,8 @@ class AiModelSmokeTests(unittest.TestCase):
         queue = ai_model_smoke.build_smoke_queue(all_enabled_media=True)
         names = [entry.display_name for entry in queue]
 
-        self.assertEqual(14, len(names))
+        expected_count = len(ai_model_catalog.production_models("图片")) + len(ai_model_catalog.production_models("视频"))
+        self.assertEqual(expected_count, len(names))
         self.assertEqual([
             "OTU / gpt-image-2",
             "OTU / gpt-image-2-2K",

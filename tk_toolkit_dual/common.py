@@ -41,6 +41,7 @@ TABLE_STORYBOARD_VIDEO = _TABLES.get('storyboard_video', '') # 故事板图片/O
 TABLE_NINE_GRID_VIDEO = _TABLES.get('nine_grid_video', '') # 多图九宫格视频生成
 TABLE_FIRST_LAST_VIDEO = _TABLES.get('first_last_video', '') # 首尾帧视频生成
 TABLE_MULTI_ROLE_FIRST_LAST = _TABLES.get('multi_role_first_last', '') # 多角色首尾帧生成
+TABLE_VIDEO_EDIT = _TABLES.get('video_edit', '') # 视频编辑任务
 TABLE_VOICE_LIBRARY = _TABLES.get('voice_library', '')        # 音色库
 TABLE_TEXT_AUDIO = _TABLES.get('text_audio', '')              # 文案转音频
 TABLE_PRODUCT      = _TABLES['product']           # 产品信息

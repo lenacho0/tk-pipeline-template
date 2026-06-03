@@ -20,6 +20,7 @@ from common import (
     TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     TABLE_SCRIPT_DOC_SHOTS,
     TABLE_STORYBOARD_VIDEO,
+    TABLE_VIDEO_EDIT,
     extract_text,
     feishu_headers,
     get_feishu_token,
@@ -81,6 +82,7 @@ VIDEO_STAGES = {
     "故事板视频生成-Omni",
     "多图九宫格视频生成",
 }
+VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
 
 TASK_TABLES = {
@@ -91,6 +93,7 @@ TASK_TABLES = {
     "script_doc_shots": "003-3脚本文档-分镜生产表",
     "storyboard_video": "004-故事板图片视频生成表",
     "nine_grid_video": "005-多图九宫格视频生成表",
+    "video_edit": "006-视频编辑任务表",
 }
 
 
@@ -123,6 +126,7 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图九宫格图片生成", "参考图"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格视频生成默认", "多图九宫格视频生成", "视频"),
+    RuntimeDefaultSpec("video_edit", "视频编辑默认", "视频编辑-HappyHorse", "视频编辑"),
 )
 
 
@@ -154,6 +158,7 @@ TABLE_IDS_BY_KEY: Dict[str, str] = {
     "script_doc_shots": TABLE_SCRIPT_DOC_SHOTS,
     "storyboard_video": TABLE_STORYBOARD_VIDEO,
     "nine_grid_video": TABLE_NINE_GRID_VIDEO,
+    "video_edit": TABLE_VIDEO_EDIT,
 }
 
 
@@ -176,6 +181,7 @@ RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "参考图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
+    RuntimeDefaultBackfillSpec("video_edit", TASK_TABLES["video_edit"], "视频编辑默认", "编辑状态", "", "输出分辨率"),
 )
 
 
@@ -198,7 +204,7 @@ def link_field(name: str, link_table: str) -> Dict[str, Any]:
 def model_catalog_fields() -> List[Dict[str, Any]]:
     return [
         select_field("供应商", ["AIHubMix", "Aitgenne", "OTU"]),
-        select_field("能力类型", ["文本", "图片", "视频", "语音"]),
+        select_field("能力类型", ["文本", "图片", "视频", "视频编辑", "语音"]),
         text_field("模型名称"),
         text_field("显示名称"),
         select_field("调用方式", [
@@ -209,6 +215,7 @@ def model_catalog_fields() -> List[Dict[str, Any]]:
             "OTU /v1/videos multipart",
             "Gemini native Veo",
             "happyhorse视频",
+            "happyhorse视频编辑",
             "视频统一格式",
             "专用 API",
         ]),
@@ -424,6 +431,8 @@ def infer_capability(stage: str, provider: str, model: str) -> str:
         return "图片"
     if stage in VIDEO_STAGES:
         return "视频"
+    if stage in VIDEO_EDIT_STAGES:
+        return "视频编辑"
     if stage in VOICE_STAGES:
         return "语音"
     for entry in ai_model_catalog.catalog_entries(ai_model_catalog.INSPECTABLE_STATUSES):
@@ -440,7 +449,7 @@ def infer_provider(stage: str, api_base: str, model: str, explicit: str = "") ->
     lower_base = (api_base or "").lower()
     if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "故事板图片生成-OTU", "故事板视频生成-Omni", "多图九宫格图片生成", "多图九宫格视频生成"}:
         return "OTU"
-    if "aitgenne" in lower_base or stage == "语音合成-MiniMax":
+    if "aitgenne" in lower_base or stage in {"语音合成-MiniMax", "视频编辑-HappyHorse"}:
         return "Aitgenne"
     if "aihubmix" in lower_base or "gemini" in lower_base or stage.endswith("-Gemini") or stage == "分镜视频生成-Veo":
         return "AIHubMix"
@@ -1063,7 +1072,7 @@ def default_api_base(provider: str, capability: str) -> str:
     if provider == "OTU":
         return "https://otuapi.com"
     if provider == "Aitgenne":
-        return "https://api.aitgenne.com"
+        return "https://api.aitgenne.com/v1"
     if provider == "AIHubMix" and capability == "文本":
         return "https://aihubmix.com/gemini"
     if provider == "AIHubMix":
@@ -1098,6 +1107,8 @@ def default_params(provider: str, capability: str, model: str) -> Dict[str, Any]
         return {"size": size, "aspect_ratio": "9:16"}
     if capability == "视频":
         return {"size": "720x1280", "aspect_ratio": "9:16", "seconds": "8"}
+    if capability == "视频编辑":
+        return {"resolution": "720P", "audio_setting": "origin"}
     return {}
 
 

@@ -55,6 +55,7 @@ class AiModelCatalogTests(unittest.TestCase):
         reference_names = [item["name"] for item in ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS]
         first_last_names = [item["name"] for item in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS]
         first_last_with_default = [item["name"] for item in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS]
+        video_edit_names = [item["name"] for item in ai_model_catalog.VIDEO_EDIT_MODEL_OPTIONS]
 
         self.assertEqual(reference_names, [
             "OTU / omni_flash-10s",
@@ -67,9 +68,13 @@ class AiModelCatalogTests(unittest.TestCase):
             "OTU / veo_3_1-fast-fl-hd",
             "OTU / veo_3_1-fl",
             "OTU / veo_3_1-hd-fl",
+            "Aitgenne / happyhorse-1.0-i2v",
         ])
         self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", reference_names)
         self.assertNotIn("Aitgenne / happyhorse-1.0-r2v", first_last_names)
+        self.assertEqual(video_edit_names, ["Aitgenne / happyhorse-1.0-video-edit"])
+        self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", reference_names)
+        self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", first_last_names)
         self.assertEqual(first_last_with_default[0], "默认（配置表）")
 
 

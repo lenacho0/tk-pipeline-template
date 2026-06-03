@@ -185,7 +185,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "首尾帧视频模型不支持参考图视频模型"):
                 first_last.maybe_unified_media_summary(
                     "token",
-                    {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-i2v"},
+                    {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-r2v"},
                     {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
                     capability="视频",
                     task_type="首帧图生视频",

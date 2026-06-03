@@ -25,9 +25,9 @@ DEFAULT_PROVIDER_BASES = {
         "视频": "https://aihubmix.com",
     },
     "Aitgenne": {
-        "文本": "https://api.aitgenne.com",
-        "图片": "https://api.aitgenne.com",
-        "视频": "https://api.aitgenne.com",
+        "文本": "https://api.aitgenne.com/v1",
+        "图片": "https://api.aitgenne.com/v1",
+        "视频": "https://api.aitgenne.com/v1",
     },
     "OTU": {
         "图片": "https://otuapi.com",

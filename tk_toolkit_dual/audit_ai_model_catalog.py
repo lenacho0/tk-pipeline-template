@@ -192,6 +192,9 @@ def build_candidate_rows(api_results: Dict[str, Dict[str, Any]], pricing_models:
         if entry.status not in VISIBLE_REPORT_STATUSES:
             seen.add((entry.provider, entry.model))
             continue
+        if entry.capability not in ai_model_catalog.UNIFIED_AI_CAPABILITIES:
+            seen.add((entry.provider, entry.model))
+            continue
         rows.append({
             "供应商": entry.provider,
             "模型 ID": entry.model,

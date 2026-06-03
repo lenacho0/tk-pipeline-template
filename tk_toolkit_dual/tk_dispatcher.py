@@ -51,6 +51,8 @@ KNOWN_ATTACHMENT_FIELD_NAMES = {
     '故事板图',
     '分镜视频',
     '九宫格图',
+    '源视频',
+    '结果视频',
 }
 
 log = logging.getLogger('dispatcher')
@@ -93,6 +95,29 @@ WATCH_LIST = [
         'timeout': 300,
         'max_concurrency': 2,
         'max_retries': 2,
+    },
+    {
+        'name': '视频编辑生成',
+        'table': TABLE_VIDEO_EDIT,
+        'status_field': '编辑状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_video_edit.py',
+        'args': ['edit'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '结果视频': [],
+                '视频任务ID': '',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '故事板提示词拆分',
@@ -882,7 +907,7 @@ WATCH_LIST = [
 
 
 RAW_WATCH_LIST = list(WATCH_LIST)
-WATCH_LIST = [w for w in WATCH_LIST if w.get('table')]
+WATCH_LIST = [w for w in WATCH_LIST if w.get('table') or w.get('keep_when_table_missing')]
 
 
 running_processes = {}
@@ -1745,6 +1770,8 @@ def main():
         check_daily_health()
 
         for watch in WATCH_LIST:
+            if not watch.get('table'):
+                continue
             check_and_run(token, watch)
 
         if time.time() - last_metrics_log > 600:

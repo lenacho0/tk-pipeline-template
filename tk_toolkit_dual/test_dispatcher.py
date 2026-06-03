@@ -112,6 +112,19 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertIsNone(claim_fields["视频生成时间"])
         self.assertEqual(claim_fields["视频生成状态"], "不触发")
 
+    def test_video_edit_watch_claim_clears_stale_result_state(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "视频编辑生成")
+        claim_fields = {watch["status_field"]: watch["running_value"]}
+
+        dispatcher.apply_claim_clear_fields(claim_fields, watch, trigger_value="待生成")
+
+        self.assertEqual(watch["script"], "tk_video_edit.py")
+        self.assertEqual(watch["args"], ["edit"])
+        self.assertEqual(claim_fields["编辑状态"], "生成中")
+        self.assertEqual(claim_fields["结果视频"], [])
+        self.assertEqual(claim_fields["视频任务ID"], "")
+        self.assertEqual(claim_fields["错误信息"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
