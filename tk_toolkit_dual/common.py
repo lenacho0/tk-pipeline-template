@@ -308,6 +308,10 @@ def build_error_payload(error, stage='unknown'):
         error_code = 'UPSTREAM_POLICY_BLOCKED'
         retryable = False
         failure_status = 'failed_terminal'
+    elif 'no available channel' in lower or 'model_not_found' in lower:
+        error_code = 'CONFIG_INVALID'
+        retryable = False
+        failure_status = 'failed_terminal'
     elif (
         '429' in lower
         or 'http 500' in lower and (
@@ -322,8 +326,6 @@ def build_error_payload(error, stage='unknown'):
         or '请稍后再试' in msg
         or 'upstream_error' in lower
         or '请重新提交' in msg
-        or 'no available channel' in lower
-        or 'model_not_found' in lower
         or 'http 502' in lower
         or 'http 503' in lower
     ):

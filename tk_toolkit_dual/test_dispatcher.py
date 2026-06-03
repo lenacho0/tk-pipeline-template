@@ -74,16 +74,16 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertTrue(payload["retryable"])
         self.assertEqual(payload["status"], "failed_retryable")
 
-    def test_upstream_no_available_channel_is_retryable(self):
+    def test_upstream_no_available_channel_is_terminal_config_error(self):
         payload = common.build_error_payload(
             "OTU 图片任务提交失败: HTTP 503, body={'code': 'fail_to_fetch_task', "
             "'message': '{\"error\":{\"code\":\"model_not_found\",\"message\":\"No available channel for model gpt-image-2 under group default\"}}'}",
             stage="image_generation",
         )
 
-        self.assertEqual(payload["error_code"], "UPSTREAM_RATE_LIMIT")
-        self.assertTrue(payload["retryable"])
-        self.assertEqual(payload["status"], "failed_retryable")
+        self.assertEqual(payload["error_code"], "CONFIG_INVALID")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_terminal")
 
     def test_dispatcher_normalization_does_not_make_policy_block_retryable(self):
         payload = dispatcher.normalize_dispatcher_error_payload({
