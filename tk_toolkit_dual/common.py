@@ -322,6 +322,10 @@ def build_error_payload(error, stage='unknown'):
         or '请稍后再试' in msg
         or 'upstream_error' in lower
         or '请重新提交' in msg
+        or 'no available channel' in lower
+        or 'model_not_found' in lower
+        or 'http 502' in lower
+        or 'http 503' in lower
     ):
         error_code = 'UPSTREAM_RATE_LIMIT'
         retryable = True
