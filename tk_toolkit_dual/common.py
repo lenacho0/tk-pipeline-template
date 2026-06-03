@@ -310,8 +310,16 @@ def build_error_payload(error, stage='unknown'):
         failure_status = 'failed_terminal'
     elif (
         '429' in lower
+        or 'http 500' in lower and (
+            'do_request_failed' in lower
+            or '上游负载已饱和' in msg
+            or '请稍后再试' in msg
+        )
         or 'rate limit' in lower
         or 'too many requests' in lower
+        or 'do_request_failed' in lower
+        or '上游负载已饱和' in msg
+        or '请稍后再试' in msg
         or 'upstream_error' in lower
         or '请重新提交' in msg
     ):

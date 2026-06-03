@@ -63,6 +63,17 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertFalse(payload["retryable"])
         self.assertEqual(payload["status"], "failed_terminal")
 
+    def test_aitgenne_upstream_saturation_500_is_retryable(self):
+        payload = common.build_error_payload(
+            "Aitgenne 参考图视频任务提交失败: HTTP 500, body={'code': 'do_request_failed', "
+            "'message': '当前分组上游负载已饱和，请稍后再试', 'data': None}",
+            stage="nine_grid_video",
+        )
+
+        self.assertEqual(payload["error_code"], "UPSTREAM_RATE_LIMIT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_retryable")
+
     def test_dispatcher_normalization_does_not_make_policy_block_retryable(self):
         payload = dispatcher.normalize_dispatcher_error_payload({
             "stage": "multi_role_first_last_video",

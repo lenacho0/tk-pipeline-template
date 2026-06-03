@@ -42,10 +42,60 @@ from tk_shot_video import (  # noqa: E402
 
 TARGET_STATUSES = {"待生成", "生成中", "失败"}
 URL_RE = re.compile(r"https?://[^\s'\",\])>}]+")
+RETRY_STATE_FILE = Path(__file__).with_name(".retry_state.ryan.json")
+DEAD_LETTER_FILE = Path(__file__).with_name(".dead_letter_tasks.ryan.json")
 
 
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def load_json_map(path: Any) -> Dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_json_map(path: Any, data: Dict[str, Any]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def dispatcher_task_key(kind: str, record_id: str, action: str = "video") -> str:
+    script = "tk_multi_role_first_last.py" if kind == "multi_role" else "tk_nine_grid_video.py"
+    return f"{script}::{action}::{record_id}"
+
+
+def clear_dispatcher_state_for_record(kind: str, record_id: str, *, action: str = "video", write: bool = False) -> Dict[str, Any]:
+    key = dispatcher_task_key(kind, record_id, action)
+    retry_state = load_json_map(RETRY_STATE_FILE)
+    dead_letters = load_json_map(DEAD_LETTER_FILE)
+    removed_retry_keys = [key] if key in retry_state else []
+    removed_dead_letter_keys = [key] if key in dead_letters else []
+    if write:
+        for item in removed_retry_keys:
+            retry_state.pop(item, None)
+        for item in removed_dead_letter_keys:
+            dead_letters.pop(item, None)
+        if removed_retry_keys:
+            save_json_map(RETRY_STATE_FILE, retry_state)
+        if removed_dead_letter_keys:
+            save_json_map(DEAD_LETTER_FILE, dead_letters)
+    return {
+        "removed_retry_keys": removed_retry_keys,
+        "removed_dead_letter_keys": removed_dead_letter_keys,
+    }
+
+
+def with_dispatcher_state_cleanup(action_result: Dict[str, Any], kind: str, record_id: str, write: bool) -> Dict[str, Any]:
+    cleanup = clear_dispatcher_state_for_record(kind, record_id, action="video", write=write)
+    if cleanup["removed_retry_keys"] or cleanup["removed_dead_letter_keys"]:
+        action_result = dict(action_result)
+        action_result["dispatcher_state_cleanup"] = cleanup
+    return action_result
 
 
 def attachment_items(value: Any) -> List[Dict[str, Any]]:
@@ -241,12 +291,17 @@ def success_payload(token: str, kind: str, record_id: str, fields: Dict[str, Any
 
 def upload_local_video(token: str, kind: str, record_id: str, fields: Dict[str, Any], local_path: str, video_url: str, write: bool) -> Dict[str, Any]:
     if not write:
-        return {"action": "upload_local_video", "local_path": local_path, "video_url": video_url}
+        return with_dispatcher_state_cleanup({"action": "upload_local_video", "local_path": local_path, "video_url": video_url}, kind, record_id, write)
     file_name = f"{record_id}_{'multi_role_clip' if kind == 'multi_role' else 'nine_grid_video'}.mp4"
     file_token = upload_video_to_feishu(token, local_path, file_name)
     payload = success_payload(token, kind, record_id, fields, file_token, local_path, video_url)
     safe_update_record(token, table_id(kind), record_id, payload)
-    return {"action": "uploaded_local_video", "file_token": file_token, "local_path": local_path, "video_url": video_url}
+    return with_dispatcher_state_cleanup(
+        {"action": "uploaded_local_video", "file_token": file_token, "local_path": local_path, "video_url": video_url},
+        kind,
+        record_id,
+        write,
+    )
 
 
 def mark_existing_attachment_success(
@@ -275,9 +330,9 @@ def mark_existing_attachment_success(
         payload[url_field(kind)] = format_url_field_value(video_url, field_types.get(url_field(kind), 0))
     payload = filter_fields(token, kind, payload)
     if not write:
-        return {"action": "mark_existing_attachment_success", "payload": payload}
+        return with_dispatcher_state_cleanup({"action": "mark_existing_attachment_success", "payload": payload}, kind, record_id, write)
     safe_update_record(token, table_id(kind), record_id, payload)
-    return {"action": "marked_existing_attachment_success", "file_token": file_token, "name": name}
+    return with_dispatcher_state_cleanup({"action": "marked_existing_attachment_success", "file_token": file_token, "name": name}, kind, record_id, write)
 
 
 def restore_history_video(token: str, record_id: str, fields: Dict[str, Any], write: bool) -> Optional[Dict[str, Any]]:
@@ -309,9 +364,9 @@ def reset_for_resubmit(token: str, kind: str, record_id: str, message: str, writ
         "错误信息": "",
     })
     if not write:
-        return {"action": "reset_for_resubmit", "payload": payload}
+        return with_dispatcher_state_cleanup({"action": "reset_for_resubmit", "payload": payload}, kind, record_id, write)
     safe_update_record(token, table_id(kind), record_id, payload)
-    return {"action": "reset_for_resubmit_written", "payload": payload}
+    return with_dispatcher_state_cleanup({"action": "reset_for_resubmit_written", "payload": payload}, kind, record_id, write)
 
 
 def mark_policy_blocked(token: str, kind: str, record_id: str, message: str, write: bool) -> Dict[str, Any]:
@@ -321,9 +376,9 @@ def mark_policy_blocked(token: str, kind: str, record_id: str, message: str, wri
         "错误信息": "",
     })
     if not write:
-        return {"action": "mark_policy_blocked", "payload": payload}
+        return with_dispatcher_state_cleanup({"action": "mark_policy_blocked", "payload": payload}, kind, record_id, write)
     safe_update_record(token, table_id(kind), record_id, payload)
-    return {"action": "mark_policy_blocked_written", "payload": payload}
+    return with_dispatcher_state_cleanup({"action": "mark_policy_blocked_written", "payload": payload}, kind, record_id, write)
 
 
 def repair_record(token: str, kind: str, record: Dict[str, Any], write: bool) -> Optional[Dict[str, Any]]:
@@ -380,6 +435,13 @@ def repair_record(token: str, kind: str, record: Dict[str, Any], write: bool) ->
                 return {"record_id": record_id, "kind": kind, "status": status, "task_id": task_id, **mark_policy_blocked(token, kind, record_id, payload["message"], write)}
             return {"record_id": record_id, "kind": kind, "status": status, "task_id": task_id, **reset_for_resubmit(token, kind, record_id, "上游任务未完成或无可下载结果，清空旧 task 等待重新提交。", write)}
 
+        if status == "失败":
+            return {
+                "record_id": record_id,
+                "kind": kind,
+                "status": status,
+                **reset_for_resubmit(token, kind, record_id, "没有可复用视频，清空旧 task 等待重新提交。", write),
+            }
         return {"record_id": record_id, "kind": kind, "status": status, "action": "no_repairable_artifact"}
     except Exception as exc:
         return {"record_id": record_id, "kind": kind, "status": status, "action": "repair_error", "error": str(exc)[:1000]}
@@ -404,15 +466,26 @@ def candidate_records(records: Iterable[Dict[str, Any]], kind: str) -> Iterable[
             yield record
 
 
-def run(write: bool, limit: int = 0) -> List[Dict[str, Any]]:
+def run(
+    write: bool,
+    limit: int = 0,
+    *,
+    kind_filter: str = "",
+    record_ids: Optional[Iterable[str]] = None,
+) -> List[Dict[str, Any]]:
     token = get_feishu_token()
     outputs: List[Dict[str, Any]] = []
+    record_id_set = {str(item).strip() for item in (record_ids or []) if str(item).strip()}
     targets = [
         ("nine_grid", nine_grid.TABLE_NINE_GRID_VIDEO),
         ("multi_role", multi_role.TABLE_MULTI_ROLE_FIRST_LAST),
     ]
     for kind, table in targets:
+        if kind_filter and kind != kind_filter:
+            continue
         for record in candidate_records(safe_list_records(token, table), kind):
+            if record_id_set and record.get("record_id") not in record_id_set:
+                continue
             action = repair_record(token, kind, record, write)
             if action:
                 outputs.append(action)
@@ -426,10 +499,12 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help="执行写回；默认仅 dry-run")
     parser.add_argument("--dry-run", action="store_true", help="只读预览（默认）")
     parser.add_argument("--limit", type=int, default=0, help="最多处理/展示多少条")
+    parser.add_argument("--kind", choices=["nine_grid", "multi_role"], default="", help="只处理指定链路")
+    parser.add_argument("--record-id", action="append", default=[], help="只处理指定记录；可重复传入")
     args = parser.parse_args()
 
     write = args.write and not args.dry_run
-    result = run(write=write, limit=args.limit)
+    result = run(write=write, limit=args.limit, kind_filter=args.kind, record_ids=args.record_id)
     print(compact_json({
         "mode": "write" if write else "dry-run",
         "count": len(result),
