@@ -648,7 +648,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(kwargs["image_path"], "")
         self.assertEqual(kwargs["reference_image_paths"], ["/tmp/product.png", "/tmp/role.png"])
 
-    def test_keyframe_image_keeps_primary_as_image_path_and_sends_other_references(self):
+    def test_keyframe_image_aitgenne_dependent_frame_sends_only_product_references(self):
         fields = {
             "记录类型": "关键帧",
             "记录状态": "有效",
@@ -675,6 +675,46 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "safe_list_records", return_value=[]), \
              patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://api.aitgenne.com", "api_key": "key", "model": "gpt-image-2"})), \
+             patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
+             patch.object(multi_role, "run_image_generation", return_value=image_result) as run_image, \
+             patch.object(multi_role, "upload_image_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record"), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            multi_role.render_keyframe_image("keyframe_rec")
+
+        kwargs = run_image.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], "/tmp/base.png")
+        self.assertEqual(kwargs["reference_image_paths"], ["/tmp/product.png"])
+        self.assertIn("previous keyframe image as the only source of truth", run_image.call_args.args[1])
+
+    def test_keyframe_image_non_aitgenne_dependent_frame_keeps_other_references(self):
+        fields = {
+            "记录类型": "关键帧",
+            "记录状态": "有效",
+            "关键帧提示词": "continue from first frame with product",
+            "关键帧版本": 1,
+            "父任务记录ID": "parent",
+            "关键帧AI模型": "OTU / gpt-image-2",
+        }
+        refs = [
+            {"role": "base_keyframe:S01_FIRST", "url": "https://tmp.test/base.png", "path": "/tmp/base.png", "file_token": "ft_base", "primary": True},
+            {"role": "product:1", "url": "https://tmp.test/product.png", "path": "/tmp/product.png", "file_token": "ft_product", "primary": False},
+            {"role": "environment:room", "url": "https://tmp.test/room.png", "path": "/tmp/room.png", "file_token": "ft_room", "primary": False},
+        ]
+        image_result = SimpleNamespace(
+            task_id="task_otu",
+            submit_body={"ok": True},
+            result_body={"ok": True},
+            request_summary={"reference_count": 3},
+        )
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
+             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "gpt-image-2"})), \
              patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
              patch.object(multi_role, "run_image_generation", return_value=image_result) as run_image, \
              patch.object(multi_role, "upload_image_to_feishu", return_value="file_token"), \

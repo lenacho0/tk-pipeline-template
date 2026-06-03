@@ -1218,6 +1218,30 @@ def _primary_base_reference(refs: List[Dict[str, str]]) -> Dict[str, str]:
     return {}
 
 
+AITGENNE_DEPENDENT_KEYFRAME_CONTINUITY_PROMPT = (
+    "Continuity constraint: Treat the previous keyframe image as the only source of truth for people identities, "
+    "clothing, poses, camera framing, room layout, pet appearance, and scene continuity. Use product reference images "
+    "only to correct bottle shape, spray nozzle, label layout, colors, logo placement, and packaging proportions. "
+    "Do not use product references or any other reference to change the people, clothing, pet, room, camera angle, or composition inherited from the previous keyframe."
+)
+
+
+def _is_product_reference(ref: Dict[str, str]) -> bool:
+    return extract_text(ref.get("role")).strip().startswith("product:")
+
+
+def _submitted_keyframe_references(route: ai_routing.AiRoute, refs: List[Dict[str, str]], primary: Dict[str, str]) -> List[Dict[str, str]]:
+    if primary and route.provider == "Aitgenne":
+        return [ref for ref in refs if ref.get("primary") or _is_product_reference(ref)]
+    return refs
+
+
+def _keyframe_generation_prompt(prompt: str, route: ai_routing.AiRoute, primary: Dict[str, str]) -> str:
+    if primary and route.provider == "Aitgenne":
+        return f"{prompt}\n\n{AITGENNE_DEPENDENT_KEYFRAME_CONTINUITY_PROMPT}"
+    return prompt
+
+
 def _active_child_records(records: List[Dict[str, Any]], parent_id: str, wanted_type: str) -> List[Dict[str, Any]]:
     result = []
     for rec in records:
@@ -1539,7 +1563,6 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     parent_fields = _parent_fields(token, fields)
     all_records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
     refs = collect_keyframe_references(token, fields, parent_fields, all_records, work_dir)
-    manifest = _reference_manifest(refs)
     primary = _primary_base_reference(refs)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)
     output_path = str(work_dir / f"{record_id}_keyframe_v{version}.png")
@@ -1560,14 +1583,18 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     route.params.update(image_params)
     size = image_params["size"]
     aspect_ratio = image_params["aspect_ratio"]
+    submitted_refs = _submitted_keyframe_references(route, refs, primary)
+    manifest = _reference_manifest(submitted_refs)
+    generation_prompt = _keyframe_generation_prompt(prompt, route, primary)
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
-        "prompt_chars": len(prompt),
+        "prompt_chars": len(generation_prompt),
         "model": model_name,
         "size": size,
         "aspect_ratio": aspect_ratio,
-        "reference_count": len(refs),
+        "reference_count": len(submitted_refs),
+        "collected_reference_count": len(refs),
         "output_path": output_path,
     }
     route_summary = maybe_unified_media_summary(
@@ -1578,9 +1605,9 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         task_type="图生图/参考图重绘",
         model=model_name,
         slot_name="关键帧",
-        prompt=prompt,
+        prompt=generation_prompt,
         params=image_params,
-        reference_count=len(refs),
+        reference_count=len(submitted_refs),
     )
     if route_summary:
         summary["unified_ai_route"] = route_summary
@@ -1600,16 +1627,16 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         "错误信息": "",
     }))
     metadata = {
-        "urls": [ref["url"] for ref in refs],
-        "reference_roles": [ref["role"] for ref in refs],
+        "urls": [ref["url"] for ref in submitted_refs],
+        "reference_roles": [ref["role"] for ref in submitted_refs],
         "reference_manifest": manifest,
     }
-    reference_image_paths = [ref["path"] for ref in refs if ref.get("path") and not ref.get("primary")]
+    reference_image_paths = [ref["path"] for ref in submitted_refs if ref.get("path") and not ref.get("primary")]
     input_mode = "image-to-image" if primary.get("path") or reference_image_paths else "text-to-image"
     existing_task_id = extract_text(fields.get("关键帧任务ID")).strip()
     image_result = run_image_generation(
         route,
-        prompt,
+        generation_prompt,
         output_path,
         input_mode=input_mode,
         image_path=primary.get("path", ""),
@@ -1637,10 +1664,17 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     submit_body = image_result.submit_body
     result = image_result.result_body
     if not existing_task_id:
+        request_log = {
+            "request_summary": image_result.request_summary,
+            "submitted_reference_roles": [ref["role"] for ref in submitted_refs],
+            "reference_manifest": manifest,
+            "metadata": metadata,
+            "submit": submit_body,
+        }
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "关键帧任务ID": task_id,
-            "原始请求JSON": compact_json({"submit": submit_body, "reference_manifest": manifest, "metadata": metadata, "request_summary": image_result.request_summary}, 12000),
-            "关键帧原始响应JSON": compact_json({"submit": submit_body, "request_summary": image_result.request_summary}, 10000),
+            "原始请求JSON": compact_json(request_log, 12000),
+            "关键帧原始响应JSON": compact_json({"request_summary": image_result.request_summary, "submit": submit_body}, 10000),
         }))
     file_token = upload_image_to_feishu(token, output_path, f"{record_id}_keyframe.png")
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
@@ -1652,7 +1686,7 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         "关键帧版本": version,
         "关键帧生成状态": "成功",
         "关键帧审核状态": "待确认",
-        "关键帧原始响应JSON": compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}, 10000),
+        "关键帧原始响应JSON": compact_json({"request_summary": image_result.request_summary, "submit": submit_body, "result": result}, 10000),
         "关键帧错误信息": "",
         "关键帧生成时间": int(time.time() * 1000),
         "错误信息": "",
