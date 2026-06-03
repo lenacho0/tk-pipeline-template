@@ -1937,6 +1937,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "分镜视频": [],
             "分镜视频URL": None,
+            "视频本地路径": "",
             "视频任务ID": "",
             "视频错误信息": "",
             "视频生成时间": None,

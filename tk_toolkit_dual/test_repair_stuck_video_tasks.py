@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -84,6 +85,31 @@ class RepairStuckVideoTasksTests(unittest.TestCase):
         self.assertEqual(action["payload"]["视频任务ID"], "")
         self.assertIn("没有可复用视频", action["payload"]["视频错误信息"])
         self.assertEqual(action["dispatcher_state_cleanup"]["removed_retry_keys"], ["tk_nine_grid_video.py::video::rec_failed"])
+
+    def test_stale_local_video_older_than_current_task_is_not_uploaded(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_video = Path(tmpdir) / "old.mp4"
+            local_video.write_bytes(b"old-video")
+            os.utime(local_video, (1000, 1000))
+            record = {
+                "record_id": "rec_failed",
+                "fields": {
+                    "视频生成状态": "失败",
+                    "视频本地路径": str(local_video),
+                    "视频任务ID": "task_current",
+                    "视频错误信息": "queued timeout",
+                },
+            }
+
+            with patch.object(repair, "has_live_process", return_value=False), \
+                 patch.object(repair, "query_nine_grid_task", return_value=({"status": "queued", "progress": 0, "created_at": 2000}, "")) as query_task, \
+                 patch.object(repair, "upload_local_video", return_value={"action": "upload_local_video"}) as uploader, \
+                 patch.object(repair, "reset_for_resubmit", return_value={"action": "reset_for_resubmit", "payload": {}}):
+                action = repair.repair_record("token", "nine_grid", record, write=False)
+
+        query_task.assert_called_once()
+        uploader.assert_not_called()
+        self.assertEqual(action["action"], "reset_for_resubmit")
 
 
 if __name__ == "__main__":

@@ -1881,6 +1881,47 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
         self.assertIn("provider=Aitgenne", updates[-2]["视频错误信息"])
 
+    def test_render_nine_grid_video_clears_stale_local_path_before_new_submit(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图": [{"file_token": "ft_grid"}],
+            "视频提示词": "Submit a fresh OTU task.",
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+            "视频本地路径": "/old/video.mp4",
+        }
+        parent_fields = {"记录类型": "母任务", "关联产品记录": ["recProduct"]}
+        product_fields = {"产品图片": [{"file_token": "ft_product"}]}
+        latest_fields = {"视频生成状态": "生成中", "视频任务ID": "task_new"}
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "TABLE_PRODUCT", "tbl_product"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, parent_fields, product_fields, latest_fields]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "omni_flash-10s",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "submit_omni_video_task", return_value=("task_new", {"id": "task_new"}), create=True), \
+             patch.object(nine_grid, "poll_otu_nine_grid_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
+             patch.object(nine_grid, "download_video"), \
+             patch.object(nine_grid, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(nine_grid, "get_table_field_types", return_value={"分镜视频URL": 15}), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            nine_grid.render_nine_grid_video("recBoard")
+
+        reset_updates = [update for update in updates if update.get("视频生成状态") == "生成中" and update.get("视频任务ID") == ""]
+        self.assertTrue(reset_updates)
+        self.assertEqual(reset_updates[-1]["视频本地路径"], "")
+
     def test_video_dry_run_caps_human_references_at_five_after_grid_and_product(self):
         child_fields = {
             "父任务记录ID": "recParent",

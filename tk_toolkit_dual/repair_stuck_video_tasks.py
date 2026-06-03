@@ -196,6 +196,25 @@ def is_failed(body: Dict[str, Any]) -> bool:
     return task_status(body) in {"failed", "error", "cancelled", "canceled"}
 
 
+def task_created_at(body: Dict[str, Any]) -> Optional[float]:
+    nested = body.get("data") if isinstance(body.get("data"), dict) else {}
+    value = body.get("created_at", nested.get("created_at"))
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def local_video_is_current_for_task(local_path: str, task_body: Dict[str, Any]) -> bool:
+    created_at = task_created_at(task_body)
+    if created_at is None:
+        return True
+    try:
+        return Path(local_path).stat().st_mtime >= created_at
+    except OSError:
+        return False
+
+
 def query_multi_role_task(record_id: str, fields: Dict[str, Any], task_id: str) -> Tuple[Dict[str, Any], str]:
     _, cfg = multi_role.get_stage_config(
         multi_role.VIDEO_STAGE_NAME,
@@ -360,6 +379,7 @@ def reset_for_resubmit(token: str, kind: str, record_id: str, message: str, writ
     payload = filter_fields(token, kind, {
         status_field(kind): "待生成",
         "视频任务ID": "",
+        "视频本地路径": "",
         "视频错误信息": f"repair: {message}"[:1000],
         "错误信息": "",
     })
@@ -414,7 +434,7 @@ def repair_record(token: str, kind: str, record: Dict[str, Any], write: bool) ->
             if history_action:
                 return {"record_id": record_id, "kind": kind, "status": status, **history_action}
 
-        if local_path and Path(local_path).exists():
+        if local_path and Path(local_path).exists() and not task_id:
             return {"record_id": record_id, "kind": kind, "status": status, **upload_local_video(token, kind, record_id, fields, local_path, video_url, write)}
 
         if video_url:
@@ -430,6 +450,8 @@ def repair_record(token: str, kind: str, record: Dict[str, Any], write: bool) ->
                 if write:
                     download_video(upstream_url, target_path)
                 return {"record_id": record_id, "kind": kind, "status": status, "task_id": task_id, **upload_local_video(token, kind, record_id, fields, target_path, upstream_url, write)}
+            if local_path and Path(local_path).exists() and local_video_is_current_for_task(local_path, body):
+                return {"record_id": record_id, "kind": kind, "status": status, "task_id": task_id, **upload_local_video(token, kind, record_id, fields, local_path, video_url, write)}
             payload = build_error_payload(body, stage=f"repair_{kind}_video")
             if is_failed(body) and payload["error_code"] == "UPSTREAM_POLICY_BLOCKED":
                 return {"record_id": record_id, "kind": kind, "status": status, "task_id": task_id, **mark_policy_blocked(token, kind, record_id, payload["message"], write)}
