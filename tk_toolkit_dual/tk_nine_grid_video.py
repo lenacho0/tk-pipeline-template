@@ -45,7 +45,6 @@ from otu_image import (  # noqa: E402
     DEFAULT_OTU_API_BASE,
     download_otu_image_result,
     extract_otu_result_url,
-    normalize_image_model_choice,
     poll_otu_image_task,
     submit_otu_image_task,
 )
@@ -77,7 +76,7 @@ from aitgenne_image import (  # noqa: E402
     save_aitgenne_image_result,
     submit_aitgenne_image_generation,
 )
-from image_generation import run_image_generation  # noqa: E402
+from image_generation import image_execution_params, run_image_generation  # noqa: E402
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
@@ -782,6 +781,22 @@ def _parse_params(text: str) -> Dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("AI参数JSON 顶层必须是对象")
     return parsed
+
+
+def _image_param_fields(prefix: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    patched_params = dict(params)
+    size = extract_text(patched_params.get("size")).strip()
+    aspect_ratio = extract_text(patched_params.get("aspect_ratio")).strip()
+    fields: Dict[str, Any] = {}
+    if size:
+        fields[f"{prefix}画面尺寸"] = size
+        patched_params["size"] = size
+    if aspect_ratio:
+        fields[f"{prefix}画面比例"] = aspect_ratio
+        patched_params["aspect_ratio"] = aspect_ratio
+    if patched_params:
+        fields[f"{prefix}AI参数JSON"] = compact_json(patched_params, 4000)
+    return fields
 
 
 def _slug_asset_id(value: str, fallback: str) -> str:
@@ -1782,7 +1797,15 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         config_records=_stage_config_records(token),
     )
     route.params.update(params)
-    existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
+    execution = image_execution_params(
+        route,
+        size=params.get("size") or DEFAULT_IMAGE_SIZE,
+        aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+    )
+    original_size = params.get("size") or DEFAULT_IMAGE_SIZE
+    params.update({"size": execution["size"], "aspect_ratio": execution["aspect_ratio"]})
+    route.params.update(params)
+    existing_task_id = raw_existing_task_id if route.provider == "OTU" and original_size == execution["size"] else ""
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1796,10 +1819,11 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     work_dir = ensure_work_dir(record_id)
-    model_name = normalize_image_model_choice(ai_routing.parse_model_display(route.model)["model"] or route.model)
+    model_name = execution["model"]
     out_path = str(work_dir / f"{record_id}_reference.png")
     if existing_task_id:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            **_image_param_fields("参考图", params),
             "参考图任务ID": existing_task_id,
             "参考图生成状态": "生成中",
             "参考图错误信息": f"恢复轮询已有 OTU 参考图任务。task_id={existing_task_id}",
@@ -1807,6 +1831,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         }))
     else:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            **_image_param_fields("参考图", params),
             "参考图": [],
             "参考图file_token": "",
             "参考图本地路径": "",
@@ -1818,6 +1843,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         }))
     task_id = ""
     if route.provider == "OTU":
+        model_name = execution["model"]
         if existing_task_id:
             task_id = existing_task_id
             submit_body = {"id": task_id}
@@ -1829,6 +1855,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
                 metadata={
                     "urls": [],
                     "reference_roles": [],
+                    "size": params.get("size") or DEFAULT_IMAGE_SIZE,
                     "aspectRatio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
                     "aspect_ratio": params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
                 },
@@ -1864,6 +1891,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         label="upload nine grid reference image",
     )
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+        **_image_param_fields("参考图", params),
         "参考图": [{"file_token": file_token, "name": Path(out_path).name}],
         "参考图file_token": file_token,
         "参考图本地路径": out_path,
@@ -1923,7 +1951,15 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         config_records=_stage_config_records(token),
     )
     route.params.update(params)
-    existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
+    execution = image_execution_params(
+        route,
+        size=params.get("size") or DEFAULT_IMAGE_SIZE,
+        aspect_ratio=params.get("aspect_ratio") or DEFAULT_ASPECT_RATIO,
+    )
+    original_size = params.get("size") or DEFAULT_IMAGE_SIZE
+    params.update({"size": execution["size"], "aspect_ratio": execution["aspect_ratio"]})
+    route.params.update(params)
+    existing_task_id = raw_existing_task_id if route.provider == "OTU" and original_size == execution["size"] else ""
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1963,6 +1999,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
 
     if existing_task_id:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            **_image_param_fields("图片", params),
             "图片任务ID": existing_task_id,
             "图片生成状态": "生成中",
             "图片错误信息": f"恢复轮询已有 OTU 九宫格图片任务。task_id={existing_task_id}",
@@ -1970,6 +2007,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         }))
     else:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            **_image_param_fields("图片", params),
             "九宫格图": [],
             "图片任务ID": "",
             "图片错误信息": "",
@@ -2026,6 +2064,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         label="upload nine grid image",
     )
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+        **_image_param_fields("图片", params),
         "九宫格图": [{"file_token": file_token}],
         "图片AI供应商": route.provider,
         "图片AI模型": route.model,

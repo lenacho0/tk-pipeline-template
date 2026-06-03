@@ -648,6 +648,44 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("PRODUCT REFERENCE LOCK", submitter.call_args.args[1])
         self.assertNotIn("exact_product_overlay_cells", result)
 
+    def test_render_nine_grid_image_otu_2k_overrides_stale_720_size(self):
+        child_fields = {
+            "父任务记录ID": "recParent",
+            "九宫格图片提示词": "Show the selected spray product in the nine-grid.",
+            "图片AI供应商": "OTU",
+            "图片AI模型": "OTU / gpt-image-2-2K",
+            "图片AI参数JSON": '{"size":"720x1280","aspect_ratio":"9:16"}',
+            "图片画面尺寸": "720x1280",
+            "图片画面比例": "9:16",
+        }
+        refs = [
+            {"role": "product:1", "path": "/tmp/product.png", "file_token": "ft_product", "name": "odor spray"},
+        ]
+        updates = []
+
+        with patch.object(nine_grid, "ensure_nine_grid_table"), \
+             patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", side_effect=[child_fields, {"记录类型": "母任务"}]), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "gpt-image-2"})), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "collect_nine_grid_reference_images", return_value=refs), \
+             patch.object(nine_grid, "build_reference_urls", return_value=["https://x.test/product.png"]), \
+             patch.object(nine_grid, "build_reference_contact_sheet", return_value="/tmp/contact.png", create=True), \
+             patch.object(nine_grid, "submit_otu_image_task", return_value=("task_2k", {"id": "task_2k"})) as submitter, \
+             patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}), \
+             patch.object(nine_grid, "download_otu_image_result"), \
+             patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_nine_grid_image("recBoard")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
+        self.assertTrue(any(update.get("图片画面尺寸") == "1080x1920" for update in updates))
+
     def test_render_nine_grid_image_resumes_existing_otu_task_without_resubmitting(self):
         child_fields = {
             "父任务记录ID": "recParent",
@@ -1003,6 +1041,45 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
 
+    def test_render_reference_asset_otu_2k_overrides_stale_720_size(self):
+        fields = {
+            "记录类型": "参考资产",
+            "父任务记录ID": "recParent",
+            "资产类型": "human",
+            "资产ID": "owner",
+            "参考图来源": "AI自动生成",
+            "参考提示词": "Generate the owner reference.",
+            "参考图AI模型": "OTU / gpt-image-2-2K",
+            "参考图AI参数JSON": '{"size":"720x1280","aspect_ratio":"9:16"}',
+            "参考图画面尺寸": "720x1280",
+            "参考图画面比例": "9:16",
+        }
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=fields), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "submit_otu_image_task", return_value=("task_2k", {"id": "task_2k"})) as submitter, \
+             patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}), \
+             patch.object(nine_grid, "download_otu_image_result"), \
+             patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table_id, record_id, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_reference_asset("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
+        self.assertTrue(any(update.get("参考图画面尺寸") == "1080x1920" for update in updates))
+
     def test_render_reference_asset_resumes_existing_otu_task_without_resubmitting(self):
         fields = {
             "记录类型": "参考资产",
@@ -1042,6 +1119,46 @@ class NineGridVideoTests(unittest.TestCase):
         poller.assert_called_once()
         self.assertEqual(poller.call_args.args[1], "task_existing_ref")
         self.assertIn("恢复轮询已有 OTU 参考图任务", updates[0]["参考图错误信息"])
+
+    def test_render_reference_asset_otu_2k_does_not_resume_stale_720_task(self):
+        fields = {
+            "记录类型": "参考资产",
+            "父任务记录ID": "recParent",
+            "资产类型": "human",
+            "资产ID": "owner",
+            "参考图来源": "AI自动生成",
+            "参考提示词": "Generate the owner reference.",
+            "参考图AI模型": "OTU / gpt-image-2-2K",
+            "参考图画面尺寸": "720x1280",
+            "参考图画面比例": "9:16",
+            "参考图生成状态": "生成中",
+            "参考图任务ID": "task_stale_720",
+        }
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=fields), \
+             patch.object(nine_grid, "get_config_record", return_value=("cfg", {
+                 "provider": "OTU",
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "gpt-image-2",
+             })), \
+             patch.object(nine_grid, "safe_list_records", return_value=[]), \
+             patch.object(nine_grid, "submit_otu_image_task", return_value=("task_2k", {"id": "task_2k"})) as submitter, \
+             patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}) as poller, \
+             patch.object(nine_grid, "download_otu_image_result"), \
+             patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
+             patch.object(nine_grid, "safe_update_record"), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table_id, fields: fields):
+            result = nine_grid.render_reference_asset("recAsset")
+
+        self.assertEqual(result["status"], "success")
+        submitter.assert_called_once()
+        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task_2k")
 
     def test_render_reference_asset_submits_aitgenne_image_generation(self):
         fields = {

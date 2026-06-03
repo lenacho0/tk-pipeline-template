@@ -23,7 +23,13 @@ from otu_image import (
     poll_otu_image_task,
     submit_otu_image_task,
 )
-from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation
+from image_generation import (
+    config_records_for_image_slot,
+    image_params_with_model_overrides,
+    image_slot_field_patch,
+    resolve_image_route_from_slot,
+    run_image_generation,
+)
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_record
 
@@ -671,6 +677,11 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         params={'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(
+        route,
+        {'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
+    )
+    route.params.update(image_params)
     prompt = _build_single_shot_prompt(config_prompt, shot_fields, style, visual_bible)
     summary = {
         'record_id': record_id,
@@ -691,6 +702,7 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     current_status = extract_text(shot_fields.get('分镜图生成状态')).strip()
     existing_task_id = extract_text(shot_fields.get('分镜图任务ID')).strip() if current_status == '生成中' and route.provider == 'OTU' else ''
     start_fields = {
+        **image_slot_field_patch('分镜图', image_params),
         '分镜图生成状态': '生成中',
         '分镜图任务ID': existing_task_id,
         '分镜图错误信息': f'恢复轮询已有 OTU 分镜图任务。task_id={existing_task_id}' if existing_task_id else '',
@@ -757,6 +769,7 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         out_path=out_path,
         prompt=prompt,
     )
+    success_fields.update(image_slot_field_patch('分镜图', image_params))
     success_fields['分镜图任务ID'] = submit_task_id
     success_fields['分镜图原始响应JSON'] = _compact_json({
         'submit': submit_body,
@@ -880,6 +893,11 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         params={'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(
+        route,
+        {'size': image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE, 'aspect_ratio': image_params.get('aspect_ratio') or '9:16'},
+    )
+    route.params.update(image_params)
     prompt = build_script_doc_last_frame_prompt(
         fields,
         extract_text(fields.get('图片提示词') or fields.get('提示词')).strip(),
@@ -904,6 +922,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     current_status = extract_text(fields.get('尾帧图生成状态')).strip()
     existing_task_id = extract_text(fields.get('尾帧图任务ID')).strip() if current_status == '生成中' and route.provider == 'OTU' else ''
     start_fields = {
+        **image_slot_field_patch('尾帧图', image_params),
         '尾帧图生成状态': '生成中',
         '尾帧图任务ID': existing_task_id,
         '尾帧图错误信息': f'恢复轮询已有 OTU 尾帧图任务。task_id={existing_task_id}' if existing_task_id else '',
@@ -955,6 +974,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         label='upload script doc last frame image to feishu'
     )
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        **image_slot_field_patch('尾帧图', image_params),
         '尾帧图': [{'file_token': file_token}],
         '尾帧图file_token': file_token,
         '尾帧图本地路径': out_path,

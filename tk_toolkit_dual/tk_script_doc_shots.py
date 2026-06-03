@@ -45,7 +45,13 @@ from common import (  # noqa: E402
     with_retry,
 )
 import ai_routing  # noqa: E402
-from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from image_generation import (  # noqa: E402
+    config_records_for_image_slot,
+    image_params_with_model_overrides,
+    image_slot_field_patch,
+    resolve_image_route_from_slot,
+    run_image_generation,
+)
 from tk_shot_script_gen import (  # noqa: E402
     build_readable_script,
     extract_json_object,
@@ -854,6 +860,10 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
+    size = image_params["size"]
+    aspect_ratio = image_params["aspect_ratio"]
     current_status = extract_text(fields.get("参考图生成状态")).strip()
     raw_existing_task_id = extract_text(fields.get("参考图任务ID")).strip() if current_status == "生成中" else ""
     existing_task_id = raw_existing_task_id if route.provider == "OTU" else ""
@@ -872,6 +882,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         return summary
 
     start_fields = {
+        **image_slot_field_patch("参考图", image_params),
         "参考图生成状态": "生成中",
         "参考图任务ID": existing_task_id,
         "错误信息": f"恢复轮询已有 OTU 参考底图任务。task_id={existing_task_id}" if existing_task_id else "",
@@ -910,6 +921,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     result = image_result.result_body
     file_token = upload_image_to_feishu(token, str(out_path), out_path.name)
     safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+        **image_slot_field_patch("参考图", image_params),
         "参考图": [{"file_token": file_token}],
         "参考图file_token": file_token,
         "参考图本地路径": str(out_path),

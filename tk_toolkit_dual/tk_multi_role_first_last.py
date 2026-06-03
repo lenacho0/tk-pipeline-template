@@ -86,7 +86,13 @@ from tk_shot_video import (  # noqa: E402
 )
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
-from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from image_generation import (  # noqa: E402
+    config_records_for_image_slot,
+    image_params_with_model_overrides,
+    image_slot_field_patch,
+    resolve_image_route_from_slot,
+    run_image_generation,
+)
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
@@ -1347,6 +1353,10 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
+    size = image_params["size"]
+    aspect_ratio = image_params["aspect_ratio"]
     summary = {"record_id": record_id, "dry_run": dry_run, "prompt_chars": len(prompt), "model": model_name, "size": size, "aspect_ratio": aspect_ratio, "output_path": output_path}
     route_summary = maybe_unified_media_summary(
         token,
@@ -1369,6 +1379,7 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     start_fields = {
+        **image_slot_field_patch("参考图", image_params),
         "参考图生成状态": "生成中",
         "参考图版本": version,
         "参考图错误信息": "",
@@ -1409,6 +1420,7 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         }))
     file_token = upload_image_to_feishu(token, output_path, f"{record_id}_reference.png")
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+        **image_slot_field_patch("参考图", image_params),
         "参考图": [{"file_token": file_token, "name": Path(output_path).name}],
         "参考图file_token": file_token,
         "参考图本地路径": output_path,
@@ -1477,6 +1489,10 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
+    size = image_params["size"]
+    aspect_ratio = image_params["aspect_ratio"]
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1508,6 +1524,7 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+        **image_slot_field_patch("关键帧", image_params),
         "关键帧生成状态": "生成中",
         "关键帧版本": version,
         "依赖关键帧file_token": primary.get("file_token", ""),
@@ -1557,6 +1574,7 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         }))
     file_token = upload_image_to_feishu(token, output_path, f"{record_id}_keyframe.png")
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+        **image_slot_field_patch("关键帧", image_params),
         "关键帧图": [{"file_token": file_token, "name": Path(output_path).name}],
         "关键帧图file_token": file_token,
         "关键帧图本地路径": output_path,

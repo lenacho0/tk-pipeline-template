@@ -758,13 +758,13 @@ Storyboard 02 Prompt:
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["model"], "gpt-image-2-2K")
-        self.assertEqual(result["size"], "1280x720")
-        self.assertEqual(result["aspect_ratio"], "16:9")
+        self.assertEqual(result["size"], "1080x1920")
+        self.assertEqual(result["aspect_ratio"], "9:16")
         submitter.assert_called_once()
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
-        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
         self.assertEqual(submitter.call_args.kwargs["image_path"], str(tmp_path / "contact.png"))
-        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "9:16")
         self.assertIn("environment:1", submitter.call_args.kwargs["metadata"]["reference_roles"])
         contact_sheet.assert_called_once()
         submitted_prompt = submitter.call_args.args[1]

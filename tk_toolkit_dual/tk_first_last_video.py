@@ -88,7 +88,13 @@ from tk_shot_video import (  # noqa: E402
 )
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
-from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from image_generation import (  # noqa: E402
+    config_records_for_image_slot,
+    image_params_with_model_overrides,
+    image_slot_field_patch,
+    resolve_image_route_from_slot,
+    run_image_generation,
+)
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
@@ -1070,6 +1076,8 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1110,6 +1118,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
         submit_body = previous_raw.get("submit") if isinstance(previous_raw.get("submit"), dict) else {"id": submit_task_id}
         reference_summary = previous_raw.get("references") if isinstance(previous_raw.get("references"), dict) else {}
         safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            **image_slot_field_patch("首帧图", image_params),
             "首帧图任务ID": submit_task_id,
             "首帧图版本": version,
             "首帧图生成状态": "生成中",
@@ -1119,6 +1128,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     else:
         start_fields = first_frame_result_reset_fields("生成中")
         start_fields.update({
+            **image_slot_field_patch("首帧图", image_params),
             "首帧图版本": version,
             "首帧图生成状态": "生成中",
             "首帧图错误信息": "",
@@ -1194,6 +1204,7 @@ def render_first_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, An
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_first_frame.png"), max_attempts=3, label="upload first frame")
     ensure_current_generation(token, record_id, "首帧图生成状态", "生成中", "首帧图版本", version, "首帧图任务ID", submit_task_id)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+        **image_slot_field_patch("首帧图", image_params),
         "首帧图": [{"file_token": file_token}],
         "首帧图file_token": file_token,
         "首帧图本地路径": out_path,
@@ -1288,6 +1299,8 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
     route_summary = maybe_unified_media_summary(
         token,
         fields,
@@ -1315,6 +1328,7 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         submit_body = previous_raw.get("submit") if isinstance(previous_raw.get("submit"), dict) else {"id": submit_task_id}
         reference_summary = previous_raw.get("references") if isinstance(previous_raw.get("references"), dict) else {}
         safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            **image_slot_field_patch("尾帧图", image_params),
             "尾帧图任务ID": submit_task_id,
             "尾帧图版本": version,
             "尾帧图生成状态": "生成中",
@@ -1338,6 +1352,7 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     else:
         start_fields = last_frame_result_reset_fields("生成中")
         start_fields.update({
+            **image_slot_field_patch("尾帧图", image_params),
             "尾帧图版本": version,
             "尾帧图生成状态": "生成中",
             "尾帧图错误信息": "",
@@ -1405,6 +1420,7 @@ def render_last_frame(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_last_frame.png"), max_attempts=3, label="upload last frame")
     ensure_current_generation(token, record_id, "尾帧图生成状态", "生成中", "尾帧图版本", version, "尾帧图任务ID", submit_task_id)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+        **image_slot_field_patch("尾帧图", image_params),
         "尾帧图": [{"file_token": file_token}],
         "尾帧图file_token": file_token,
         "尾帧图本地路径": out_path,

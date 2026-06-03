@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -40,6 +41,10 @@ AITGENNE_RETRYABLE_ERROR_MARKERS = (
     "ssl",
     "connection",
 )
+OTU_IMAGE_MODEL_SPEC_OVERRIDES = {
+    "gpt-image-2-2K": {"size": "1080x1920", "aspect_ratio": "9:16"},
+    "gpt-image-2-4K": {"size": "1440x2560", "aspect_ratio": "9:16"},
+}
 
 
 @dataclass
@@ -130,6 +135,46 @@ def image_model_name(route: ai_routing.AiRoute) -> str:
     return normalize_image_model_choice(raw) if route.provider == "OTU" else raw
 
 
+def image_execution_params(route: ai_routing.AiRoute, *, size: str, aspect_ratio: str) -> Dict[str, str]:
+    model_name = image_model_name(route)
+    effective_size = str(size or route.params.get("size") or DEFAULT_OTU_IMAGE_SIZE).strip()
+    effective_aspect_ratio = str(aspect_ratio or route.params.get("aspect_ratio") or "9:16").strip()
+    if route.provider == "OTU":
+        model_spec = OTU_IMAGE_MODEL_SPEC_OVERRIDES.get(model_name)
+        if model_spec:
+            effective_size = model_spec["size"]
+            effective_aspect_ratio = model_spec["aspect_ratio"]
+    return {"model": model_name, "size": effective_size, "aspect_ratio": effective_aspect_ratio}
+
+
+def image_params_with_model_overrides(route: ai_routing.AiRoute, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    merged = dict(params or {})
+    execution = image_execution_params(
+        route,
+        size=str(merged.get("size") or ""),
+        aspect_ratio=str(merged.get("aspect_ratio") or ""),
+    )
+    merged["size"] = execution["size"]
+    merged["aspect_ratio"] = execution["aspect_ratio"]
+    return merged
+
+
+def image_slot_field_patch(slot_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    patched_params = dict(params or {})
+    size = str(patched_params.get("size") or "").strip()
+    aspect_ratio = str(patched_params.get("aspect_ratio") or "").strip()
+    patch: Dict[str, Any] = {}
+    if size:
+        patch[f"{slot_name}画面尺寸"] = size
+        patched_params["size"] = size
+    if aspect_ratio:
+        patch[f"{slot_name}画面比例"] = aspect_ratio
+        patched_params["aspect_ratio"] = aspect_ratio
+    if patched_params:
+        patch[f"{slot_name}AI参数JSON"] = json.dumps(patched_params, ensure_ascii=False, sort_keys=True)
+    return patch
+
+
 def _is_retryable_aitgenne_submit_error(exc: Exception) -> bool:
     if isinstance(exc, requests.RequestException):
         return True
@@ -175,7 +220,10 @@ def run_image_generation(
 ) -> ImageGenerationResult:
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
-    model_name = image_model_name(route)
+    execution = image_execution_params(route, size=size, aspect_ratio=aspect_ratio)
+    model_name = execution["model"]
+    size = execution["size"]
+    aspect_ratio = execution["aspect_ratio"]
     if route.provider == "OTU":
         cfg = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
         request_summary: Dict[str, Any]

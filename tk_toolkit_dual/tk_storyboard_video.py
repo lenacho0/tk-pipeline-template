@@ -64,7 +64,13 @@ from tk_storyboard_video_prompt import (  # noqa: E402
 )
 import ai_routing  # noqa: E402
 import ai_model_catalog  # noqa: E402
-from image_generation import config_records_for_image_slot, resolve_image_route_from_slot, run_image_generation  # noqa: E402
+from image_generation import (  # noqa: E402
+    config_records_for_image_slot,
+    image_params_with_model_overrides,
+    image_slot_field_patch,
+    resolve_image_route_from_slot,
+    run_image_generation,
+)
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
 
 
@@ -1010,6 +1016,10 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         params=image_params,
         config_records=config_records,
     )
+    image_params = image_params_with_model_overrides(route, image_params)
+    route.params.update(image_params)
+    size = image_params["size"]
+    aspect_ratio = image_params["aspect_ratio"]
     summary = {
         "record_id": record_id,
         "dry_run": dry_run,
@@ -1046,6 +1056,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     if existing_task_id:
         safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
             **missing_storyboard_image_default_fields(fields),
+            **image_slot_field_patch("故事板图片", image_params),
             "故事板图片任务ID": existing_task_id,
             "故事板图片生成状态": "生成中",
             "故事板图片错误信息": f"恢复轮询已有 OTU 故事板图片任务。task_id={existing_task_id}",
@@ -1055,6 +1066,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
             **image_regeneration_reset_fields(),
             **missing_storyboard_image_default_fields(fields),
+            **image_slot_field_patch("故事板图片", image_params),
             "故事板图片生成状态": "生成中",
             "故事板图片错误信息": "",
         }))
@@ -1068,6 +1080,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
         metadata={
             "urls": reference_urls,
             "reference_roles": [ref["role"] for ref in refs],
+            "size": size,
             "aspectRatio": aspect_ratio,
             "aspect_ratio": aspect_ratio,
         },
@@ -1098,6 +1111,7 @@ def render_storyboard_image(record_id: str, *, dry_run: bool = False) -> Dict[st
     file_token = with_retry(lambda: upload_image_to_feishu(token, out_path, f"{record_id}_storyboard.png"), max_attempts=3, label="upload storyboard image")
     ensure_record_current_generation(token, record_id, "故事板图片生成状态", "生成中", "故事板图片任务ID", submit_task_id)
     safe_update_record(token, TABLE_STORYBOARD_VIDEO, record_id, filter_existing_fields(token, TABLE_STORYBOARD_VIDEO, {
+        **image_slot_field_patch("故事板图片", image_params),
         "故事板图": [{"file_token": file_token}],
         "故事板图片任务ID": submit_task_id,
         "故事板图片原始响应JSON": compact_json({"submit": submit_body, "result": result, "request_summary": image_result.request_summary}, 10000),
