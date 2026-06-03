@@ -105,6 +105,17 @@ def sample_plan(role_count=3):
 
 
 class MultiRoleFirstLastTests(unittest.TestCase):
+    def test_parse_prompt_requires_english_video_prompts_and_preserves_thai(self):
+        prompt = multi_role.build_parse_prompt(
+            {"产品名称": "uootapet", "目标时长秒": 8},
+            "动作：主人对准沙发尿渍喷洒。台词：ไม่ต้องตกใจ",
+        )
+
+        self.assertIn("translate Chinese visual/action directions into English", prompt)
+        self.assertIn("preserve Thai dialogue exactly", prompt)
+        self.assertIn("videos[].prompt must not contain Chinese or CJK text", prompt)
+        self.assertIn("ไม่ต้องตกใจ", prompt)
+
     def test_table_definition_contains_independent_record_types_and_regen_fields(self):
         field_names = [field["name"] for field in create_table.MULTI_ROLE_FIRST_LAST_FIELDS]
         for name in [

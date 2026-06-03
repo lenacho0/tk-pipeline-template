@@ -168,6 +168,10 @@ DEFAULT_PARSE_PROMPT = """
 }
 
 视频口播与音频规则：
+- videos[].prompt 必须整体使用英文描述 visual/action/camera/environment/product action/SFX/ambient noise/restrictions。
+- If the input script contains Chinese visual/action/production directions, faithfully translate Chinese visual/action directions into English inside videos[].prompt while preserving every concrete conflict detail, product action, visible problem anchor, camera beat, and reaction reversal.
+- videos[].prompt must not contain Chinese or CJK text: no Chinese explanations, Chinese action descriptions, Chinese parenthetical notes, or Chinese review notes.
+- preserve Thai dialogue exactly: keep Thai dialogue and Thai voiceover text in Thai, and do not translate Thai speech into English or Chinese.
 - videos[].prompt 如果包含人物/宠物画面内说话，必须用冒号直接承接泰语台词，例如：The influencer says in Thai: กลิ่นฉี่แมวแรงมาก ทำยังไงดีเนี่ย
 - 画外旁白使用：Thai voiceover: [泰语口播]
 - 不得用英文引号包住台词；台词只作为音频层，不得生成字幕、贴纸或画面文字。
