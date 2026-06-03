@@ -66,6 +66,8 @@
 
 ## TK Pipeline / 历史链路记忆
 
+- 2026-06-01: `001-多角色首尾帧生成表` 的日常视图已收口，默认 `Grid View` 改名为 `99-全字段系统视图`，用户入口拆为 `01-母任务入口`、`02-参考图确认`、`03-关键帧审核`、`04-视频片段结果`，并用 `记录类型` + `记录状态=有效` 过滤；失败与废弃记录分别进入 `98-失败处理`、`00-已废弃记录`。以后维护这张混合记录表时，不要再把母记录、子记录、图片任务和视频任务混在一个用户视图里。
+- 2026-06-01: 多角色人物参考图的 prompt 真源是解析阶段 `assets[].prompt`，子记录原样写入 `参考提示词`，`render_reference_image()` 不追加人物风格。本轮已把 `多角色首尾帧解析-Gemini` 代码 fallback 与飞书配置记录 `recvkUn0Oh2xDp` 同步为：human 资产必须 `single person`、`one angle`、`front-facing`、`full face visible`，禁止侧脸、遮脸、多视角和商业棚拍，强制 `UGC smartphone photo` 与 `natural skin texture`。功能提交为 `2d4a983 Constrain multi-role human reference prompts`。
 - 2026-05-28: `002-首尾帧视频生成表` 正式收口为 Markdown 直拆链路：输入必须使用 `## S01 场景标题` + `### S01-1/2/3` 三段提示词结构；代码只原样提取 prompt，不再调用 Gemini，不做 JSON 兜底，不改写自然语言。配置表中旧 `文本拆分生成-Gemini` 已改为 `脚本文档结构化拆分-Gemini`，只服务 003；`故事板图片提示词拆分-Gemini` 改为 001 专用模型/API/提示词配置。正式 config keys 为 `script_doc_text_split`、`storyboard_text_split`、`main_image_otu`，不要再使用 `main_text_split`。
 - 2026-05-28: `001-故事板图片视频生成表` 的提示词口径已被用户明确收紧：故事板图片最终 prompt 与 Omni 视频最终 prompt 都以配置表系统提示词/模型直出内容为真源，代码不得再擅自追加产品、时间段、参考图顺序、故事板上下文、额外视频方向或任何“补强规则”。若需要改提示词内容，必须先向用户确认，再改 `初始化-模型与API配置` 的对应 `提示词`。当前 Omni 视频 prompt 只做 Markdown 外壳解析，剥离代码块和 `Omni Video Prompt:` 标题后原文提交 API。
 - 2026-05-21: 003-3 与脚本文档分镜视频新增 OTU 视频通道。正式链路已改成 `视频通道` 决定平台、`视频生成模型` 决定具体模型：`AIHubMix` 继续走原有 AihubMix/Gemini/SeedDance 路径，`OTU` 走独立 `/v1/videos` submit/poll/download。脚本文档分镜生成与三表 schema 已补 `视频通道` 字段；OTU 配置记录已写入飞书配置表，模型为 `veo_3_1-fast-fl`。线上旧 `视频生成模型` select 字段通过 OpenAPI 更新受限，代码已兼容 OTU 模型值，UI 如需完整选项同步，可能需要在飞书页面手动补一次。
