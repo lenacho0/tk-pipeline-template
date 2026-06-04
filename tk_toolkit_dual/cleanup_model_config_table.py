@@ -61,8 +61,6 @@ VIDEO_STAGES = {
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
-MODEL_CATALOG_TABLE_ID = "tblWjGeDIFAe5Pqd"
-TASK_DEFAULT_TABLE_ID = "tblC0IfP2ZIjMu4U"
 LEGACY_CONFIG_TABLE_NAME = "初始化-API密钥与旧运行配置"
 LEGACY_CONFIG_VIEW_RENAMES = {
     "供应商密钥-管理员": "01-运行配置-管理员",
@@ -106,43 +104,6 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "006-视频编辑任务表",
 ]
 MODEL_CATALOG_CAPABILITY_OPTIONS = ["文本", "图片", "视频", "视频编辑", "语音"]
-MODEL_CATALOG_CALL_TYPE_OPTIONS = [
-    "Gemini 原生 SDK",
-    "OpenAI兼容 chat/completions",
-    "OpenAI兼容 /v1/images/generations",
-    "OTU /v1/videos JSON image task",
-    "OTU /v1/videos multipart",
-    "Gemini native Veo",
-    "happyhorse视频",
-    "happyhorse视频编辑",
-    "视频统一格式",
-    "专用 API",
-    "AIHubMix 视频适配器",
-]
-VIDEO_EDIT_CONFIG_STAGE = "统一AI预设-Aitgenne / happyhorse-1.0-video-edit"
-VIDEO_EDIT_MODEL_DISPLAY = "Aitgenne / happyhorse-1.0-video-edit"
-VIDEO_EDIT_DEFAULT_ROW = {
-    "应用表格": "006-视频编辑任务表",
-    "环节": "视频编辑默认",
-    "默认供应商": "Aitgenne",
-    "默认模型显示名称": VIDEO_EDIT_MODEL_DISPLAY,
-    "画面尺寸": "720P",
-    "状态": "启用",
-    "备注": "source_config=统一AI预设-Aitgenne / happyhorse-1.0-video-edit; slot=视频编辑",
-}
-VIDEO_EDIT_MODEL_ROW = {
-    "供应商": "Aitgenne",
-    "能力类型": "视频编辑",
-    "模型名称": "happyhorse-1.0-video-edit",
-    "显示名称": VIDEO_EDIT_MODEL_DISPLAY,
-    "调用方式": "happyhorse视频编辑",
-    "API代理地址": "https://api.aitgenne.com/v1",
-    "默认参数JSON": "{\"audio_setting\":\"origin\",\"resolution\":\"720P\"}",
-    "接入状态": "已适配",
-    "测试状态": "测试通过",
-    "是否生产可用": "是",
-    "备注": "006 视频编辑默认模型；使用 Aitgenne alibailian video-generation/video-synthesis 原生端点。",
-}
 
 
 def opt(name: str, hue: str = "Blue", lightness: str = "Lighter") -> Dict[str, str]:
@@ -382,9 +343,12 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
         if not rid:
             continue
 
+        existing_type = _text(fields, "配置类型")
         patch: Dict[str, Any] = _record_type_patch(fields)
         category = ""
-        if _has_api_key(fields):
+        if existing_type in {"任务默认", "模型目录"}:
+            category = "single_source_record"
+        elif _has_api_key(fields):
             counts["production_config_count"] += 1
             category = "production_config"
             patch["是否统一AI预设"] = "否"
@@ -819,146 +783,6 @@ def delete_migrated_fields(base_token: str, *, dry_run: bool) -> List[Dict[str, 
     return results
 
 
-def sync_task_default_app_table_options(base_token: str, *, dry_run: bool) -> Dict[str, Any]:
-    return sync_select_field_options(
-        base_token,
-        TASK_DEFAULT_TABLE_ID,
-        TASK_DEFAULT_APP_TABLE_FIELD,
-        TASK_DEFAULT_APP_TABLE_OPTIONS,
-        dry_run=dry_run,
-    )
-
-
-def sync_select_field_options(
-    base_token: str,
-    table_id: str,
-    field_name: str,
-    options: Sequence[str],
-    *,
-    dry_run: bool,
-) -> Dict[str, Any]:
-    fields = list_fields_for_table(get_feishu_token(), TASK_DEFAULT_TABLE_ID)
-    if table_id != TASK_DEFAULT_TABLE_ID:
-        fields = list_fields_for_table(get_feishu_token(), table_id)
-    target = next((item for item in fields if (item.get("field_name") or item.get("name")) == field_name), None)
-    if not target:
-        return {"table_id": table_id, "field_name": field_name, "status": "missing"}
-    current_options = [item.get("name") for item in target.get("options") or []]
-    if current_options == list(options):
-        return {"table_id": table_id, "field_name": field_name, "status": "unchanged", "options": list(options)}
-    if not dry_run:
-        try:
-            run_json([
-                "lark-cli", "base", "+field-update",
-                "--base-token", base_token,
-                "--table-id", table_id,
-                "--field-id", str(target.get("field_id") or target.get("id")),
-                "--json", json.dumps({
-                    "name": field_name,
-                    "type": "select",
-                    "multiple": bool(target.get("multiple", False)),
-                    "options": [opt(name) for name in options],
-                }, ensure_ascii=False),
-                "--yes",
-            ])
-        except RuntimeError as exc:
-            if "800070003" not in str(exc) and "no operation produced" not in str(exc):
-                raise
-            return {"table_id": table_id, "field_name": field_name, "status": "unchanged", "options": list(options)}
-    return {"table_id": table_id, "field_name": field_name, "status": "dry_run" if dry_run else "updated", "options": list(options)}
-
-
-def sync_model_catalog_options(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
-    return [
-        sync_select_field_options(base_token, MODEL_CATALOG_TABLE_ID, "能力类型", MODEL_CATALOG_CAPABILITY_OPTIONS, dry_run=dry_run),
-        sync_select_field_options(base_token, MODEL_CATALOG_TABLE_ID, "调用方式", MODEL_CATALOG_CALL_TYPE_OPTIONS, dry_run=dry_run),
-    ]
-
-
-def ensure_video_edit_catalog_record(token: str, *, dry_run: bool) -> Dict[str, Any]:
-    existing = None
-    for record in safe_list_records(token, MODEL_CATALOG_TABLE_ID):
-        fields = record.get("fields") or {}
-        if _text(fields, "显示名称") == VIDEO_EDIT_MODEL_DISPLAY:
-            existing = record
-            break
-    if not dry_run:
-        if existing:
-            safe_update_record(token, MODEL_CATALOG_TABLE_ID, existing["record_id"], VIDEO_EDIT_MODEL_ROW)
-            action = "updated"
-        else:
-            safe_request(
-                "post",
-                f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{MODEL_CATALOG_TABLE_ID}/records",
-                headers=feishu_headers(token),
-                json={"fields": VIDEO_EDIT_MODEL_ROW},
-                timeout=30,
-                max_attempts=3,
-            )
-            action = "created"
-    else:
-        action = "dry_run_update" if existing else "dry_run_create"
-    return {
-        "table_id": MODEL_CATALOG_TABLE_ID,
-        "display_name": VIDEO_EDIT_MODEL_DISPLAY,
-        "record_id": (existing or {}).get("record_id") or "",
-        "action": action,
-    }
-
-
-def find_catalog_record_id(token: str, display_name: str) -> str:
-    for record in safe_list_records(token, MODEL_CATALOG_TABLE_ID):
-        fields = record.get("fields") or {}
-        if _text(fields, "显示名称") == display_name:
-            return record.get("record_id") or record.get("id") or ""
-    return ""
-
-
-def ensure_video_edit_default_record(token: str, base_token: str, *, dry_run: bool) -> Dict[str, Any]:
-    row = dict(VIDEO_EDIT_DEFAULT_ROW)
-    source_record_id = ""
-    for record in safe_list_records(token, TABLE_CONFIG):
-        fields = record.get("fields") or {}
-        if _text(fields, "环节") != VIDEO_EDIT_CONFIG_STAGE:
-            continue
-        source_record_id = record.get("record_id") or record.get("id") or ""
-        row["AI参数JSON"] = _text(fields, "AI参数JSON")
-        row["备注"] = f"{row['备注']}; source_record_id={source_record_id}"
-        break
-    model_record_id = find_catalog_record_id(token, row["默认模型显示名称"])
-    if model_record_id:
-        row["默认模型"] = [model_record_id]
-    existing = None
-    if not dry_run:
-        for record in safe_list_records(token, TASK_DEFAULT_TABLE_ID):
-            fields = record.get("fields") or {}
-            if _text(fields, "环节") == row["环节"] and "006-视频编辑任务表" in extract_text(fields.get("应用表格")):
-                existing = record
-                break
-        if existing:
-            safe_update_record(token, TASK_DEFAULT_TABLE_ID, existing["record_id"], row)
-            action = "updated"
-        else:
-            safe_request(
-                "post",
-                f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TASK_DEFAULT_TABLE_ID}/records",
-                headers=feishu_headers(token),
-                json={"fields": row},
-                timeout=30,
-                max_attempts=3,
-            )
-            action = "created"
-    else:
-        action = "dry_run"
-    return {
-        "table_id": TASK_DEFAULT_TABLE_ID,
-        "source_record_id": source_record_id or "not-read" if dry_run else source_record_id,
-        "action": action,
-        "fields": {key: value for key, value in row.items() if key != "默认模型"},
-        "linked_model": bool(model_record_id),
-    }
-
-
 def write_backup(path: Path, snapshot: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(redacted_json(snapshot) + "\n", encoding="utf-8")
@@ -1117,7 +941,6 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     fields = list_fields(token)
     views = list_views(token)
     records = safe_list_records(token, TABLE_CONFIG)
-    task_default_records = safe_list_records(token, TASK_DEFAULT_TABLE_ID)
     field_names = [item.get("field_name") or item.get("name") for item in fields if item.get("field_name") or item.get("name")]
     field_results = create_missing_config_fields(APP_TOKEN, field_names, dry_run=not write)
     effective_field_names = list(field_names)
@@ -1139,7 +962,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     ]
     filtered_updates = [update for update in filtered_updates if update.fields]
     record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
-    delete_audit = build_delete_audit(records, task_default_records)
+    delete_audit = build_delete_audit(records, [])
     view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
     table_name_result = ensure_unified_config_table_name(APP_TOKEN, dry_run=not write)
     view_results = apply_view_definitions(APP_TOKEN, view_definitions, dry_run=not write)

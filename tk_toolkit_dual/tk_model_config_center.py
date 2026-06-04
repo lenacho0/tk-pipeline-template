@@ -30,8 +30,7 @@ from common import (
 )
 
 
-MODEL_CATALOG_TABLE_NAME = "初始化-AI模型目录"
-TASK_DEFAULT_TABLE_NAME = "初始化-任务默认模型配置"
+MODEL_CATALOG_VIEW_NAME = "03-模型目录"
 
 CONFIG_TYPE_FIELD = "配置类型"
 CONFIG_TYPE_RUNTIME_STAGE = "运行环节"
@@ -97,7 +96,7 @@ VIDEO_STAGES = {
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
-VIDEO_EDIT_SOURCE_CONFIG_STAGE = "统一AI预设-Aitgenne / happyhorse-1.0-video-edit"
+VIDEO_EDIT_SOURCE_CONFIG_STAGE = "视频编辑-HappyHorse"
 
 TASK_TABLES = {
     "multi_role_first_last": "001-多角色首尾帧生成表",
@@ -653,7 +652,7 @@ def source_records_by_stage(records: Sequence[Mapping[str, Any]]) -> Dict[str, D
     for record in records:
         fields = _fields(record)
         stage = normalize_stage(text(fields, "环节"))
-        if stage and (not stage.startswith("统一AI预设-") or stage == VIDEO_EDIT_SOURCE_CONFIG_STAGE):
+        if stage and not stage.startswith("统一AI预设-"):
             result[stage] = {"record_id": _record_id(record), "fields": fields}
     return result
 
@@ -700,7 +699,7 @@ def archive_legacy_preset_updates(records: Sequence[Mapping[str, Any]]) -> List[
             continue
         remark = text(fields, "备注")
         if "归档" not in remark:
-            remark = f"归档：已迁移到 {MODEL_CATALOG_TABLE_NAME}；{remark}" if remark else f"归档：已迁移到 {MODEL_CATALOG_TABLE_NAME}"
+            remark = f"归档：已迁移到 初始化-模型与API配置 / {MODEL_CATALOG_VIEW_NAME}；{remark}" if remark else f"归档：已迁移到 初始化-模型与API配置 / {MODEL_CATALOG_VIEW_NAME}"
         updates.append({
             "record_id": _record_id(record),
             "fields": {
@@ -849,25 +848,7 @@ def load_task_default_fields(token: str, app_table: str, stage: str) -> Optional
         _TASK_DEFAULT_CACHE[cache_key] = None
         return None
 
-    table_id = find_table_id_by_name(token, TASK_DEFAULT_TABLE_NAME)
-    if not table_id:
-        raise RuntimeError(f"找不到{TASK_DEFAULT_TABLE_NAME}，无法读取 {app_table} / {stage} 默认配置")
-    matches: List[Dict[str, Any]] = []
-    for record in safe_list_records(token, table_id):
-        fields = record.get("fields") or {}
-        if not cell_matches(fields.get("应用表格"), app_table):
-            continue
-        if text(fields, "环节") != stage:
-            continue
-        if text(fields, "状态") == "停用":
-            continue
-        matches.append(fields)
-    if len(matches) == 1:
-        _TASK_DEFAULT_CACHE[cache_key] = dict(matches[0])
-        return dict(matches[0])
-    if not matches:
-        raise RuntimeError(f"{app_table} / {stage} 找不到启用默认配置")
-    raise RuntimeError(f"{app_table} / {stage} 默认配置重复: {len(matches)} 条启用记录")
+    raise RuntimeError(f"初始化-模型与API配置中找不到 {app_table} / {stage} 的启用任务默认配置")
 
 
 def load_stage_config_fields(

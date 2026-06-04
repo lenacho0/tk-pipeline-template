@@ -24,7 +24,7 @@ class ModelConfigCenterTests(unittest.TestCase):
             rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
             rec("video", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
             rec("story", 环节="故事板图片提示词拆分-Gemini", 模型名称="gemini-3.1-pro-preview", 状态="启用", **{"API 代理地址": "https://aihubmix.com/gemini", "调用方式": "Gemini 原生 SDK", "提示词": "story prompt"}),
-            rec("edit", 环节="统一AI预设-Aitgenne / happyhorse-1.0-video-edit", 模型名称="Aitgenne / happyhorse-1.0-video-edit", 状态="启用", **{"AI供应商": "Aitgenne", "AI能力类型": "视频编辑", "API 代理地址": "https://api.aitgenne.com/v1", "画面尺寸": "720P", "调用方式": "happyhorse视频编辑"}),
+            rec("edit", 环节="视频编辑-HappyHorse", 模型名称="Aitgenne / happyhorse-1.0-video-edit", 状态="启用", **{"AI供应商": "Aitgenne", "AI能力类型": "视频编辑", "API 代理地址": "https://api.aitgenne.com/v1", "画面尺寸": "720P", "调用方式": "happyhorse视频编辑"}),
             rec("old", 环节="统一AI预设-图片-OTU-GPTImage2-1K", 模型名称="gpt-image-2", 状态="停用", **{"API 代理地址": "https://otuapi.com"}),
         ]
 
@@ -161,21 +161,13 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(merged["首帧图AI模型"], "OTU / gpt-image-2-2K")
         self.assertEqual(merged["首帧图画面尺寸"], "720x1280")
 
-    def test_load_task_default_fields_uses_openapi_table_lookup(self):
-        rows = [
-            rec("default1", **{
-                "应用表格": "002-首尾帧视频生成表",
-                "环节": "首帧图生成默认",
-                "默认模型显示名称": "OTU / gpt-image-2",
-                "状态": "启用",
-            })
-        ]
+    def test_load_task_default_fields_does_not_fallback_to_legacy_table(self):
+        with mock.patch.object(center, "safe_list_records", return_value=[]), \
+             mock.patch.object(center, "list_tables_api") as list_tables:
+            with self.assertRaisesRegex(RuntimeError, "初始化-模型与API配置.*任务默认"):
+                center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
 
-        with mock.patch.object(center, "list_tables_api", return_value={center.TASK_DEFAULT_TABLE_NAME: "tbl_defaults"}), \
-             mock.patch.object(center, "safe_list_records", return_value=rows):
-            fields = center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
-
-        self.assertEqual(fields["默认模型显示名称"], "OTU / gpt-image-2")
+        list_tables.assert_not_called()
 
     def test_load_task_default_fields_uses_single_config_table_runtime_defaults(self):
         rows = [
@@ -375,19 +367,17 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(cfg["prompt"], "")
 
     def test_load_task_default_fields_fails_when_missing_or_ambiguous(self):
-        with mock.patch.object(center, "safe_list_records", return_value=[]), \
-             mock.patch.object(center, "list_tables_api", return_value={}):
-            with self.assertRaisesRegex(RuntimeError, "找不到.*初始化-任务默认模型配置"):
+        with mock.patch.object(center, "safe_list_records", return_value=[]):
+            with self.assertRaisesRegex(RuntimeError, "初始化-模型与API配置.*任务默认"):
                 center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
 
         center._TABLE_ID_CACHE.clear()
         center._TASK_DEFAULT_CACHE.clear()
         duplicate_rows = [
-            rec("default1", **{"应用表格": "002-首尾帧视频生成表", "环节": "首帧图生成默认", "状态": "启用"}),
-            rec("default2", **{"应用表格": "002-首尾帧视频生成表", "环节": "首帧图生成默认", "状态": "启用"}),
+            rec("default1", **{"配置类型": "任务默认", "应用表格": "002-首尾帧视频生成表", "任务环节": "首帧图生成默认", "状态": "启用"}),
+            rec("default2", **{"配置类型": "任务默认", "应用表格": "002-首尾帧视频生成表", "任务环节": "首帧图生成默认", "状态": "启用"}),
         ]
-        with mock.patch.object(center, "list_tables_api", return_value={center.TASK_DEFAULT_TABLE_NAME: "tbl_defaults"}), \
-             mock.patch.object(center, "safe_list_records", side_effect=[[], duplicate_rows]):
+        with mock.patch.object(center, "safe_list_records", return_value=duplicate_rows):
             with self.assertRaisesRegex(RuntimeError, "默认配置重复"):
                 center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
 

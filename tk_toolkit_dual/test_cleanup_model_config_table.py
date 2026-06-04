@@ -84,6 +84,24 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
         self.assertEqual(plan.record_updates, [])
 
+    def test_plan_does_not_archive_task_default_with_legacy_source_stage(self):
+        records = [
+            rec("video_edit_default", **{
+                "配置类型": "任务默认",
+                "应用表格": "006-视频编辑任务表",
+                "任务环节": "视频编辑默认",
+                "默认槽位": "视频编辑",
+                "环节": "统一AI预设-Aitgenne / happyhorse-1.0-video-edit",
+                "模型名称": "Aitgenne / happyhorse-1.0-video-edit",
+                "状态": "启用",
+                "生效来源": "线上配置",
+            }),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+
+        self.assertEqual(plan.record_updates, [])
+
     def test_backup_snapshot_redacts_secrets_and_long_prompts(self):
         snapshot = cleanup.build_backup_snapshot(
             fields=[{"field_name": "API Key"}, {"field_name": "环节"}],
@@ -199,8 +217,8 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
     def test_cleanup_targets_do_not_delete_unified_table_fields_or_touch_legacy_tables(self):
         self.assertEqual(cleanup.MIGRATED_FIELD_NAMES, set())
-        self.assertNotIn(cleanup.MODEL_CATALOG_TABLE_ID, cleanup.OBSOLETE_VIEWS_BY_TABLE)
-        self.assertNotIn(cleanup.TASK_DEFAULT_TABLE_ID, cleanup.OBSOLETE_VIEWS_BY_TABLE)
+        self.assertFalse(hasattr(cleanup, "MODEL_CATALOG_TABLE_ID"))
+        self.assertFalse(hasattr(cleanup, "TASK_DEFAULT_TABLE_ID"))
         self.assertIn("统一AI预设", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.TABLE_CONFIG])
         self.assertEqual(cleanup.LEGACY_CONFIG_VIEW_RENAMES["供应商密钥-管理员"], "01-运行配置-管理员")
 
@@ -282,20 +300,12 @@ class CleanupModelConfigTableTests(unittest.TestCase):
              patch.object(cleanup, "apply_view_definitions", return_value=[]), \
              patch.object(cleanup, "delete_obsolete_views", return_value=[]), \
              patch.object(cleanup, "rename_legacy_config_table") as rename_table, \
-             patch.object(cleanup, "sync_model_catalog_options") as sync_catalog, \
-             patch.object(cleanup, "ensure_video_edit_catalog_record") as edit_catalog, \
-             patch.object(cleanup, "sync_task_default_app_table_options") as sync_defaults, \
-             patch.object(cleanup, "ensure_video_edit_default_record") as edit_default, \
              patch.object(cleanup, "delete_migrated_fields") as delete_fields, \
              patch.object(cleanup, "ensure_unified_config_table_name", return_value={"status": "dry_run"}) as rename_unified:
             result = cleanup.run_cleanup(write=False, backup_path=Path("/tmp/cleanup.json"))
 
         rename_table.assert_not_called()
         rename_unified.assert_called_once()
-        sync_catalog.assert_not_called()
-        edit_catalog.assert_not_called()
-        sync_defaults.assert_not_called()
-        edit_default.assert_not_called()
         delete_fields.assert_not_called()
         delete_records.assert_not_called()
         self.assertEqual(result["legacy_table"]["status"], "not_touched")
