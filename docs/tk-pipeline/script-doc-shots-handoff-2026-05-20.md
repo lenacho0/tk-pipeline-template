@@ -345,7 +345,7 @@ python3 -c 'import sys; sys.path.insert(0, "tk_toolkit_dual"); import tk_dispatc
   - 口播音频 `成功`
   - 分镜视频 `成功`
   - 视频 task_id：`models/veo-3.1-fast-generate-preview/operations/zzctwataj7ubchannel5096`
-  - 本地视频：`/Users/ryanlynn/.openclaw/workspace-tk/shot_video_work/recvk8vXL2JSsU/recvk8vXL2JSsU_video.mp4`
+  - 本地视频：`<repo>/shot_video_work/recvk8vXL2JSsU/recvk8vXL2JSsU_video.mp4`
   - 飞书视频 file_token：`C3UGbM8Olox6UTxBoSlctsnon04`
   - `ffprobe`：`720x1280`，`4.000000s`
 

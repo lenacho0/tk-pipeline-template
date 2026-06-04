@@ -11,7 +11,7 @@ test_structured_storyboard_real.py
 import json, os, sys, time, base64, requests
 from pathlib import Path
 
-WORKSPACE     = Path(os.environ.get("WORKSPACE", "/Users/ryanlynn/.openclaw/workspace-tk"))
+WORKSPACE     = Path(os.environ.get("WORKSPACE", ".")).resolve()
 OUT_DIR       = WORKSPACE / "structured_script_shadow_output"
 SCRIPT_DIR    = WORKSPACE / "tk_toolkit_dual"
 SHADOW_OUTPUT = WORKSPACE / "structured_script_shadow_output"

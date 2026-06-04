@@ -2,7 +2,7 @@
 
 最后整理：2026-06-01
 
-当前一线文档只服务 ryan 主线 TK pipeline 多维表格项目。UGC / 内容-01~07、新 TikTok Bitable 表6、colleague 实例、误建 Base、早期脚本副本和实验输出均已归档，不再作为当前主线依据。
+当前一线文档服务 TK pipeline 多维表格项目。交付给同事时使用私有 GitHub 仓库、独立复制 Base、本地 `config.local.json` 和 macOS `launchd` 常驻。
 
 ---
 
@@ -13,6 +13,7 @@
 旧 TK pipeline、分镜一致性、上线状态、P0/P1 改造和经验复盘。
 
 - `ai-model-catalog-candidates-2026-05-30.md`：全局 AI 模型目录候选清单。
+- `colleague-local-setup.md`：同事本地 clone、复制 Base、重映射配置和安装 launchd 的唯一入口。
 - `ai-model-catalog-dry-run-2026-05-31.md`：AI 模型目录同步 dry-run 记录。
 - `ai-model-catalog-dry-run-with-candidates-2026-05-31.md`：带候选项的 AI 模型目录 dry-run 记录。
 - `ai-model-smoke-results-2026-05-31.md`：AI 模型 smoke test 结果。
@@ -32,7 +33,7 @@
 
 ### `tk_toolkit_dual/`
 
-当前核心代码目录，只承载 ryan dispatcher 实例。
+当前核心代码目录，默认本地实例为 `colleague`，也支持通过 `TK_INSTANCE` 指定其他实例。
 
 - `README_DUAL.md`：ryan-only 运行说明。
 - `OPS_QUICK_REFERENCE.md`：当前 ryan 主线运维速查。
@@ -44,19 +45,19 @@
 
 ### 当前服务
 
-- `com.ryan.tk-dispatcher.ryan`
+- `com.tk-pipeline.dispatcher.colleague`
 
 ### 常用命令
 
 ```bash
-launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.ryan | sed -n '1,120p'
+launchctl print gui/$(id -u)/com.tk-pipeline.dispatcher.colleague | sed -n '1,120p'
 ```
 
 ```bash
-TK_INSTANCE=ryan TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.ryan.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
+TK_INSTANCE=colleague TK_CONFIG_FILE=$PWD/tk_toolkit_dual/config.local.json .venv/bin/python tk_toolkit_dual/tk_healthcheck.py
 ```
 
-注意：`tk_toolkit/` 暂时保留，因为当前 dual launchd 仍复用其中的 `.venv312` Python 运行时。不要在清理文档时删除它。
+注意：`tk_toolkit/` 是历史旧链路，保留用于追溯；当前交付入口以 `tk_toolkit_dual/` 为准。
 
 ---
 

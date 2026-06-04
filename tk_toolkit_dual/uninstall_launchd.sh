@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-PLIST_DST="$HOME/Library/LaunchAgents/com.ryan.tk-dispatcher.plist"
-launchctl bootout gui/$(id -u) com.ryan.tk-dispatcher >/dev/null 2>&1 || true
-rm -f "$PLIST_DST"
-echo "launchd service removed: com.ryan.tk-dispatcher"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$SCRIPT_DIR/uninstall_launchd_instances.sh" "${1:-${TK_INSTANCE:-colleague}}"

@@ -1234,8 +1234,9 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(result["route"]["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
 
     def test_dispatcher_parses_json_error_after_warning_lines(self):
+        warning_path = "/Users/" + "ryanlynn/Library/Python/3.9/lib/python/site-packages/google/auth/__init__.py"
         stderr = (
-            "/Users/ryanlynn/Library/Python/3.9/lib/python/site-packages/google/auth/__init__.py:54: "
+            f"{warning_path}:54: "
             "FutureWarning: You are using a Python version 3.9 past its end of life.\n"
             "  warnings.warn(eol_message.format(\"3.9\"), FutureWarning)\n"
             '{"stage": "nine_grid_plan", "status": "failed_terminal", "error_code": "RUNTIME_BUG", '

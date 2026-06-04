@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 # ── paths ──────────────────────────────────────────────────────────────────────
-WORKSPACE   = Path(os.environ.get("WORKSPACE", "/Users/ryanlynn/.openclaw/workspace-tk"))
+WORKSPACE   = Path(os.environ.get("WORKSPACE", ".")).resolve()
 OUT_DIR     = WORKSPACE / "structured_script_shadow_output"
 OUT_DIR.mkdir(exist_ok=True)
 SCRIPT_DIR  = WORKSPACE / "tk_toolkit_dual"

@@ -9,8 +9,10 @@
       "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
       "storyboard_video": "故事板图片视频生成表的 table_id",
+      "nine_grid_video": "多图九宫格视频生成表的 table_id",
       "first_last_video": "首尾帧视频生成表的 table_id",
       "multi_role_first_last": "多角色首尾帧生成表的 table_id",
+      "video_edit": "视频编辑任务表的 table_id",
       "voice_library": "音色库表的 table_id",
       "text_audio": "文案转音频表的 table_id",
       "product": "产品信息表的 table_id",
@@ -25,12 +27,102 @@
     "storyboard_text_split": "故事板图片提示词拆分-Gemini 在「模型与API配置」表中的 record_id",
     "main_image_otu": "图片生成-OTU 在「模型与API配置」表中的 record_id"
   },
-  "products": {
-    "产品名称1": "该产品在「产品信息」表中的 record_id",
-    "产品名称2": "该产品在「产品信息」表中的 record_id"
-  },
+  "products": {},
   "notification": {
     "feishu_user_id": "接收巡检报告的飞书用户 open_id（如 ou_XXXX，可选）"
+  },
+  "dispatcher": {
+    "poll_interval": 30,
+    "healthcheck_hour": 8,
+    "global_max_concurrency": 0,
+    "scan": {
+      "table_min_interval_seconds": 20,
+      "record_state_cache_ttl_seconds": 300
+    },
+    "circuit_breaker": {
+      "threshold": 5,
+      "window_seconds": 600,
+      "cooldown_seconds": 900
+    },
+    "stages": {
+      "tk_script_doc_shots.py": {
+        "max_concurrency": 1,
+        "timeout": 1200,
+        "max_retries": 1
+      },
+      "tk_first_last_video.py": {
+        "timeout": 2400,
+        "max_retries": 1
+      },
+      "tk_storyboard_video.py": {
+        "timeout": 2400,
+        "max_retries": 1
+      },
+      "tk_shot_voiceover.py": {
+        "timeout": 300,
+        "max_retries": 2
+      },
+      "tk_shot_storyboard.py": {
+        "max_concurrency": 3,
+        "timeout": 1200,
+        "max_retries": 2
+      },
+      "tk_shot_video.py": {
+        "timeout": 2400,
+        "max_retries": 1
+      },
+      "文案音频生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档口播音频生成": {
+        "max_concurrency": 3
+      },
+      "故事板图片生成": {
+        "max_concurrency": 3
+      },
+      "故事板Omni视频生成": {
+        "max_concurrency": 3
+      },
+      "多图九宫格参考图生成": {
+        "max_concurrency": 3
+      },
+      "多图九宫格图片生成": {
+        "max_concurrency": 3
+      },
+      "多图九宫格视频生成": {
+        "max_concurrency": 3
+      },
+      "首尾帧首帧图生成": {
+        "max_concurrency": 3
+      },
+      "首尾帧尾帧图生成": {
+        "max_concurrency": 3
+      },
+      "首尾帧视频生成": {
+        "max_concurrency": 3
+      },
+      "多角色参考图生成": {
+        "max_concurrency": 3
+      },
+      "多角色关键帧生成": {
+        "max_concurrency": 3
+      },
+      "多角色视频片段生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档参考底图生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档分镜图生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档尾帧图生成": {
+        "max_concurrency": 3
+      },
+      "脚本文档分镜视频生成": {
+        "max_concurrency": 3
+      }
+    }
   },
   "workspace": "./workspace"
 }

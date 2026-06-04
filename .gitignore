@@ -5,6 +5,13 @@
 .env
 .clawhub/
 
+# local TK configs - keep templates tracked
+tk_toolkit/config*.json
+!tk_toolkit/config.json.template
+tk_toolkit_dual/config*.json
+!tk_toolkit_dual/config.json.template
+*.local.json
+
 # runtime outputs
 downloads/
 
@@ -45,6 +52,9 @@ venv/
 
 # local/generated work dirs
 first_last_video_work/
+multi_role_first_last_work/
+nine_grid_video_work/
+repair_stuck_media/
 script_doc_reference_work/
 shot_video_work/
 shot_voiceover_work/

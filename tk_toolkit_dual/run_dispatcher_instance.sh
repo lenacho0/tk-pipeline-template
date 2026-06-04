@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTANCE="${TK_INSTANCE:-default}"
-CONFIG_FILE="${TK_CONFIG_FILE:-$SCRIPT_DIR/config.${INSTANCE}.json}"
+INSTANCE="${TK_INSTANCE:-colleague}"
+CONFIG_FILE="${TK_CONFIG_FILE:-$SCRIPT_DIR/config.local.json}"
 LOG_FILE="$SCRIPT_DIR/dispatcher.${INSTANCE}.log"
 HEARTBEAT_FILE="$SCRIPT_DIR/.dispatcher_heartbeat.${INSTANCE}.json"
-PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
+PYTHON_BIN="${PYTHON_BIN:-$SCRIPT_DIR/../.venv/bin/python}"
 
 cd "$SCRIPT_DIR"
 rm -f "$HEARTBEAT_FILE"

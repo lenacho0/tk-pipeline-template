@@ -1,16 +1,31 @@
 # tk_toolkit_dual launchd usage
 
-## Install / enable ryan auto-start service
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/install_launchd_instances.sh
+## Install / enable colleague auto-start service
 
-## Disable / uninstall ryan
-bash /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/uninstall_launchd_instances.sh
+```bash
+PYTHON_BIN=$PWD/.venv/bin/python TK_CONFIG_FILE=$PWD/tk_toolkit_dual/config.local.json bash tk_toolkit_dual/install_launchd_instances.sh colleague
+```
+
+## Disable / uninstall
+
+```bash
+bash tk_toolkit_dual/uninstall_launchd_instances.sh colleague
+```
 
 ## Manual status check
-launchctl print gui/$(id -u)/com.ryan.tk-dispatcher.ryan | sed -n '1,120p'
+
+```bash
+launchctl print gui/$(id -u)/com.tk-pipeline.dispatcher.colleague | sed -n '1,120p'
+```
 
 ## Manual restart
-launchctl kickstart -k gui/$(id -u)/com.ryan.tk-dispatcher.ryan
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.tk-pipeline.dispatcher.colleague
+```
 
 ## Manual health check
-TK_INSTANCE=ryan TK_CONFIG_FILE=/Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/config.ryan.json /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit/.venv312/bin/python /Users/ryanlynn/.openclaw/workspace-tk/tk_toolkit_dual/tk_healthcheck.py
+
+```bash
+TK_INSTANCE=colleague TK_CONFIG_FILE=$PWD/tk_toolkit_dual/config.local.json .venv/bin/python tk_toolkit_dual/tk_healthcheck.py
+```
