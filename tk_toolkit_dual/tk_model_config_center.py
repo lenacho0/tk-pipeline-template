@@ -84,6 +84,7 @@ VIDEO_STAGES = {
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
+VIDEO_EDIT_SOURCE_CONFIG_STAGE = "统一AI预设-Aitgenne / happyhorse-1.0-video-edit"
 
 TASK_TABLES = {
     "multi_role_first_last": "001-多角色首尾帧生成表",
@@ -126,7 +127,7 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图九宫格图片生成", "参考图"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格视频生成默认", "多图九宫格视频生成", "视频"),
-    RuntimeDefaultSpec("video_edit", "视频编辑默认", "视频编辑-HappyHorse", "视频编辑"),
+    RuntimeDefaultSpec("video_edit", "视频编辑默认", VIDEO_EDIT_SOURCE_CONFIG_STAGE, "视频编辑"),
 )
 
 
@@ -532,7 +533,7 @@ def source_records_by_stage(records: Sequence[Mapping[str, Any]]) -> Dict[str, D
     for record in records:
         fields = _fields(record)
         stage = normalize_stage(text(fields, "环节"))
-        if stage and not stage.startswith("统一AI预设-"):
+        if stage and (not stage.startswith("统一AI预设-") or stage == VIDEO_EDIT_SOURCE_CONFIG_STAGE):
             result[stage] = {"record_id": _record_id(record), "fields": fields}
     return result
 
