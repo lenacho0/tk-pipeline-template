@@ -160,6 +160,42 @@ def config_record_matches_provider(fields: Dict[str, Any], provider: str) -> boo
     return bool(marker and marker in api_base)
 
 
+def config_record_matches_model(fields: Dict[str, Any], provider: str, display_model: str) -> bool:
+    requested = parse_model_display(display_model)
+    requested_provider = requested["provider"] or provider
+    requested_model = requested["model"] or _norm(display_model)
+    if not requested_model:
+        return False
+    field_provider = _norm(fields.get(AI_PROVIDER_FIELD) or fields.get("供应商"))
+    for field_name in ("模型名称", "默认模型", AI_MODEL_FIELD, "model"):
+        raw = _norm(fields.get(field_name))
+        if not raw:
+            continue
+        candidate = parse_model_display(raw)
+        candidate_provider = candidate["provider"] or field_provider
+        candidate_model = candidate["model"] or raw
+        if candidate_model != requested_model:
+            continue
+        if requested_provider and candidate_provider and candidate_provider != requested_provider:
+            continue
+        return True
+    return False
+
+
+def config_record_for_model(
+    config_records: Iterable[Dict[str, Any]],
+    provider: str,
+    display_model: str,
+) -> Optional[Dict[str, Any]]:
+    for rec in config_records or []:
+        fields = rec.get("fields") if isinstance(rec, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        if config_record_matches_model(fields, provider, display_model):
+            return fields
+    return None
+
+
 def api_key_for_provider(config_records: Iterable[Dict[str, Any]], provider: str) -> str:
     for rec in config_records or []:
         fields = rec.get("fields") if isinstance(rec, dict) else {}

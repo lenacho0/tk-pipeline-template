@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import requests
 
-from ai_routing import AiRoute, parse_model_display
+from ai_routing import AiRoute, config_record_for_model, parse_model_display
 from common import (
     APP_TOKEN,
     TABLE_CONFIG,
@@ -97,6 +96,15 @@ def download_reference_attachments(token: str, attachments: Sequence[Mapping[str
     return paths
 
 
+def attachment_tmp_url(token: str, attachment: Mapping[str, Any]) -> str:
+    file_token = extract_text(attachment.get("file_token")).strip()
+    if not file_token:
+        return ""
+    from tk_shot_storyboard import get_tmp_download_url_for_attachment
+
+    return get_tmp_download_url_for_attachment(token, file_token)
+
+
 def _videos_endpoint(api_base: str = "") -> str:
     base = (api_base or DEFAULT_API_BASE).strip().rstrip("/")
     if base.endswith("/v1/videos"):
@@ -114,29 +122,15 @@ def _config_record_text(fields: Mapping[str, Any], *names: str) -> str:
     return ""
 
 
-def _config_records_for_aitgenne(records: Iterable[Mapping[str, Any]]) -> Iterable[Mapping[str, Any]]:
-    for record in records or []:
-        fields = record.get("fields") if isinstance(record, Mapping) else {}
-        if not isinstance(fields, Mapping):
-            continue
-        provider = _config_record_text(fields, "AI供应商", "供应商")
-        api_base = _config_record_text(fields, "API 代理地址", "api_base")
-        model = _config_record_text(fields, "模型名称", "默认模型")
-        if provider == "Aitgenne" or "aitgenne" in api_base.lower() or "happyhorse" in model.lower():
-            yield fields
-
-
 def resolve_video_edit_route(token: str) -> AiRoute:
-    api_key = os.environ.get("AITGENNE_API_KEY", "").strip()
-    api_base = DEFAULT_API_BASE
     config_records = safe_list_records(token, TABLE_CONFIG) if TABLE_CONFIG else []
-    for fields in _config_records_for_aitgenne(config_records):
-        api_key = api_key or _config_record_text(fields, "API Key", "api_key")
-        api_base = _config_record_text(fields, "API 代理地址", "api_base") or api_base
-        if api_key:
-            break
+    fields = config_record_for_model(config_records, "Aitgenne", MODEL_DISPLAY_NAME)
+    if fields is None:
+        raise ValueError(f"未找到模型配置: {MODEL_DISPLAY_NAME}")
+    api_key = _config_record_text(fields, "API Key", "api_key")
     if not api_key:
-        raise ValueError("Aitgenne 缺少 API Key，请在飞书配置表或 AITGENNE_API_KEY 环境变量中配置")
+        raise ValueError(f"模型配置缺少 API Key: {MODEL_DISPLAY_NAME}")
+    api_base = _config_record_text(fields, "API 代理地址", "api_base") or DEFAULT_API_BASE
     return AiRoute(
         provider="Aitgenne",
         capability="视频编辑",
@@ -179,6 +173,7 @@ def _extract_task_id(data: Mapping[str, Any]) -> str:
         data.get("video_id"),
         (data.get("data") or {}).get("id") if isinstance(data.get("data"), dict) else None,
         (data.get("data") or {}).get("task_id") if isinstance(data.get("data"), dict) else None,
+        (data.get("output") or {}).get("task_id") if isinstance(data.get("output"), dict) else None,
     ]
     for item in candidates:
         text = extract_text(item).strip()
@@ -195,46 +190,50 @@ def submit_aitgenne_video_edit_task(
     params: Mapping[str, Any],
 ) -> Tuple[str, Dict[str, Any]]:
     model_name = parse_model_display(route.model)["model"] or MODEL_NAME
-    data = {
+    source_video_url = extract_text((params or {}).get("source_video_url")).strip()
+    if not source_video_url:
+        raise ValueError("Aitgenne 视频编辑缺少 source_video_url")
+    media = [{"type": "video", "url": source_video_url}]
+    for url in (params or {}).get("reference_image_urls") or []:
+        text = extract_text(url).strip()
+        if text:
+            media.append({"type": "reference_image", "url": text})
+    payload = {
         "model": model_name,
         "prompt": prompt,
-        "resolution": params.get("resolution") or "720P",
-        "audio_setting": params.get("audio_setting") or "origin",
+        "input": {"media": media},
+        "parameters": {
+            "resolution": params.get("resolution") or "720P",
+            "audio_setting": params.get("audio_setting") or "origin",
+        },
     }
-    data.update({key: value for key, value in (params or {}).items() if key not in data and value is not None})
-    files = []
-    handles = []
-    try:
-        source_handle = open(source_video_path, "rb")
-        handles.append(source_handle)
-        files.append(("video", (Path(source_video_path).name, source_handle, "video/mp4")))
-        for idx, path in enumerate(reference_paths[:MAX_REFERENCE_IMAGES], start=1):
-            handle = open(path, "rb")
-            handles.append(handle)
-            files.append(("reference_images", (Path(path).name, handle, "application/octet-stream")))
-        resp = requests.post(
-            _videos_endpoint(route.api_base),
-            headers={"Authorization": f"Bearer {route.api_key}"},
-            data=data,
-            files=files,
-            timeout=180,
-        )
-        body = _response_json(resp)
-    finally:
-        for handle in handles:
-            handle.close()
+    extra_params = {
+        key: value
+        for key, value in (params or {}).items()
+        if key not in {"resolution", "audio_setting", "source_video_url", "reference_image_urls"} and value is not None
+    }
+    payload.update(extra_params)
+    resp = requests.post(
+        _videos_endpoint(route.api_base),
+        headers={"Authorization": f"Bearer {route.api_key}"},
+        json=payload,
+        timeout=180,
+    )
+    body = _response_json(resp)
     return _extract_task_id(body), body
 
 
 def _walk_values(value: Any):
     if isinstance(value, dict):
         for key, item in value.items():
-            if str(key).lower() in {"url", "video_url", "result_url", "output_url", "download_url"}:
+            if str(key).lower() in {"url", "video_url", "result_url", "output_url", "download_url", "media_url"}:
                 yield item
             yield from _walk_values(item)
     elif isinstance(value, list):
         for item in value:
             yield from _walk_values(item)
+    elif isinstance(value, str):
+        yield value
 
 
 def extract_video_result_url(data: Mapping[str, Any]) -> str:
@@ -250,6 +249,7 @@ def _extract_status(data: Mapping[str, Any]) -> str:
         data.get("status"),
         (data.get("data") or {}).get("status") if isinstance(data.get("data"), dict) else None,
         (data.get("data") or {}).get("state") if isinstance(data.get("data"), dict) else None,
+        (data.get("output") or {}).get("task_status") if isinstance(data.get("output"), dict) else None,
     ]
     for item in candidates:
         text = extract_text(item).strip().lower()
@@ -339,9 +339,14 @@ def run_video_edit(
     source_name = _safe_filename(str(source_attachment.get("name") or ""), "source.mp4")
     source_path = download_feishu_attachment(token, source_attachment, task_dir / source_name)
     reference_paths = download_reference_attachments(token, reference_attachments(fields), task_dir)
+    source_video_url = attachment_tmp_url(token, source_attachment)
+    if not source_video_url:
+        raise ValueError("Aitgenne 视频编辑缺少源视频临时下载 URL")
     params = {
         "resolution": normalize_resolution(fields.get("输出分辨率")),
         "audio_setting": normalize_audio_setting(fields.get("音频策略")),
+        "source_video_url": source_video_url,
+        "reference_image_urls": [attachment_tmp_url(token, item) for item in reference_attachments(fields)],
     }
 
     if submitter is submit_aitgenne_video_edit_task or poller is poll_aitgenne_video_edit_task:

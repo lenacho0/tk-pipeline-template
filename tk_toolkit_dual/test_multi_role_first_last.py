@@ -993,6 +993,70 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertTrue(any(update.get("视频通道") == "Aitgenne" for update in updates))
         self.assertTrue(any("provider=Aitgenne model=happyhorse-1.0-i2v" in update.get("视频错误信息", "") for update in updates))
 
+    def test_happyhorse_route_uses_exact_model_api_key(self):
+        config_records = [
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / gpt-image-2",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-image",
+                }
+            },
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-i2v",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-happyhorse",
+                }
+            },
+        ]
+
+        with patch.object(multi_role, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(multi_role, "safe_list_records", return_value=config_records):
+            route = multi_role.reference_video_route_for_model(
+                "token",
+                "Aitgenne",
+                "Aitgenne / happyhorse-1.0-i2v",
+                task_type="首尾帧视频",
+                params={"size": "720x1280"},
+            )
+
+        self.assertEqual(route.api_key, "sk-happyhorse")
+        self.assertEqual(route.api_base, "https://api.aitgenne.com/v1")
+
+    def test_happyhorse_route_does_not_reuse_other_aitgenne_key(self):
+        config_records = [
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / gpt-image-2",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-image",
+                }
+            },
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-i2v",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "",
+                }
+            },
+        ]
+
+        with patch.object(multi_role, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(multi_role, "safe_list_records", return_value=config_records), \
+             self.assertRaisesRegex(ValueError, "模型配置缺少 API Key: Aitgenne / happyhorse-1.0-i2v"):
+            multi_role.reference_video_route_for_model(
+                "token",
+                "Aitgenne",
+                "Aitgenne / happyhorse-1.0-i2v",
+                task_type="首尾帧视频",
+                params={},
+            )
+
     def test_video_clip_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
         fields = {
             "记录类型": "视频片段",

@@ -55,6 +55,103 @@ class VideoEditWorkerTests(unittest.TestCase):
 
         self.assertEqual([item["file_token"] for item in selected], ["ref-0", "ref-1", "ref-2", "ref-3", "ref-4"])
 
+    def test_resolve_video_edit_route_uses_exact_happyhorse_model_key(self):
+        config_records = [
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-i2v",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-i2v",
+                }
+            },
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-video-edit",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-edit",
+                }
+            },
+        ]
+
+        with patch.object(video_edit, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(video_edit, "safe_list_records", return_value=config_records):
+            route = video_edit.resolve_video_edit_route("token")
+
+        self.assertEqual(route.api_key, "sk-edit")
+        self.assertEqual(route.api_base, "https://api.aitgenne.com/v1")
+
+    def test_resolve_video_edit_route_does_not_reuse_other_aitgenne_key(self):
+        config_records = [
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-i2v",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "sk-i2v",
+                }
+            },
+            {
+                "fields": {
+                    "AI供应商": "Aitgenne",
+                    "模型名称": "Aitgenne / happyhorse-1.0-video-edit",
+                    "API 代理地址": "https://api.aitgenne.com/v1",
+                    "API Key": "",
+                }
+            },
+        ]
+
+        with patch.object(video_edit, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(video_edit, "safe_list_records", return_value=config_records), \
+             self.assertRaisesRegex(ValueError, "模型配置缺少 API Key: Aitgenne / happyhorse-1.0-video-edit"):
+            video_edit.resolve_video_edit_route("token")
+
+    def test_submit_video_edit_uses_happyhorse_json_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "source.mp4"
+            ref_path = Path(tmpdir) / "ref.png"
+            source_path.write_bytes(b"source-video")
+            ref_path.write_bytes(b"reference-image")
+            route = video_edit.default_video_edit_route()
+            route.api_key = "key"
+            response = Mock()
+            response.status_code = 200
+            response.json.return_value = {"id": "task-123"}
+
+            with patch.object(video_edit.requests, "post", return_value=response) as post:
+                task_id, _ = video_edit.submit_aitgenne_video_edit_task(
+                    route,
+                    "replace the shirt with @Image1",
+                    str(source_path),
+                    [str(ref_path)],
+                    {
+                        "resolution": "720P",
+                        "audio_setting": "origin",
+                        "source_video_url": "https://x.test/source.mp4",
+                        "reference_image_urls": ["https://x.test/ref.png"],
+                    },
+                )
+
+        self.assertEqual(task_id, "task-123")
+        self.assertEqual(post.call_args.args[0], "https://api.aitgenne.com/v1/videos")
+        kwargs = post.call_args.kwargs
+        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["json"], {
+            "model": "happyhorse-1.0-video-edit",
+            "prompt": "replace the shirt with @Image1",
+            "input": {
+                "media": [
+                    {"type": "video", "url": "https://x.test/source.mp4"},
+                    {"type": "reference_image", "url": "https://x.test/ref.png"},
+                ],
+            },
+            "parameters": {
+                "resolution": "720P",
+                "audio_setting": "origin",
+            },
+        })
+
     def test_run_video_edit_success_writes_result_attachment(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             source_path = os.path.join(tmpdir, "source.mp4")
@@ -78,6 +175,7 @@ class VideoEditWorkerTests(unittest.TestCase):
                  patch.object(video_edit, "filter_existing_fields", side_effect=lambda token, table, payload: payload), \
                  patch.object(video_edit, "download_feishu_attachment", return_value=Path(source_path)), \
                  patch.object(video_edit, "download_reference_attachments", return_value=[]), \
+                 patch.object(video_edit, "attachment_tmp_url", side_effect=["https://x.test/source.mp4", "https://x.test/ref.png"]), \
                  patch.object(video_edit, "download_video", return_value=result_path), \
                  patch.object(video_edit, "upload_video_to_feishu", return_value="result-token"):
                 result = video_edit.run_video_edit("rec1", work_dir=Path(tmpdir), submitter=submitter, poller=poller)
@@ -87,6 +185,8 @@ class VideoEditWorkerTests(unittest.TestCase):
         self.assertEqual(submit_args[1], "replace the shirt with the reference pattern")
         self.assertEqual(submit_args[2], source_path)
         self.assertEqual(submit_args[4]["audio_setting"], "origin")
+        self.assertEqual(submit_args[4]["source_video_url"], "https://x.test/source.mp4")
+        self.assertEqual(submit_args[4]["reference_image_urls"], ["https://x.test/ref.png"])
         final_payload = update_record.call_args_list[-1].args[3]
         self.assertEqual(final_payload["编辑状态"], "成功")
         self.assertEqual(final_payload["视频任务ID"], "task-123")

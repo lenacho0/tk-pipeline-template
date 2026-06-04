@@ -996,11 +996,18 @@ def reference_video_route_for_model(
     task_type: str,
     params: Dict[str, Any],
 ) -> ai_routing.AiRoute:
-    config_records = config_records_for_image_slot({}, "视频", lambda: safe_list_records(token, TABLE_CONFIG))
-    api_key = ai_routing.api_key_for_provider(config_records, provider)
-    api_base = _config_value_for_provider(config_records, provider, "API 代理地址", "api_base")
-    if provider == "Aitgenne" and not api_base:
-        api_base = "https://api.aitgenne.com/v1"
+    config_records = safe_list_records(token, TABLE_CONFIG) if TABLE_CONFIG else []
+    if provider == "Aitgenne":
+        config_fields = ai_routing.config_record_for_model(config_records, provider, display_model)
+        if config_fields is None:
+            raise ValueError(f"未找到模型配置: {display_model}")
+        api_key = extract_text(config_fields.get("API Key") or config_fields.get("api_key")).strip()
+        if not api_key:
+            raise ValueError(f"模型配置缺少 API Key: {display_model}")
+        api_base = extract_text(config_fields.get("API 代理地址") or config_fields.get("api_base")).strip() or "https://api.aitgenne.com/v1"
+    else:
+        api_key = ai_routing.api_key_for_provider(config_records, provider)
+        api_base = _config_value_for_provider(config_records, provider, "API 代理地址", "api_base")
     route = ai_routing.AiRoute(
         provider=provider,
         capability="视频",
