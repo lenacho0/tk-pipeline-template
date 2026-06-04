@@ -1922,6 +1922,7 @@ class NineGridVideoTests(unittest.TestCase):
                  *asset_records,
              ]), \
              patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "build_reference_urls", side_effect=lambda token, refs: [f"https://x.test/{ref['file_token']}.png" for ref in refs]), \
              patch.object(nine_grid, "submit_reference_video_task", return_value=("task_ref", {"id": "task_ref"}), create=True) as submitter, \
              patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
              patch.object(nine_grid, "download_video"), \
@@ -1938,6 +1939,69 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual([ref["role"] for ref in refs], ["nine_grid", "product:1", "human:pear"])
         self.assertIn("Reference image 2 = exact product reference", prompt)
         self.assertEqual(submitter.call_args.kwargs["seconds"], "10")
+
+    def test_submit_aitgenne_reference_video_uses_input_media_json_schema(self):
+        route = nine_grid.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首帧图生视频",
+            model="Aitgenne / happyhorse-1.0-r2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+        refs = [
+            {"role": "nine_grid", "url": "https://x.test/grid.png"},
+            {"role": "product:1", "url": "https://x.test/product.png"},
+        ]
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.text = '{"id":"task_aitgenne"}'
+
+        with patch.object(nine_grid.requests, "post", return_value=response) as post:
+            task_id, body = nine_grid.submit_reference_video_task(
+                route,
+                "video prompt",
+                refs,
+                size="720x1280",
+                aspect_ratio="9:16",
+                seconds="10",
+            )
+
+        self.assertEqual(task_id, "task_aitgenne")
+        self.assertEqual(body["status"], "queued")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["json"], {
+            "model": "happyhorse-1.0-r2v",
+            "prompt": "video prompt",
+            "input.media": [
+                {"type": "image", "url": "https://x.test/grid.png"},
+                {"type": "image", "url": "https://x.test/product.png"},
+            ],
+            "parameters.resolution": "720P",
+            "parameters.aspect_ratio": "9:16",
+            "parameters.seconds": "10",
+        })
+
+    def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):
+        route = nine_grid.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首帧图生视频",
+            model="Aitgenne / happyhorse-1.0-r2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+        fields = {
+            "视频错误信息": (
+                "Aitgenne 参考图视频生成失败: {'error': {'code': 'InvalidParameter', "
+                "'message': \"Field required: input.media & Input should be '1080P' or '720P': parameters.resolution\"}}"
+            )
+        }
+
+        self.assertFalse(nine_grid.existing_video_task_matches_route(fields, route, "task_old"))
 
     def test_render_nine_grid_video_submits_aitgenne_omni_with_grid_and_product_only(self):
         child_fields = {
@@ -1972,6 +2036,7 @@ class NineGridVideoTests(unittest.TestCase):
                  *asset_records,
              ]), \
              patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "build_reference_urls", side_effect=lambda token, refs: [f"https://x.test/{ref['file_token']}.png" for ref in refs]), \
              patch.object(nine_grid, "submit_reference_video_task", return_value=("task_ref", {"id": "task_ref"}), create=True) as submitter, \
              patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True), \
              patch.object(nine_grid, "download_video"), \
@@ -2143,6 +2208,7 @@ class NineGridVideoTests(unittest.TestCase):
                  {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},
              ]), \
              patch.object(nine_grid, "safe_download_attachment", side_effect=lambda token, file_token, path: path), \
+             patch.object(nine_grid, "build_reference_urls", side_effect=lambda token, refs: [f"https://x.test/{ref['file_token']}.png" for ref in refs]), \
              patch.object(nine_grid, "submit_reference_video_task", return_value=("task_new_aitgenne", {"id": "task_new_aitgenne"}), create=True) as submitter, \
              patch.object(nine_grid, "poll_reference_video_task", return_value={"video_url": "https://x.test/video.mp4"}, create=True) as poller, \
              patch.object(nine_grid, "download_video"), \

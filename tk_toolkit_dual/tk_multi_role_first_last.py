@@ -1026,10 +1026,23 @@ def video_task_route_tag(provider: str, model: str) -> str:
     return f"provider={provider} model={model_name}"
 
 
+def aitgenne_video_resolution(size: Any) -> str:
+    text = extract_text(size).strip().upper()
+    if text in {"1080P", "1080"} or "1080" in text or "1920" in text:
+        return "1080P"
+    return "720P"
+
+
+def is_legacy_aitgenne_video_payload_error(error_text: str) -> bool:
+    return any(marker in error_text for marker in ("InvalidParameter", "input.media", "parameters.resolution"))
+
+
 def existing_video_task_matches_channel(fields: Dict[str, Any], channel: str, display_model: str, task_id: str) -> bool:
     if not task_id:
         return False
     error_text = extract_text(fields.get("视频错误信息")).strip()
+    if channel == "Aitgenne" and is_legacy_aitgenne_video_payload_error(error_text):
+        return False
     tag = video_task_route_tag(channel, display_model)
     if tag in error_text:
         return True
@@ -1816,11 +1829,53 @@ def submit_otu_video_task(config: Dict[str, str], prompt: str, first_frame_path:
     return with_retry(_submit_once, max_attempts=4, label="submit multi-role first-last OTU video")
 
 
-def submit_reference_video_task(route: ai_routing.AiRoute, prompt: str, first_frame_path: str, last_frame_path: str, *, seconds: str, size: str, aspect_ratio: str) -> Tuple[str, Dict[str, Any]]:
+def submit_reference_video_task(
+    route: ai_routing.AiRoute,
+    prompt: str,
+    first_frame_path: str,
+    last_frame_path: str,
+    *,
+    seconds: str,
+    size: str,
+    aspect_ratio: str,
+    reference_urls: Optional[List[str]] = None,
+) -> Tuple[str, Dict[str, Any]]:
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
     endpoint = ai_routing.media_endpoint(route)
+    if route.provider == "Aitgenne":
+        urls = [extract_text(url).strip() for url in (reference_urls or []) if extract_text(url).strip()]
+        if len(urls) < 2:
+            raise ValueError("Aitgenne 多角色视频缺少参考图 URL")
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "input.media": [{"type": "image", "url": url} for url in urls[:2]],
+            "parameters.resolution": aitgenne_video_resolution(size),
+            "parameters.aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+            "parameters.seconds": str(seconds or "8"),
+        }
+
+        def _submit_json_once() -> Tuple[str, Dict[str, Any]]:
+            resp = requests.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {route.api_key}"},
+                json=payload,
+                timeout=SUBMIT_TIMEOUT,
+            )
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"raw_text": resp.text[:1000]}
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{route.provider} 多角色视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+            task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+            if not task_id:
+                raise RuntimeError(f"{route.provider} 多角色视频任务提交未返回任务 ID: {str(body)[:1200]}")
+            return task_id, body
+
+        return with_retry(_submit_json_once, max_attempts=4, label=f"submit multi-role {route.provider} video {endpoint}")
 
     def _submit_once() -> Tuple[str, Dict[str, Any]]:
         with open(first_frame_path, "rb") as first_file, open(last_frame_path, "rb") as last_file:
@@ -2002,6 +2057,12 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     else:
         first_path = download_feishu_media(token, first["file_token"], work_dir / f"{record_id}_{first_type}.png")
         last_path = download_feishu_media(token, last["file_token"], work_dir / f"{record_id}_{last_type}.png")
+        reference_urls = []
+        if channel == "Aitgenne":
+            reference_urls = [
+                get_tmp_download_url_for_attachment(token, first["file_token"]),
+                get_tmp_download_url_for_attachment(token, last["file_token"]),
+            ]
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "首关键帧file_token": first["file_token"],
             "尾关键帧file_token": last["file_token"],
@@ -2028,7 +2089,16 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         elif channel == "Aitgenne":
             if reference_route is None:
                 raise RuntimeError("Aitgenne 视频路由未初始化")
-            task_id, submit_body = submit_reference_video_task(reference_route, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
+            task_id, submit_body = submit_reference_video_task(
+                reference_route,
+                prompt,
+                str(first_path),
+                str(last_path),
+                seconds=seconds,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                reference_urls=reference_urls,
+            )
             safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
                 "视频任务ID": task_id,
                 "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),

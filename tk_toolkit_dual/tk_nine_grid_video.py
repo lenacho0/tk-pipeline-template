@@ -585,10 +585,23 @@ def video_task_route_tag(route: ai_routing.AiRoute) -> str:
     return f"provider={route.provider} model={model_name}"
 
 
+def aitgenne_video_resolution(size: Any) -> str:
+    text = extract_text(size).strip().upper()
+    if text in {"1080P", "1080"} or "1080" in text or "1920" in text:
+        return "1080P"
+    return "720P"
+
+
+def is_legacy_aitgenne_video_payload_error(error_text: str) -> bool:
+    return any(marker in error_text for marker in ("InvalidParameter", "input.media", "parameters.resolution"))
+
+
 def existing_video_task_matches_route(fields: Dict[str, Any], route: ai_routing.AiRoute, task_id: str) -> bool:
     if not task_id:
         return False
     error_text = extract_text(fields.get("视频错误信息")).strip()
+    if route.provider == "Aitgenne" and is_legacy_aitgenne_video_payload_error(error_text):
+        return False
     tag = video_task_route_tag(route)
     if tag in error_text:
         return True
@@ -611,6 +624,35 @@ def submit_reference_video_task(
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    if route.provider == "Aitgenne":
+        urls = [extract_text(ref.get("url")).strip() for ref in refs[:REFERENCE_VIDEO_MAX_IMAGES] if extract_text(ref.get("url")).strip()]
+        if not urls:
+            raise ValueError("Aitgenne 参考图生视频缺少参考图 URL")
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "input.media": [{"type": "image", "url": url} for url in urls],
+            "parameters.resolution": aitgenne_video_resolution(size),
+            "parameters.aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+            "parameters.seconds": str(seconds or "10"),
+        }
+        resp = requests.post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}"},
+            json=payload,
+            timeout=180,
+        )
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+        task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+        if not task_id:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
+        return task_id, body
+
     opened = []
     files: List[Tuple[str, Tuple[Any, ...]]] = []
     try:
@@ -2201,6 +2243,9 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         submitted_refs = omni_refs
         if _is_aitgenne_omni_flash(route, model_name):
             submitted_refs = omni_refs[:2]
+        if route.provider == "Aitgenne":
+            urls = build_reference_urls(token, submitted_refs)
+            submitted_refs = [dict(ref, url=url) for ref, url in zip(submitted_refs, urls)]
         submitted_ref_roles = _reference_roles_summary(submitted_refs)
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "分镜视频": [],

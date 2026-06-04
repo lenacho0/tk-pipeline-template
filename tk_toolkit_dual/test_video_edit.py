@@ -140,16 +140,12 @@ class VideoEditWorkerTests(unittest.TestCase):
         self.assertEqual(kwargs["json"], {
             "model": "happyhorse-1.0-video-edit",
             "prompt": "replace the shirt with @Image1",
-            "input": {
-                "media": [
-                    {"type": "video", "url": "https://x.test/source.mp4"},
-                    {"type": "reference_image", "url": "https://x.test/ref.png"},
-                ],
-            },
-            "parameters": {
-                "resolution": "720P",
-                "audio_setting": "origin",
-            },
+            "input.media": [
+                {"type": "video", "url": "https://x.test/source.mp4"},
+                {"type": "reference_image", "url": "https://x.test/ref.png"},
+            ],
+            "parameters.resolution": "720P",
+            "parameters.audio_setting": "origin",
         })
 
     def test_run_video_edit_success_writes_result_attachment(self):

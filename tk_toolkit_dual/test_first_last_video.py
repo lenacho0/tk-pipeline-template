@@ -1121,6 +1121,65 @@ video prompt exactly
         self.assertEqual(kwargs["data"]["seconds"], "6")
         self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
 
+    def test_submit_aitgenne_reference_video_uses_input_media_json_schema(self):
+        route = first_last.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首尾帧视频",
+            model="Aitgenne / happyhorse-1.0-i2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.text = '{"id":"task_aitgenne"}'
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last, \
+             patch.object(first_last.requests, "post", return_value=response) as post:
+            task_id, body = first_last.submit_reference_video_task(
+                route,
+                "video prompt",
+                first.name,
+                last.name,
+                seconds="6",
+                size="720x1280",
+                aspect_ratio="9:16",
+                reference_urls=["https://x.test/first.png", "https://x.test/last.png"],
+            )
+
+        self.assertEqual(task_id, "task_aitgenne")
+        self.assertEqual(body["status"], "queued")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["json"], {
+            "model": "happyhorse-1.0-i2v",
+            "prompt": "video prompt",
+            "input.media": [
+                {"type": "image", "url": "https://x.test/first.png"},
+                {"type": "image", "url": "https://x.test/last.png"},
+            ],
+            "parameters.resolution": "720P",
+            "parameters.aspect_ratio": "9:16",
+            "parameters.seconds": "6",
+        })
+
+    def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):
+        fields = {
+            "视频错误信息": (
+                "Aitgenne 首尾帧视频生成失败: {'error': {'code': 'InvalidParameter', "
+                "'message': \"Field required: input.media & Input should be '1080P' or '720P': parameters.resolution\"}}"
+            )
+        }
+
+        self.assertFalse(first_last.existing_video_task_matches_channel(
+            fields,
+            "Aitgenne",
+            "Aitgenne / happyhorse-1.0-i2v",
+            "task_old",
+        ))
+
     def test_submit_first_last_video_task_retries_transient_network_failure(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last:
             first.write(b"first")
@@ -1346,6 +1405,7 @@ video prompt exactly
              patch.object(first_last, "get_native_veo_client") as native_client_factory, \
              patch.object(first_last, "call_native_veo_first_frame_task") as native_submitter, \
              patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(first_last, "get_tmp_download_url_for_attachment", side_effect=lambda token, file_token: f"https://x.test/{file_token}.png"), \
              patch.object(first_last, "download_video", return_value="/tmp/video.mp4"), \
              patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
              patch.object(first_last, "ensure_current_generation"), \
@@ -1359,6 +1419,7 @@ video prompt exactly
         submitter.assert_called_once()
         self.assertEqual(submitter.call_args.args[2], str(Path(tmp) / "rec1_video_first_frame_v2.png"))
         self.assertEqual(submitter.call_args.args[3], str(Path(tmp) / "rec1_video_last_frame_v2.png"))
+        self.assertEqual(submitter.call_args.kwargs["reference_urls"], ["https://x.test/ft_first.png", "https://x.test/ft_last.png"])
         poller.assert_called_once_with(route, "task_aitgenne")
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["task_id"], "task_aitgenne")

@@ -201,11 +201,9 @@ def submit_aitgenne_video_edit_task(
     payload = {
         "model": model_name,
         "prompt": prompt,
-        "input": {"media": media},
-        "parameters": {
-            "resolution": params.get("resolution") or "720P",
-            "audio_setting": params.get("audio_setting") or "origin",
-        },
+        "input.media": media,
+        "parameters.resolution": params.get("resolution") or "720P",
+        "parameters.audio_setting": params.get("audio_setting") or "origin",
     }
     extra_params = {
         key: value
