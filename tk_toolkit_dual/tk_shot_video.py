@@ -38,6 +38,7 @@ from common import (  # noqa: E402
     extract_text,
     feishu_headers,
     get_feishu_token,
+    latest_attachment_token,
     log_event,
     safe_get_record,
     safe_list_records,
@@ -314,11 +315,7 @@ def resolve_shot_video_filename(record_id: str, fields: Dict[str, Any]) -> str:
 
 
 def get_attachment_token(value: Any) -> str:
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict) and item.get("file_token"):
-                return str(item.get("file_token")).strip()
-    return ""
+    return latest_attachment_token(value)
 
 
 def resolve_voiceover_audio_dependency(fields: Dict[str, Any], provider: str) -> Dict[str, Any]:

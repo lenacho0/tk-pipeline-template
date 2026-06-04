@@ -53,7 +53,7 @@ LAST_FRAME_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成尾�
 VIDEO_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成首尾帧视频", "Orange")]
 FIRST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发尾帧", "Blue")]
 LAST_REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发视频", "Blue")]
-VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
+VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green"), opt("AIHubMix", "Blue"), opt("Aitgenne", "Purple")]
 VIDEO_MODEL_OPTIONS = FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS
 IMAGE_SIZE_OPTIONS = [
     opt("720x1280", "Green"),

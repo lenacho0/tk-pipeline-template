@@ -121,6 +121,11 @@ def build_config_presets(entries: Optional[Sequence[ai_model_catalog.ModelCatalo
 
 def build_field_option_updates(config: Dict[str, Any]) -> List[FieldOptionUpdate]:
     tables = ((config.get("feishu") or {}).get("tables") or {})
+    video_channel_options = [
+        ai_model_catalog.opt("OTU", "Green"),
+        ai_model_catalog.opt("AIHubMix", "Blue"),
+        ai_model_catalog.opt("Aitgenne", "Purple"),
+    ]
     target_specs = [
         ("nine_grid_video", "方案AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("nine_grid_video", "参考图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
@@ -135,6 +140,7 @@ def build_field_option_updates(config: Dict[str, Any]) -> List[FieldOptionUpdate
         ("first_last_video", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("first_last_video", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
         ("first_last_video", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+        ("first_last_video", "视频通道", video_channel_options),
         ("script_doc_tasks", "解析AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("script_doc_tasks", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("script_doc_tasks", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
@@ -149,6 +155,7 @@ def build_field_option_updates(config: Dict[str, Any]) -> List[FieldOptionUpdate
         ("multi_role_first_last", "关键帧AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("multi_role_first_last", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
         ("multi_role_first_last", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+        ("multi_role_first_last", "视频通道", video_channel_options),
     ]
     updates: List[FieldOptionUpdate] = []
     for table_key, field_name, options in target_specs:

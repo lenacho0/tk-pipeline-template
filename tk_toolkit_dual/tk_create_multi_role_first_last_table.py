@@ -93,7 +93,7 @@ KEYFRAME_TYPE_OPTIONS = [
 ]
 VIDEO_CLIP_OPTIONS = [opt("S01"), opt("S02")]
 YES_NO_OPTIONS = [opt("否", "Gray"), opt("是", "Green")]
-VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green")]
+VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green"), opt("AIHubMix", "Blue"), opt("Aitgenne", "Purple")]
 IMAGE_SIZE_OPTIONS = [
     opt("720x1280", "Green"),
     opt("1080x1920", "Blue"),

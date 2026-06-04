@@ -1506,12 +1506,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
 
 
 def _attachment_token(value: Any) -> str:
-    if not isinstance(value, list):
-        return ""
-    for item in value:
-        if isinstance(item, dict) and item.get("file_token"):
-            return item["file_token"]
-    return ""
+    tokens = _attachment_tokens(value)
+    return tokens[-1] if tokens else ""
 
 
 def _downloaded_path(downloaded: Any, fallback: Path) -> str:
@@ -1539,10 +1535,10 @@ def _product_reference_items(
         return []
     product_fields = get_record_fn(token, TABLE_PRODUCT, product_ids[0])
     product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
-    return [
-        {"role": f"product:{idx}", "file_token": token_value, "name": product_name or "selected product"}
-        for idx, token_value in enumerate(_attachment_tokens(product_fields.get("产品图片")), start=1)
-    ]
+    product_tokens = _attachment_tokens(product_fields.get("产品图片"))
+    if not product_tokens:
+        return []
+    return [{"role": "product:1", "file_token": product_tokens[-1], "name": product_name or "selected product"}]
 
 
 def first_product_reference_item(
@@ -1560,7 +1556,7 @@ def first_product_reference_item(
     if not product_tokens:
         raise ValueError("产品记录缺少产品图片")
     product_name = _first_text(product_fields, ["产品名称-zh", "产品名称-th", "产品", "产品名称", "产品名"])
-    return {"role": "product:1", "file_token": product_tokens[0], "name": product_name or "selected product"}
+    return {"role": "product:1", "file_token": product_tokens[-1], "name": product_name or "selected product"}
 
 
 def collect_nine_grid_video_product_reference(

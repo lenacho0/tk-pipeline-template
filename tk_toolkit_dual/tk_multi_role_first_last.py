@@ -36,6 +36,7 @@ from common import (  # noqa: E402
     feishu_headers,
     get_feishu_token,
     get_product_record,
+    latest_media_token,
     log_event,
     safe_get_record,
     safe_list_records,
@@ -968,7 +969,70 @@ def selected_video_provider_hint(fields: Dict[str, Any]) -> str:
 
 
 def video_channel_for_provider(provider: str) -> str:
-    return "OTU" if provider == "OTU" else "AIHubMix"
+    if provider in {"OTU", "AIHubMix", "Aitgenne"}:
+        return provider
+    return provider or "OTU"
+
+
+def _config_value_for_provider(config_records: List[Dict[str, Any]], provider: str, *field_names: str) -> str:
+    for rec in config_records or []:
+        fields = rec.get("fields") if isinstance(rec, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        if not ai_routing.config_record_matches_provider(fields, provider):
+            continue
+        for field_name in field_names:
+            value = extract_text(fields.get(field_name)).strip()
+            if value:
+                return value
+    return ""
+
+
+def reference_video_route_for_model(
+    token: str,
+    provider: str,
+    display_model: str,
+    *,
+    task_type: str,
+    params: Dict[str, Any],
+) -> ai_routing.AiRoute:
+    config_records = config_records_for_image_slot({}, "视频", lambda: safe_list_records(token, TABLE_CONFIG))
+    api_key = ai_routing.api_key_for_provider(config_records, provider)
+    api_base = _config_value_for_provider(config_records, provider, "API 代理地址", "api_base")
+    if provider == "Aitgenne" and not api_base:
+        api_base = "https://api.aitgenne.com/v1"
+    route = ai_routing.AiRoute(
+        provider=provider,
+        capability="视频",
+        task_type=task_type,
+        model=display_model,
+        call_type="happyhorse视频" if provider == "Aitgenne" else "",
+        api_base=api_base,
+        api_key=api_key,
+        params=dict(params or {}),
+    )
+    return ai_routing.validate_route(route)
+
+
+def video_task_route_tag(provider: str, model: str) -> str:
+    model_name = ai_routing.parse_model_display(model)["model"] or model
+    return f"provider={provider} model={model_name}"
+
+
+def existing_video_task_matches_channel(fields: Dict[str, Any], channel: str, display_model: str, task_id: str) -> bool:
+    if not task_id:
+        return False
+    error_text = extract_text(fields.get("视频错误信息")).strip()
+    tag = video_task_route_tag(channel, display_model)
+    if tag in error_text:
+        return True
+    if "provider=" in error_text or "model=" in error_text:
+        return False
+    if channel == "OTU":
+        return task_id.startswith("task_")
+    if channel == "AIHubMix":
+        return is_native_veo_operation_id(task_id)
+    return False
 
 
 def maybe_unified_media_summary(
@@ -1139,7 +1203,7 @@ def collect_keyframe_references(
         dep_fields = dep["fields"]
         if not review_passed(dep_fields.get("关键帧审核状态")):
             raise ValueError(f"依赖关键帧尚未审核通过: {dep_type}")
-        file_token = extract_text(dep_fields.get("关键帧图file_token")).strip() or (_attachment_tokens(dep_fields.get("关键帧图")) or [""])[0]
+        file_token = latest_media_token(dep_fields, "关键帧图", "关键帧图file_token")
         if not file_token:
             raise ValueError(f"依赖关键帧缺少图片: {dep_type}")
         local_path = task_dir / f"base_{dep_type}.png"
@@ -1188,7 +1252,7 @@ def collect_keyframe_references(
             raise ValueError(f"关键帧需要参考资产 {asset_id}，但未找到对应参考图记录")
         if not review_passed(asset.get("参考图审核状态")):
             raise ValueError(f"关键帧需要参考资产 {asset_id}，但参考图未审核通过")
-        file_token = extract_text(asset.get("参考图file_token")).strip() or (_attachment_tokens(asset.get("参考图")) or [""])[0]
+        file_token = latest_media_token(asset, "参考图", "参考图file_token")
         if not file_token:
             raise ValueError(f"关键帧需要参考资产 {asset_id}，但参考图附件缺失")
         asset_type = extract_text(asset.get("参考类型")).strip() or "asset"
@@ -1264,7 +1328,7 @@ def _asset_ready_map(records: List[Dict[str, Any]], parent_id: str) -> Dict[str,
         if asset_id:
             ready[asset_id] = (
                 review_passed(fields.get("参考图审核状态"))
-                and bool(extract_text(fields.get("参考图file_token")).strip() or _attachment_tokens(fields.get("参考图")))
+                and bool(latest_media_token(fields, "参考图", "参考图file_token"))
             )
     return ready
 
@@ -1277,7 +1341,7 @@ def _keyframe_ready_map(records: List[Dict[str, Any]], parent_id: str) -> Dict[s
         if frame_type:
             ready[frame_type] = (
                 review_passed(fields.get("关键帧审核状态"))
-                and bool(extract_text(fields.get("关键帧图file_token")).strip() or _attachment_tokens(fields.get("关键帧图")))
+                and bool(latest_media_token(fields, "关键帧图", "关键帧图file_token"))
             )
     return ready
 
@@ -1706,7 +1770,7 @@ def _find_keyframe_for_clip(all_records: List[Dict[str, Any]], parent_id: str, k
         ):
             if not review_passed(fields.get("关键帧审核状态")):
                 raise ValueError(f"视频依赖关键帧尚未审核通过: {keyframe_type}")
-            file_token = extract_text(fields.get("关键帧图file_token")).strip() or (_attachment_tokens(fields.get("关键帧图")) or [""])[0]
+            file_token = latest_media_token(fields, "关键帧图", "关键帧图file_token")
             if not file_token:
                 raise ValueError(f"视频依赖关键帧缺少图片: {keyframe_type}")
             return {"record_id": rec.get("record_id", ""), "fields": fields, "file_token": file_token}
@@ -1743,6 +1807,78 @@ def submit_otu_video_task(config: Dict[str, str], prompt: str, first_frame_path:
         return task_id, body
 
     return with_retry(_submit_once, max_attempts=4, label="submit multi-role first-last OTU video")
+
+
+def submit_reference_video_task(route: ai_routing.AiRoute, prompt: str, first_frame_path: str, last_frame_path: str, *, seconds: str, size: str, aspect_ratio: str) -> Tuple[str, Dict[str, Any]]:
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    endpoint = ai_routing.media_endpoint(route)
+
+    def _submit_once() -> Tuple[str, Dict[str, Any]]:
+        with open(first_frame_path, "rb") as first_file, open(last_frame_path, "rb") as last_file:
+            files = [
+                ("input_reference[]", (os.path.basename(first_frame_path), first_file, "image/png")),
+                ("input_reference[]", (os.path.basename(last_frame_path), last_file, "image/png")),
+            ]
+            resp = requests.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {route.api_key}"},
+                data={
+                    "model": model_name,
+                    "prompt": prompt,
+                    "seconds": seconds,
+                    "size": size or DEFAULT_OTU_SIZE,
+                    "aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
+                },
+                files=files,
+                timeout=SUBMIT_TIMEOUT,
+            )
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 多角色视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+        task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+        if not task_id:
+            raise RuntimeError(f"{route.provider} 多角色视频任务提交未返回任务 ID: {str(body)[:1200]}")
+        return task_id, body
+
+    return with_retry(_submit_once, max_attempts=4, label=f"submit multi-role {route.provider} video {endpoint}")
+
+
+def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
+    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+
+
+def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[str, Any]:
+    if not route.api_key:
+        raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
+    url = reference_video_item_url(route, task_id)
+    headers = {"Authorization": f"Bearer {route.api_key}"}
+    start = time.time()
+    last_body: Dict[str, Any] = {}
+    while time.time() - start < 2400:
+        resp = requests.get(url, headers=headers, timeout=45)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        last_body = body if isinstance(body, dict) else {"raw": body}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 多角色视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+        status = extract_text(
+            last_body.get("status")
+            or (last_body.get("data") or {}).get("status")
+            or (last_body.get("result") or {}).get("status")
+        ).lower()
+        if status in {"completed", "succeeded", "success", "done"}:
+            return last_body
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"{route.provider} 多角色视频生成失败: {str(last_body)[:1200]}")
+        time.sleep(8)
+    raise TimeoutError(f"{route.provider} 多角色视频任务轮询超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
 def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -1791,6 +1927,16 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     video_params = resolve_media_dimensions(fields, "视频", runtime_cfg, default_size=DEFAULT_OTU_SIZE, default_aspect_ratio=DEFAULT_ASPECT_RATIO)
     size = video_params["size"]
     aspect_ratio = video_params["aspect_ratio"]
+    reference_route: Optional[ai_routing.AiRoute] = None
+    if channel == "Aitgenne":
+        reference_route = reference_video_route_for_model(
+            token,
+            video_model["provider"],
+            video_model["display"],
+            task_type="首尾帧视频",
+            params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
+        )
+        runtime_cfg = {**runtime_cfg, "api_key": reference_route.api_key, "api_base": reference_route.api_base}
     native_resolution = normalize_native_veo_resolution(size) if channel == "AIHubMix" else ""
     output_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
     summary = {
@@ -1827,18 +1973,11 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
     existing_task_id = extract_text(fields.get("视频任务ID")).strip()
-    if channel == "AIHubMix" and existing_task_id and not is_native_veo_operation_id(existing_task_id):
+    if existing_task_id and not existing_video_task_matches_channel(fields, channel, video_model["display"], existing_task_id):
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
             "视频任务ID": "",
             "视频原始响应JSON": "",
-            "视频错误信息": f"旧视频任务ID不属于 AIHubMix Gemini/Veo，已忽略并重新提交。old_task_id={existing_task_id}",
-        }))
-        existing_task_id = ""
-    if channel == "OTU" and existing_task_id and not existing_task_id.startswith("task_"):
-        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
-            "视频任务ID": "",
-            "视频原始响应JSON": "",
-            "视频错误信息": f"旧视频任务ID不属于 OTU，已忽略并重新提交。old_task_id={existing_task_id}",
+            "视频错误信息": f"旧视频任务ID不属于当前视频通道/模型，已忽略并重新提交。current={video_task_route_tag(channel, video_model['display'])}; old_task_id={existing_task_id}",
         }))
         existing_task_id = ""
     field_types = get_table_field_types(token, TABLE_MULTI_ROLE_FIRST_LAST)
@@ -1863,7 +2002,13 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
             "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
             "视频版本": version,
-            "视频错误信息": f"准备提交 AIHubMix Gemini/Veo 视频任务... 视频画面尺寸={size}, native_resolution={native_resolution}" if channel == "AIHubMix" else "",
+            "视频错误信息": (
+                f"准备提交 AIHubMix Gemini/Veo 视频任务... 视频画面尺寸={size}, native_resolution={native_resolution}"
+                if channel == "AIHubMix"
+                else f"准备提交 Aitgenne 视频任务... {video_task_route_tag(channel, video_model['display'])}"
+                if channel == "Aitgenne"
+                else ""
+            ),
             "错误信息": "",
         }))
         if channel == "OTU":
@@ -1872,6 +2017,15 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
                 "视频任务ID": task_id,
                 "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
                 "视频错误信息": f"已提交 OTU 视频任务，正在轮询。task_id={task_id}",
+            }))
+        elif channel == "Aitgenne":
+            if reference_route is None:
+                raise RuntimeError("Aitgenne 视频路由未初始化")
+            task_id, submit_body = submit_reference_video_task(reference_route, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
+            safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频任务ID": task_id,
+                "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
+                "视频错误信息": f"已提交 Aitgenne 视频任务，正在轮询。{video_task_route_tag(channel, video_model['display'])} task_id={task_id}",
             }))
         else:
             native_client = get_native_veo_client(runtime_cfg)
@@ -1896,6 +2050,14 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     if channel == "OTU":
         result = poll_otu_video_task(runtime_cfg, task_id)
         video_url = extract_video_url(result) or (video_item_url(runtime_cfg.get("api_base") or DEFAULT_OTU_API_BASE, task_id) + "/content")
+        download_video(video_url, output_path)
+    elif channel == "Aitgenne":
+        if reference_route is None:
+            raise RuntimeError("Aitgenne 视频路由未初始化")
+        result = poll_reference_video_task(reference_route, task_id)
+        video_url = extract_video_url(result)
+        if not video_url:
+            raise RuntimeError(f"Aitgenne 多角色视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
         download_video(video_url, output_path)
     else:
         client = native_client or get_native_veo_client(runtime_cfg)
@@ -1950,8 +2112,8 @@ def _append_history(fields: Dict[str, Any], stage: str) -> str:
     history.append({
         "stage": stage,
         "time": int(time.time() * 1000),
-        "reference_file_token": extract_text(fields.get("参考图file_token")).strip(),
-        "keyframe_file_token": extract_text(fields.get("关键帧图file_token")).strip(),
+        "reference_file_token": latest_media_token(fields, "参考图", "参考图file_token"),
+        "keyframe_file_token": latest_media_token(fields, "关键帧图", "关键帧图file_token"),
         "video_file_token": extract_text(fields.get("视频片段file_token")).strip(),
     })
     return compact_json(history[-20:], 12000)

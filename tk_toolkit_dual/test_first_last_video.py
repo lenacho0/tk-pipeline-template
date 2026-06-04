@@ -175,6 +175,10 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertFalse(hasattr(create_table, "VIEW_FILTERS"))
         self.assertFalse(hasattr(create_table, "apply_first_last_view_filters"))
 
+    def test_video_channel_options_include_aitgenne(self):
+        self.assertEqual([item["name"] for item in create_table.VIDEO_CHANNEL_OPTIONS], ["OTU", "AIHubMix", "Aitgenne"])
+        self.assertEqual(first_last.video_channel_for_provider("Aitgenne"), "Aitgenne")
+
     def test_first_last_media_summary_rejects_reference_video_model(self):
         config_records = [
             {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
@@ -815,7 +819,7 @@ video prompt exactly
         self.assertEqual(updates[-1]["尾帧图版本"], 1)
         self.assertEqual(updates[-1]["视频版本"], 1)
 
-    def test_resolve_product_reference_context_prefers_frozen_snapshot(self):
+    def test_resolve_product_reference_context_prefers_latest_product_attachment_over_snapshot(self):
         fields = {
             "记录类型": "场景子任务",
             "关联产品记录": [{"record_ids": ["recProduct"]}],
@@ -827,13 +831,16 @@ video prompt exactly
             }),
         }
 
-        with patch.object(first_last, "safe_get_record", side_effect=AssertionError("should not reload latest product record")):
+        with patch.object(first_last, "safe_get_record", return_value={
+            "产品名称-zh": "Latest Pet Spray",
+            "产品图片": [{"file_token": "old_product_attachment"}, {"file_token": "ft_product_latest"}],
+        }):
             context = first_last.resolve_product_reference_context("token", fields, "rec1")
 
         self.assertEqual(context["product_record_id"], "recProduct")
-        self.assertEqual(context["product_name"], "Frozen Pet Spray")
-        self.assertEqual(context["product_tokens"], ["ft_frozen"])
-        self.assertTrue(context["snapshot_used"])
+        self.assertEqual(context["product_name"], "Latest Pet Spray")
+        self.assertEqual(context["product_tokens"], ["old_product_attachment", "ft_product_latest"])
+        self.assertNotIn("snapshot_used", context)
 
     def test_render_first_frame_uses_product_reference_image_and_writes_review_gate(self):
         updates = []
@@ -990,7 +997,7 @@ video prompt exactly
             with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
                  patch.object(first_last, "get_feishu_token", return_value="token"), \
                  patch.object(first_last, "safe_get_record", side_effect=[
-                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "old_attachment"}], "首帧图file_token": "ft_first", "尾帧图版本": 3, "关联产品记录": [{"record_ids": ["recProduct"]}]},
+                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "old_attachment"}, {"file_token": "ft_first_latest"}], "首帧图file_token": "ft_first", "尾帧图版本": 3, "关联产品记录": [{"record_ids": ["recProduct"]}]},
                      {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
                      {"记录状态": "有效", "尾帧图生成状态": "生成中", "尾帧图版本": 3, "尾帧图任务ID": "img_task_2"},
                  ]), \
@@ -1008,7 +1015,7 @@ video prompt exactly
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(media_downloader.call_count, 2)
-        self.assertEqual(media_downloader.call_args_list[0].args[1], "ft_first")
+        self.assertEqual(media_downloader.call_args_list[0].args[1], "ft_first_latest")
         self.assertEqual(media_downloader.call_args_list[1].args[1], "ft_product")
         args = submitter.call_args.args
         kwargs = submitter.call_args.kwargs
@@ -1031,7 +1038,7 @@ video prompt exactly
         self.assertIn("ft_product", updates[-1]["产品参考图file_tokenJSON"])
         raw_response = json.loads(updates[-1]["尾帧图原始响应JSON"])
         self.assertEqual(raw_response["references"]["reference_roles"], ["first_frame", "product:1"])
-        self.assertEqual(raw_response["references"]["reference_file_tokens"], ["ft_first", "ft_product"])
+        self.assertEqual(raw_response["references"]["reference_file_tokens"], ["ft_first_latest", "ft_product"])
         self.assertEqual(raw_response["references"]["reference_urls"], ["https://x.test/first.png", "https://x.test/product.png"])
         self.assertTrue(raw_response["references"]["remote_reference_urls"])
         self.assertEqual(raw_response["references"]["aspect_ratio"], "9:16")
@@ -1196,6 +1203,8 @@ video prompt exactly
             "首尾帧生视频提示词": "video prompt",
             "首帧图file_token": "ft_first",
             "尾帧图file_token": "ft_last",
+            "首帧图": [{"file_token": "old_first_attachment"}, {"file_token": "ft_first_latest"}],
+            "尾帧图": [{"file_token": "old_last_attachment"}, {"file_token": "ft_last_latest"}],
             "视频生成状态": "待生成",
             "视频任务ID": "",
             "视频版本": 2,
@@ -1217,7 +1226,7 @@ video prompt exactly
              })), \
              patch.object(first_last, "get_table_field_types", return_value={"首尾帧视频URL": 1}), \
              patch.object(first_last, "submit_first_last_video_task", return_value=("task_new", {"id": "task_new"})) as submitter, \
-             patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)) as media_downloader, \
              patch.object(first_last, "poll_otu_video_task", return_value={"status": "completed", "video_url": "https://x.test/video.mp4"}), \
              patch.object(first_last, "download_video", return_value="/tmp/video.mp4"), \
              patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
@@ -1228,6 +1237,7 @@ video prompt exactly
 
         submitted_cfg = submitter.call_args.args[0]
         self.assertEqual(submitted_cfg["model"], "veo_3_1-fl")
+        self.assertEqual([call.args[1] for call in media_downloader.call_args_list], ["ft_first_latest", "ft_last_latest"])
         self.assertEqual(result["model"], "veo_3_1-fl")
         self.assertEqual(result["model_source"], "视频生成模型")
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
@@ -1292,6 +1302,68 @@ video prompt exactly
         self.assertEqual(result["task_id"], "operations/op_aihubmix")
         self.assertTrue(any(update.get("视频通道") == "AIHubMix" for update in updates))
         self.assertTrue(any(update.get("视频生成模型") == "AIHubMix / veo-3.1-fast-generate-preview" for update in updates))
+
+    def test_render_video_uses_aitgenne_reference_video_for_happyhorse_model(self):
+        updates = []
+        fields = {
+            "记录类型": "场景子任务",
+            "记录状态": "有效",
+            "首尾帧生视频提示词": "video prompt",
+            "首帧图file_token": "ft_first",
+            "尾帧图file_token": "ft_last",
+            "视频生成状态": "待生成",
+            "视频任务ID": "",
+            "视频版本": 2,
+            "视频生成模型": "Aitgenne / happyhorse-1.0-i2v",
+            "目标时长秒": 6,
+        }
+        route = first_last.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首尾帧视频",
+            model="Aitgenne / happyhorse-1.0-i2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", return_value=fields), \
+             patch.object(first_last, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(first_last, "get_stage_config", return_value=("rec_cfg", {
+                 "api_key": "sk-otu",
+                 "api_base": "https://otuapi.com",
+                 "model": "veo_3_1-fast-fl",
+                 "size": "720x1280",
+                 "aspect_ratio": "9:16",
+             })), \
+             patch.object(first_last, "reference_video_route_for_model", return_value=route), \
+             patch.object(first_last, "get_table_field_types", return_value={"首尾帧视频URL": 1}), \
+             patch.object(first_last, "submit_reference_video_task", return_value=("task_aitgenne", {"id": "task_aitgenne"})) as submitter, \
+             patch.object(first_last, "poll_reference_video_task", return_value={"status": "completed", "video_url": "https://x.test/aitgenne.mp4"}) as poller, \
+             patch.object(first_last, "submit_first_last_video_task") as otu_submitter, \
+             patch.object(first_last, "get_native_veo_client") as native_client_factory, \
+             patch.object(first_last, "call_native_veo_first_frame_task") as native_submitter, \
+             patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(first_last, "download_video", return_value="/tmp/video.mp4"), \
+             patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(first_last, "ensure_current_generation"), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields):
+            result = first_last.render_video("rec1")
+
+        otu_submitter.assert_not_called()
+        native_client_factory.assert_not_called()
+        native_submitter.assert_not_called()
+        submitter.assert_called_once()
+        self.assertEqual(submitter.call_args.args[2], str(Path(tmp) / "rec1_video_first_frame_v2.png"))
+        self.assertEqual(submitter.call_args.args[3], str(Path(tmp) / "rec1_video_last_frame_v2.png"))
+        poller.assert_called_once_with(route, "task_aitgenne")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_aitgenne")
+        self.assertTrue(any(update.get("视频通道") == "Aitgenne" for update in updates))
+        self.assertTrue(any("provider=Aitgenne model=happyhorse-1.0-i2v" in update.get("视频错误信息", "") for update in updates))
 
 
 if __name__ == "__main__":

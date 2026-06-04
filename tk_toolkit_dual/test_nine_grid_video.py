@@ -976,7 +976,7 @@ class NineGridVideoTests(unittest.TestCase):
                 tmp_path,
                 records=records,
                 download_fn=download,
-                get_record_fn=lambda token, table_id, record_id: {"产品图片": [{"file_token": "ft_product"}]},
+                get_record_fn=lambda token, table_id, record_id: {"产品图片": [{"file_token": "old_product"}, {"file_token": "ft_product"}]},
             )
 
         self.assertEqual([ref["role"] for ref in refs], ["product:1", "human:owner", "environment:main_room"])
@@ -1861,7 +1861,7 @@ class NineGridVideoTests(unittest.TestCase):
         collect_all_refs.assert_not_called()
         self.assertEqual(
             [call.args[1] for call in download_attachment.call_args_list],
-            ["ft_grid", "ft_product", "ft_pear", "ft_non"],
+            ["ft_grid", "ft_product_2", "ft_pear", "ft_non"],
         )
         args, kwargs = omni_submitter.call_args
         self.assertEqual(args[0]["model"], "omni_flash-10s")

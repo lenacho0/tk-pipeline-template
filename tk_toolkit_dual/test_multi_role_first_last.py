@@ -246,6 +246,10 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertIn("视频AI参数JSON", views["99-排错"])
         self.assertEqual(views["99-全字段系统视图"], [field["name"] for field in create_table.MULTI_ROLE_FIRST_LAST_FIELDS])
 
+    def test_video_channel_options_include_aitgenne(self):
+        self.assertEqual([item["name"] for item in create_table.VIDEO_CHANNEL_OPTIONS], ["OTU", "AIHubMix", "Aitgenne"])
+        self.assertEqual(multi_role.video_channel_for_provider("Aitgenne"), "Aitgenne")
+
     def test_multi_role_view_filters_match_record_types(self):
         filters = create_table.VIEW_FILTERS
 
@@ -531,12 +535,70 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "https://tmp.test/ft_env.png",
         ])
 
+    def test_keyframe_reference_collection_prefers_latest_attachment_over_cached_token(self):
+        fields = {
+            "记录类型": "关键帧",
+            "关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+            "父任务记录ID": "parent",
+            "需要产品参考图": "否",
+            "参考资产ID列表": "role_1",
+            "依赖关键帧类型": "S01_FIRST",
+        }
+        all_records = [
+            {"record_id": "kf_first", "fields": {
+                "记录类型": "关键帧",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_FIRST",
+                "关键帧审核状态": "已触发下游",
+                "关键帧图file_token": "old_keyframe",
+                "关键帧图": [{"file_token": "older_keyframe"}, {"file_token": "new_keyframe"}],
+            }},
+            {"record_id": "asset_role", "fields": {
+                "记录类型": "参考资产",
+                "父任务记录ID": "parent",
+                "资产ID": "role_1",
+                "参考类型": "human",
+                "参考图审核状态": "已触发下游",
+                "参考图file_token": "old_role",
+                "参考图": [{"file_token": "older_role"}, {"file_token": "new_role"}],
+            }},
+        ]
+
+        downloaded_tokens = []
+        with tempfile.TemporaryDirectory() as tmp:
+            refs = multi_role.collect_keyframe_references(
+                "token",
+                fields,
+                {},
+                all_records,
+                Path(tmp),
+                download_fn=lambda token, file_token, save_path: downloaded_tokens.append(file_token) or Path(save_path),
+                url_getter=lambda token, file_token: f"https://tmp.test/{file_token}.png",
+            )
+
+        self.assertEqual([item["file_token"] for item in refs], ["new_keyframe", "new_role"])
+        self.assertEqual(downloaded_tokens, ["new_keyframe", "new_role"])
+
     def test_video_dependencies_accept_already_advanced_keyframes(self):
         records = [
             {"record_id": "kf_first", "fields": {"记录类型": "关键帧", "父任务记录ID": "parent", "关键帧类型": "S01_FIRST", "关键帧审核状态": "已触发下游", "关键帧图file_token": "ft_first"}},
         ]
         result = multi_role._find_keyframe_for_clip(records, "parent", "S01_FIRST")
         self.assertEqual(result["file_token"], "ft_first")
+
+    def test_video_dependencies_prefer_latest_keyframe_attachment(self):
+        records = [
+            {"record_id": "kf_first", "fields": {
+                "记录类型": "关键帧",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_FIRST",
+                "关键帧审核状态": "已触发下游",
+                "关键帧图file_token": "old_first",
+                "关键帧图": [{"file_token": "older_first"}, {"file_token": "new_first"}],
+            }},
+        ]
+        result = multi_role._find_keyframe_for_clip(records, "parent", "S01_FIRST")
+        self.assertEqual(result["file_token"], "new_first")
 
     def test_keyframe_reference_collection_fails_when_reference_url_missing(self):
         fields = {"记录类型": "关键帧", "父任务记录ID": "parent", "需要产品参考图": "是", "参考资产ID列表": ""}
@@ -851,6 +913,85 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(result["model_source"], "视频生成模型")
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
         self.assertTrue(any(update.get("视频操作") == "不触发" for update in updates))
+
+    def test_video_clip_uses_aitgenne_reference_video_for_happyhorse_model(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 2,
+            "视频任务ID": "",
+            "视频生成模型": "Aitgenne / happyhorse-1.0-i2v",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        route = multi_role.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首尾帧视频",
+            model="Aitgenne / happyhorse-1.0-i2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
+             patch.object(multi_role, "reference_video_route_for_model", return_value=route), \
+             patch.object(multi_role, "get_table_field_types", return_value={}), \
+             patch.object(multi_role, "submit_reference_video_task", return_value=("task_aitgenne", {"id": "task_aitgenne"})) as submit, \
+             patch.object(multi_role, "poll_reference_video_task", return_value={"status": "completed", "video_url": "https://example.com/aitgenne.mp4"}) as poll, \
+             patch.object(multi_role, "submit_otu_video_task") as otu_submitter, \
+             patch.object(multi_role, "get_native_veo_client") as native_client_factory, \
+             patch.object(multi_role, "call_native_veo_first_frame_task") as native_submitter, \
+             patch.object(multi_role, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(multi_role, "download_video"), \
+             patch.object(multi_role, "upload_video_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+
+        otu_submitter.assert_not_called()
+        native_client_factory.assert_not_called()
+        native_submitter.assert_not_called()
+        submit.assert_called_once()
+        self.assertEqual(submit.call_args.args[2], str(Path(tmp) / "clip_rec_S01_FIRST.png"))
+        self.assertEqual(submit.call_args.args[3], str(Path(tmp) / "clip_rec_S02_TAIL.png"))
+        poll.assert_called_once_with(route, "task_aitgenne")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["task_id"], "task_aitgenne")
+        self.assertTrue(any(update.get("视频通道") == "Aitgenne" for update in updates))
+        self.assertTrue(any("provider=Aitgenne model=happyhorse-1.0-i2v" in update.get("视频错误信息", "") for update in updates))
 
     def test_video_clip_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
         fields = {

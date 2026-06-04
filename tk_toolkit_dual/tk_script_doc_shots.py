@@ -35,6 +35,7 @@ from common import (  # noqa: E402
     get_feishu_token,
     get_model_config,
     get_product_record,
+    latest_attachment_token,
     log_event,
     safe_get_record,
     safe_download_attachment,
@@ -464,11 +465,7 @@ def build_child_shot_records(
 
 
 def _extract_attachment_token(value: Any) -> str:
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict) and item.get("file_token"):
-                return str(item["file_token"]).strip()
-    return ""
+    return latest_attachment_token(value)
 
 
 def _extract_attachment_tokens(value: Any) -> List[str]:

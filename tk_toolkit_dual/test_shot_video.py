@@ -222,6 +222,17 @@ class ShotVideoTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "分镜图"):
                 video.resolve_reference_image("t", "rec1", fields, Path(tmp), download_fn=Mock())
 
+    def test_resolve_reference_image_uses_latest_storyboard_attachment(self):
+        fields = sample_fields()
+        fields["分镜图"] = [{"file_token": "old_shot"}, {"file_token": "new_shot"}]
+        download = Mock(return_value=Path("/tmp/shot.png"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = video.resolve_reference_image("t", "rec1", fields, Path(tmp), download_fn=download)
+
+        self.assertEqual(result, Path("/tmp/shot.png"))
+        self.assertEqual(download.call_args.args[1], "new_shot")
+
     def test_submit_aihubmix_video_task_sends_multipart_input_reference(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as img:
             img.write(b"fake image bytes")
@@ -360,6 +371,19 @@ class ShotVideoTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "尾帧图生成状态=成功"):
                 video.resolve_last_frame_image("t", "rec1", fields, Path(tmp), download_fn=Mock())
+
+    def test_resolve_last_frame_image_uses_latest_tail_attachment(self):
+        fields = sample_fields()
+        fields["首尾帧视频模式"] = "启用"
+        fields["尾帧图生成状态"] = "成功"
+        fields["尾帧图"] = [{"file_token": "old_tail"}, {"file_token": "new_tail"}]
+        download = Mock(return_value=Path("/tmp/tail.png"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = video.resolve_last_frame_image("t", "rec1", fields, Path(tmp), download_fn=download)
+
+        self.assertEqual(result, Path("/tmp/tail.png"))
+        self.assertEqual(download.call_args.args[1], "new_tail")
 
     def test_run_dry_run_includes_last_frame_when_end_frame_mode_enabled(self):
         fields = sample_fields()

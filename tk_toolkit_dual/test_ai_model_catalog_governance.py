@@ -54,6 +54,7 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
         self.assertEqual(by_key[("first_last_video", "首帧图AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertEqual(by_key[("first_last_video", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS])
         self.assertEqual(by_key[("first_last_video", "视频生成模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS])
+        self.assertEqual(by_key[("first_last_video", "视频通道")], ["OTU", "AIHubMix", "Aitgenne"])
         self.assertEqual(by_key[("script_doc_tasks", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS])
         self.assertEqual(by_key[("script_doc_tasks", "视频生成模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS])
         self.assertEqual(by_key[("script_doc_shots", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS])
@@ -61,6 +62,7 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
         self.assertEqual(by_key[("multi_role_first_last", "关键帧AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertEqual(by_key[("multi_role_first_last", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS])
         self.assertEqual(by_key[("multi_role_first_last", "视频生成模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS])
+        self.assertEqual(by_key[("multi_role_first_last", "视频通道")], ["OTU", "AIHubMix", "Aitgenne"])
         self.assertIn("Aitgenne / happyhorse-1.0-i2v", by_key[("multi_role_first_last", "视频生成模型")])
         self.assertNotIn("OTU / veo_3_1-fl", by_key[("nine_grid_video", "视频AI模型")])
 

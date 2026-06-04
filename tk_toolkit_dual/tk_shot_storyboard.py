@@ -102,11 +102,7 @@ def filter_existing_fields(token, table_id, fields):
 
 
 def get_attachment_token(value):
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict) and item.get('file_token'):
-                return str(item.get('file_token')).strip()
-    return ''
+    return latest_attachment_token(value)
 
 
 def _compact_json(value: Any, max_chars: int = 10000) -> str:

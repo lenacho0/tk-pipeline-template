@@ -118,6 +118,32 @@ def extract_text(val):
     return str(val) if val else ''
 
 
+def extract_attachment_tokens(val):
+    if not isinstance(val, list):
+        return []
+    tokens = []
+    for item in val:
+        if isinstance(item, dict):
+            file_token = str(item.get('file_token') or '').strip()
+            if file_token:
+                tokens.append(file_token)
+    return tokens
+
+
+def latest_attachment_token(val):
+    tokens = extract_attachment_tokens(val)
+    return tokens[-1] if tokens else ''
+
+
+def latest_media_token(fields, attachment_field, cached_token_field=''):
+    token = latest_attachment_token(fields.get(attachment_field))
+    if token:
+        return token
+    if cached_token_field:
+        return extract_text(fields.get(cached_token_field)).strip()
+    return ''
+
+
 def extract_linked_record_ids(val):
     record_ids = []
     if isinstance(val, list):
