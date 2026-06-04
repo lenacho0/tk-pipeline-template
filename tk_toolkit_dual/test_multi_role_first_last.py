@@ -989,6 +989,66 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
         self.assertTrue(any(update.get("视频操作") == "不触发" for update in updates))
 
+    def test_poll_otu_video_task_times_out_when_zero_progress_stalls_from_created_at(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"in_progress","progress":0,"created_at":0}'
+        response.json.return_value = {"id": "task_stuck", "status": "in_progress", "progress": 0, "created_at": 0}
+        times = iter([601, 601])
+
+        with patch("tk_shot_video.requests.get", return_value=response), \
+             self.assertRaisesRegex(TimeoutError, "progress=0") as caught:
+            multi_role.poll_otu_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_stuck",
+                queued_zero_progress_timeout_seconds=600,
+                max_poll_seconds=2400,
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        payload = multi_role.build_error_payload(caught.exception, stage="tk_multi_role_first_last.py")
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+
+    def test_poll_otu_video_task_total_timeout_is_retryable_upstream_network(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"in_progress","progress":30}'
+        response.json.return_value = {"id": "task_slow", "status": "in_progress", "progress": 30}
+        times = iter([0, 2401])
+
+        with patch("tk_shot_video.requests.get", return_value=response), \
+             self.assertRaisesRegex(TimeoutError, "任务超时") as caught:
+            multi_role.poll_otu_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_slow",
+                max_poll_seconds=2400,
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        payload = multi_role.build_error_payload(caught.exception, stage="tk_multi_role_first_last.py")
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+
+    def test_poll_otu_video_task_returns_completed_body_for_content_download_fallback(self):
+        response = Mock()
+        response.status_code = 200
+        response.text = '{"status":"completed"}'
+        response.json.return_value = {"id": "task_done", "status": "completed"}
+        times = iter([0, 0])
+
+        with patch("tk_shot_video.requests.get", return_value=response):
+            result = multi_role.poll_otu_video_task(
+                {"api_base": "https://otuapi.com", "api_key": "sk-test"},
+                "task_done",
+                now_fn=lambda: next(times),
+                sleep_fn=lambda seconds: None,
+            )
+
+        self.assertEqual(result["status"], "completed")
+
     def test_video_clip_uses_aitgenne_reference_video_for_happyhorse_model(self):
         fields = {
             "记录类型": "视频片段",

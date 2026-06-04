@@ -359,7 +359,7 @@ def build_error_payload(error, stage='unknown'):
         error_code = 'UPSTREAM_RATE_LIMIT'
         retryable = True
         failure_status = 'failed_retryable'
-    elif 'read timed out' in lower or 'timeout' in lower or 'timed out' in lower:
+    elif 'read timed out' in lower or 'timeout' in lower or 'timed out' in lower or '超时' in msg:
         error_code = 'UPSTREAM_NETWORK'
         retryable = True
         failure_status = 'failed_retryable'

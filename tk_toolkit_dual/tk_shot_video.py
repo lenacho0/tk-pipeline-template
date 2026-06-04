@@ -82,6 +82,7 @@ DEFAULT_SECONDS = "8"
 ALLOWED_SECONDS = {"4", "6", "8"}
 POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
+OTU_ZERO_PROGRESS_TIMEOUT_SECONDS = 600
 SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
@@ -576,14 +577,41 @@ def poll_aihubmix_video_task(config: Dict[str, str], task_id: str) -> Dict[str, 
     raise TimeoutError(f"AIHubMix 视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
 
 
-def poll_otu_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
+def _progress_number(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compact_json(value: Any, limit: int = 1200) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)[:limit]
+
+
+def poll_otu_video_task(
+    config: Dict[str, str],
+    task_id: str,
+    *,
+    queued_zero_progress_timeout_seconds: int = OTU_ZERO_PROGRESS_TIMEOUT_SECONDS,
+    max_poll_seconds: int = MAX_POLL_SECONDS,
+    poll_interval: int = POLL_INTERVAL,
+    poll_timeout: int = POLL_TIMEOUT,
+    now_fn: Callable[[], float] = time.time,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Dict[str, Any]:
     url = video_item_url(config.get("api_base") or DEFAULT_OTU_API_BASE, task_id)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
-    start = time.time()
+    start = now_fn()
+    zero_progress_started_at: Optional[float] = None
     last_body: Dict[str, Any] = {}
-    while time.time() - start < MAX_POLL_SECONDS:
+    while True:
+        now = now_fn()
+        if now - start >= max_poll_seconds:
+            raise TimeoutError(f"OTU 视频任务超时: task_id={task_id}, last={_compact_json(last_body)}")
         resp = with_retry(
-            lambda: requests.get(url, headers=headers, timeout=POLL_TIMEOUT),
+            lambda: requests.get(url, headers=headers, timeout=poll_timeout),
             max_attempts=4,
             label=f"poll OTU video {task_id}",
         )
@@ -594,17 +622,31 @@ def poll_otu_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:
         last_body = body if isinstance(body, dict) else {"raw": body}
         if resp.status_code >= 400:
             raise RuntimeError(f"OTU 视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
-        status = extract_text(
-            last_body.get("status")
-            or (last_body.get("data") or {}).get("status")
-            or (last_body.get("result") or {}).get("status")
-        ).lower()
+        nested = last_body.get("data") if isinstance(last_body.get("data"), dict) else {}
+        result = last_body.get("result") if isinstance(last_body.get("result"), dict) else {}
+        status = extract_text(last_body.get("status") or nested.get("status") or result.get("status")).lower()
+        progress = _progress_number(last_body.get("progress", nested.get("progress", result.get("progress"))))
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:
             raise RuntimeError(f"OTU 视频生成失败: {str(last_body)[:1500]}")
-        time.sleep(POLL_INTERVAL)
-    raise TimeoutError(f"OTU 视频任务超时: task_id={task_id}, last={str(last_body)[:1200]}")
+        if status in {"queued", "in_progress", "running", "processing"} and progress == 0:
+            created_at = _progress_number(last_body.get("created_at", nested.get("created_at", result.get("created_at"))))
+            if created_at is not None and now >= created_at and now - created_at >= queued_zero_progress_timeout_seconds:
+                raise TimeoutError(
+                    f"OTU 视频 progress=0 timeout，自 created_at 已超过 "
+                    f"{queued_zero_progress_timeout_seconds}s: task_id={task_id}, last={_compact_json(last_body)}"
+                )
+            if zero_progress_started_at is None:
+                zero_progress_started_at = now
+            elif now - zero_progress_started_at >= queued_zero_progress_timeout_seconds:
+                raise TimeoutError(
+                    f"OTU 视频 progress=0 timeout，超过 {queued_zero_progress_timeout_seconds}s: "
+                    f"task_id={task_id}, last={_compact_json(last_body)}"
+                )
+        else:
+            zero_progress_started_at = None
+        sleep_fn(poll_interval)
 
 
 def iter_strings(value: Any):
