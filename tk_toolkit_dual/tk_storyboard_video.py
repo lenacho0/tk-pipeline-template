@@ -1147,7 +1147,7 @@ def missing_omni_default_fields(fields: Dict[str, Any]) -> Dict[str, str]:
 
 
 def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
-    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+    return ai_routing.media_task_endpoint(route, task_id)
 
 
 def submit_reference_video_task(
@@ -1163,6 +1163,34 @@ def submit_reference_video_task(
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_happyhorse_model(route):
+        urls = [extract_text(ref.get("url")).strip() for ref in refs[:7] if extract_text(ref.get("url")).strip()]
+        if not urls:
+            raise ValueError("Aitgenne 参考图生视频缺少参考图 URL")
+        payload = ai_routing.build_happyhorse_video_payload(
+            route,
+            prompt,
+            urls,
+            size=size,
+            aspect_ratio=aspect_ratio,
+        )
+        resp = requests.post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=SUBMIT_TIMEOUT,
+        )
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+        task_id = ai_routing.extract_video_task_id(body)
+        if not task_id:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
+        return task_id, body
+
     opened = []
     files: List[Tuple[str, Tuple[Any, ...]]] = []
     try:
@@ -1216,11 +1244,7 @@ def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[s
         last_body = body if isinstance(body, dict) else {"raw": body}
         if resp.status_code >= 400:
             raise RuntimeError(f"{route.provider} 参考图视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
-        status = extract_text(
-            last_body.get("status")
-            or (last_body.get("data") or {}).get("status")
-            or (last_body.get("result") or {}).get("status")
-        ).lower()
+        status = ai_routing.extract_video_status(last_body)
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:

@@ -23,6 +23,72 @@ def parsed_payload():
 
 
 class FirstLastVideoTableTests(unittest.TestCase):
+    def test_auto_advance_first_frame_review_triggers_tail_for_first_version(self):
+        updates = []
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "advance_first_review", return_value={"status": "triggered"}) as advance, \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = first_last.maybe_auto_advance_first_frame_review(
+                "token",
+                "scene_rec",
+                {"首帧图版本": 1},
+                file_token="ft_first",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        self.assertIn(("scene_rec", {"首帧审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("scene_rec")
+
+    def test_auto_advance_first_frame_review_skips_regeneration_version(self):
+        with patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "safe_update_record") as updater, \
+             patch.object(first_last, "advance_first_review") as advance:
+            result = first_last.maybe_auto_advance_first_frame_review(
+                "token",
+                "scene_rec",
+                {"首帧图版本": 2},
+                file_token="ft_first",
+            )
+
+        self.assertEqual(result["status"], "manual_regeneration")
+        updater.assert_not_called()
+        advance.assert_not_called()
+
+    def test_auto_advance_last_frame_review_triggers_video_for_first_version(self):
+        updates = []
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "advance_last_review", return_value={"status": "triggered"}) as advance, \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = first_last.maybe_auto_advance_last_frame_review(
+                "token",
+                "scene_rec",
+                {"尾帧图版本": 1},
+                file_token="ft_last",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        self.assertIn(("scene_rec", {"尾帧审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("scene_rec")
+
+    def test_auto_advance_last_frame_review_skips_regeneration_version(self):
+        with patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "safe_update_record") as updater, \
+             patch.object(first_last, "advance_last_review") as advance:
+            result = first_last.maybe_auto_advance_last_frame_review(
+                "token",
+                "scene_rec",
+                {"尾帧图版本": 2},
+                file_token="ft_last",
+            )
+
+        self.assertEqual(result["status"], "manual_regeneration")
+        updater.assert_not_called()
+        advance.assert_not_called()
+
     def test_table_definition_has_parent_child_regeneration_fields_and_views(self):
         field_names = [field["name"] for field in create_table.FIRST_LAST_VIDEO_FIELDS]
 
@@ -1132,7 +1198,7 @@ video prompt exactly
         )
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.json.return_value = {"output": {"task_id": "task_aitgenne", "task_status": "PENDING"}}
         response.text = '{"id":"task_aitgenne"}'
 
         with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last, \
@@ -1149,20 +1215,22 @@ video prompt exactly
             )
 
         self.assertEqual(task_id, "task_aitgenne")
-        self.assertEqual(body["status"], "queued")
+        self.assertEqual(body["output"]["task_status"], "PENDING")
         args, kwargs = post.call_args
-        self.assertEqual(args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(args[0], "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis")
         self.assertNotIn("files", kwargs)
         self.assertEqual(kwargs["json"], {
             "model": "happyhorse-1.0-i2v",
-            "prompt": "video prompt",
-            "input.media": [
-                {"type": "image", "url": "https://x.test/first.png"},
-                {"type": "image", "url": "https://x.test/last.png"},
-            ],
-            "parameters.resolution": "720P",
-            "parameters.aspect_ratio": "9:16",
-            "parameters.seconds": "6",
+            "input": {
+                "prompt": "video prompt",
+                "media": [
+                    {"type": "first_frame", "url": "https://x.test/first.png"},
+                ],
+            },
+            "parameters": {
+                "resolution": "720P",
+                "duration": 6,
+            },
         })
 
     def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):

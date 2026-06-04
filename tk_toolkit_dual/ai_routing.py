@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
 import requests
@@ -408,6 +408,130 @@ def _videos_endpoint(api_base: str, default_base: str) -> str:
     return f"{base}/v1/videos"
 
 
+def _api_origin(api_base: str, default_base: str) -> str:
+    base = (api_base or default_base).strip().rstrip("/")
+    if base.endswith("/v1"):
+        return base[:-3]
+    return base
+
+
+def is_aitgenne_happyhorse_model(route: AiRoute) -> bool:
+    model_name = parse_model_display(route.model)["model"] or route.model
+    return route.provider == "Aitgenne" and model_name.startswith("happyhorse-1.0-")
+
+
+def aitgenne_video_synthesis_endpoint(api_base: str = "") -> str:
+    origin = _api_origin(api_base, "https://api.aitgenne.com")
+    if origin.endswith("/alibailian/api/v1/services/aigc/video-generation/video-synthesis"):
+        return origin
+    return f"{origin}/alibailian/api/v1/services/aigc/video-generation/video-synthesis"
+
+
+def aitgenne_task_endpoint(api_base: str, task_id: str) -> str:
+    return f"{_api_origin(api_base, 'https://api.aitgenne.com')}/alibailian/api/v1/tasks/{task_id}"
+
+
+def media_task_endpoint(route: AiRoute, task_id: str) -> str:
+    if is_aitgenne_happyhorse_model(route):
+        return aitgenne_task_endpoint(route.api_base, task_id)
+    return f"{media_endpoint(route).rstrip('/')}/{task_id}"
+
+
+def _duration_value(value: Any, default: str = "5") -> int:
+    text = _norm(value) or default
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _happyhorse_resolution(size: Any) -> str:
+    text = _norm(size).upper()
+    if text in {"1080P", "1080"} or "1080" in text or "1920" in text:
+        return "1080P"
+    return "720P"
+
+
+def _happyhorse_media(model_name: str, reference_urls: Sequence[str]) -> List[Dict[str, str]]:
+    urls = [_norm(url) for url in reference_urls if _norm(url)]
+    if model_name == "happyhorse-1.0-t2v":
+        return []
+    if model_name == "happyhorse-1.0-i2v":
+        if not urls:
+            raise ValueError("happyhorse-1.0-i2v 需要 1 张首帧图 URL")
+        return [{"type": "first_frame", "url": urls[0]}]
+    if model_name == "happyhorse-1.0-r2v":
+        if not urls:
+            raise ValueError("happyhorse-1.0-r2v 需要至少 1 张参考图 URL")
+        return [{"type": "reference_image", "url": url} for url in urls]
+    return [{"type": "reference_image", "url": url} for url in urls]
+
+
+def build_happyhorse_video_payload(
+    route: AiRoute,
+    prompt: str,
+    reference_urls: Sequence[str],
+    *,
+    size: Any = "",
+    aspect_ratio: Any = "",
+    seconds: Any = "",
+    extra_parameters: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    model_name = parse_model_display(route.model)["model"] or route.model
+    if not model_name.startswith("happyhorse-1.0-"):
+        raise ValueError(f"非 HappyHorse 模型不能使用 HappyHorse payload: {model_name}")
+    input_body: Dict[str, Any] = {"prompt": prompt}
+    media = _happyhorse_media(model_name, reference_urls)
+    if media:
+        input_body["media"] = media
+    parameters: Dict[str, Any] = {
+        "resolution": _happyhorse_resolution(size),
+    }
+    if model_name in {"happyhorse-1.0-r2v", "happyhorse-1.0-t2v"}:
+        parameters["ratio"] = _norm(aspect_ratio) or "9:16"
+    if model_name != "happyhorse-1.0-video-edit":
+        parameters["duration"] = _duration_value(seconds, "5")
+    for key, value in (extra_parameters or {}).items():
+        if value is not None:
+            parameters[key] = value
+    return {
+        "model": model_name,
+        "input": input_body,
+        "parameters": parameters,
+    }
+
+
+def extract_video_task_id(data: Mapping[str, Any]) -> str:
+    candidates = [
+        data.get("id"),
+        data.get("task_id"),
+        data.get("video_id"),
+        (data.get("data") or {}).get("id") if isinstance(data.get("data"), dict) else None,
+        (data.get("data") or {}).get("task_id") if isinstance(data.get("data"), dict) else None,
+        (data.get("output") or {}).get("task_id") if isinstance(data.get("output"), dict) else None,
+    ]
+    for item in candidates:
+        text = _norm(item)
+        if text:
+            return text
+    return ""
+
+
+def extract_video_status(data: Mapping[str, Any]) -> str:
+    candidates = [
+        data.get("status"),
+        (data.get("data") or {}).get("status") if isinstance(data.get("data"), dict) else None,
+        (data.get("data") or {}).get("state") if isinstance(data.get("data"), dict) else None,
+        (data.get("result") or {}).get("status") if isinstance(data.get("result"), dict) else None,
+        (data.get("output") or {}).get("task_status") if isinstance(data.get("output"), dict) else None,
+    ]
+    for item in candidates:
+        text = _norm(item).lower()
+        if text:
+            return text
+    return ""
+
+
 def media_endpoint(route: AiRoute) -> str:
     provider = route.provider
     capability = route.capability
@@ -425,6 +549,8 @@ def media_endpoint(route: AiRoute) -> str:
         return _videos_endpoint(route.api_base, "https://aihubmix.com")
     if provider == "Aitgenne":
         if capability == "视频":
+            if model_name.startswith("happyhorse-1.0-"):
+                return aitgenne_video_synthesis_endpoint(route.api_base)
             return _videos_endpoint(route.api_base, "https://api.aitgenne.com")
         base = (route.api_base or "https://api.aitgenne.com").strip().rstrip("/")
         if capability == "图片":
@@ -459,15 +585,29 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         size = params.get("size") or params.get("画面尺寸") or "720x1280"
         seconds = str(params.get("seconds") or params.get("视频时长") or "8")
         aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or "9:16"
-        payload["size"] = size
-        payload["seconds"] = seconds
-        payload["aspect_ratio"] = aspect_ratio
+        if is_aitgenne_happyhorse_model(route):
+            payload = build_happyhorse_video_payload(
+                route,
+                prompt,
+                ["<reference_url>"] * int(reference_count or 0),
+                size=size,
+                aspect_ratio=aspect_ratio,
+                seconds=seconds,
+            )
+        else:
+            payload["size"] = size
+            payload["seconds"] = seconds
+            payload["aspect_ratio"] = aspect_ratio
         spec = media_spec_from_values(size=size, aspect_ratio=aspect_ratio, seconds=seconds, slot_name=route.task_type, capability=route.capability)
-        adapter_payload_summary = {
-            "size": "payload.size",
-            "aspect_ratio": "payload.aspect_ratio",
-            "seconds": "payload.seconds",
-        }
+        adapter_payload_summary = (
+            {"input": "payload.input", "parameters": "payload.parameters"}
+            if is_aitgenne_happyhorse_model(route)
+            else {
+                "size": "payload.size",
+                "aspect_ratio": "payload.aspect_ratio",
+                "seconds": "payload.seconds",
+            }
+        )
     return redact_secret({
         "provider": route.provider,
         "capability": route.capability,

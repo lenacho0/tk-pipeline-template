@@ -78,6 +78,7 @@ from aitgenne_image import (  # noqa: E402
 )
 from image_generation import image_execution_params, run_image_generation  # noqa: E402
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_auto_review import auto_review_enabled  # noqa: E402
 
 
 PLAN_STAGE_NAME = "多图九宫格方案生成"
@@ -577,7 +578,7 @@ def build_video_model_prompt_for_route(raw_prompt: str, route: ai_routing.AiRout
 
 
 def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
-    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+    return ai_routing.media_task_endpoint(route, task_id)
 
 
 def video_task_route_tag(route: ai_routing.AiRoute) -> str:
@@ -624,11 +625,40 @@ def submit_reference_video_task(
     if not route.api_key:
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_happyhorse_model(route):
+        urls = [extract_text(ref.get("url")).strip() for ref in refs[:REFERENCE_VIDEO_MAX_IMAGES] if extract_text(ref.get("url")).strip()]
+        if not urls:
+            raise ValueError("Aitgenne 参考图生视频缺少参考图 URL")
+        payload = ai_routing.build_happyhorse_video_payload(
+            route,
+            prompt,
+            urls,
+            size=size,
+            aspect_ratio=aspect_ratio,
+            seconds=seconds,
+        )
+        resp = requests.post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=180,
+        )
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+        task_id = ai_routing.extract_video_task_id(body)
+        if not task_id:
+            raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
+        return task_id, body
+
     if route.provider == "Aitgenne":
         urls = [extract_text(ref.get("url")).strip() for ref in refs[:REFERENCE_VIDEO_MAX_IMAGES] if extract_text(ref.get("url")).strip()]
         if not urls:
             raise ValueError("Aitgenne 参考图生视频缺少参考图 URL")
-        payload = {
+        payload: Dict[str, Any] = {
             "model": model_name,
             "prompt": prompt,
             "input.media": [{"type": "image", "url": url} for url in urls],
@@ -648,7 +678,7 @@ def submit_reference_video_task(
             body = {"raw_text": resp.text[:1000]}
         if resp.status_code >= 400:
             raise RuntimeError(f"{route.provider} 参考图视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
-        task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+        task_id = ai_routing.extract_video_task_id(body)
         if not task_id:
             raise RuntimeError(f"{route.provider} 参考图视频任务提交未返回任务 ID: {str(body)[:1200]}")
         return task_id, body
@@ -707,11 +737,7 @@ def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[s
         last_body = body if isinstance(body, dict) else {"raw": body}
         if resp.status_code >= 400:
             raise RuntimeError(f"{route.provider} 参考图视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
-        status = extract_text(
-            last_body.get("status")
-            or (last_body.get("data") or {}).get("status")
-            or (last_body.get("result") or {}).get("status")
-        ).lower()
+        status = ai_routing.extract_video_status(last_body)
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:
@@ -1333,6 +1359,30 @@ def advance_boards_for_reference_asset(record_id: str, *, dry_run: bool = False)
     return summary
 
 
+def maybe_auto_approve_reference_asset(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
+    if not auto_review_enabled(token):
+        return {"status": "disabled"}
+    if not file_token:
+        return {"status": "skipped", "reason": "missing_file_token"}
+    if extract_text(fields.get("参考图操作")).strip() == "重新生成参考图":
+        return {"status": "manual_regeneration"}
+    parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
+    if not parent_record_id:
+        return {"status": "skipped", "reason": "missing_parent_record_id"}
+    safe_update_record(
+        token,
+        TABLE_NINE_GRID_VIDEO,
+        record_id,
+        filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "参考图审核状态": "通过",
+            "参考图操作": "不触发",
+            "错误信息": "",
+        }),
+    )
+    advance_summary = advance_boards_after_reference_approval(token, parent_record_id)
+    return {"status": "auto_approved", "advance": advance_summary}
+
+
 def upsert_reference_asset_records(token: str, parent_record_id: str, records: List[Dict[str, Dict[str, Any]]]) -> Dict[str, int]:
     existing = {
         extract_text((rec.get("fields") or {}).get("资产ID")).strip(): rec
@@ -1941,7 +1991,9 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
         "参考图错误信息": "",
         "错误信息": "",
     }))
+    auto_review_summary = maybe_auto_approve_reference_asset(token, record_id, fields, file_token=file_token)
     summary.update({"status": "success", "task_id": task_id, "file_token": file_token, "output_path": out_path})
+    summary["auto_review"] = auto_review_summary
     return summary
 
 

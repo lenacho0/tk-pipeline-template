@@ -19,6 +19,7 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
         self.assertNotIn("happyhorse-1.0-video-edit", text)
         self.assertNotIn("API Key", text)
         self.assertIn("OTU / gpt-image-2-4K", text)
+        self.assertIn("Aitgenne / happyhorse-1.0-t2v", text)
         self.assertIn("Aitgenne / happyhorse-1.0-r2v", text)
         self.assertIn("Aitgenne / happyhorse-1.0-i2v", text)
         self.assertIn("Aitgenne / omni-flash", text)

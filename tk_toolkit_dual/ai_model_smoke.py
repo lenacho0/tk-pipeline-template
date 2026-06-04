@@ -117,6 +117,8 @@ def smoke_profile_for_entry(entry: ai_model_catalog.ModelCatalogEntry) -> SmokeP
         )
     if entry.provider == "OTU" and entry.model in {"veo_3_1", "veo_3_1-hd"}:
         return SmokeProfile("landscape_i2v", "1280x720", "16:9", "landscape", 1)
+    if entry.model == "happyhorse-1.0-t2v":
+        return SmokeProfile("text_to_video", "720x1280", "9:16", "vertical", 0)
     if entry.model == "happyhorse-1.0-r2v":
         return SmokeProfile("multi_reference", "720x1280", "9:16", "vertical", 2)
     return SmokeProfile("vertical_i2v", "720x1280", "9:16", "vertical", 1)
@@ -212,8 +214,7 @@ def extract_text(value: Any) -> str:
 
 
 def extract_task_id(body: Dict[str, Any]) -> str:
-    data = body.get("data") if isinstance(body.get("data"), dict) else {}
-    return extract_text(body.get("id") or body.get("task_id") or data.get("id") or data.get("task_id")).strip()
+    return ai_routing.extract_video_task_id(body)
 
 
 def extract_result_url(body: Dict[str, Any]) -> str:
@@ -248,9 +249,7 @@ def extract_result_url(body: Dict[str, Any]) -> str:
 
 
 def video_status(body: Dict[str, Any]) -> str:
-    data = body.get("data") if isinstance(body.get("data"), dict) else {}
-    result = body.get("result") if isinstance(body.get("result"), dict) else {}
-    return extract_text(body.get("status") or data.get("status") or result.get("status")).strip().lower()
+    return ai_routing.extract_video_status(body)
 
 
 def videos_endpoint(api_base: str) -> str:
@@ -260,6 +259,33 @@ def videos_endpoint(api_base: str) -> str:
     if base.endswith("/v1"):
         return f"{base}/videos"
     return f"{base}/v1/videos"
+
+
+def parse_reference_urls(raw: Any) -> List[str]:
+    if isinstance(raw, list):
+        values = raw
+    else:
+        text = extract_text(raw).strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                values = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                values = []
+        else:
+            values = re.split(r"[\n,]+", text)
+    return [extract_text(value).strip() for value in values if extract_text(value).strip().startswith("http")]
+
+
+def happyhorse_smoke_reference_urls(runtime_config: Dict[str, str], selected_refs: Sequence[str], required_count: int) -> List[str]:
+    urls = parse_reference_urls(runtime_config.get("happyhorse_reference_urls"))
+    urls.extend(path for path in selected_refs if extract_text(path).strip().startswith("http"))
+    deduped = list(dict.fromkeys(urls))
+    if len(deduped) < required_count:
+        raise ValueError("HappyHorse smoke 需要公网参考图 URL，请设置 HAPPYHORSE_SMOKE_REFERENCE_URLS")
+    return deduped[:required_count]
 
 
 def submit_smoke_task(
@@ -298,7 +324,24 @@ def submit_smoke_task(
         }
         opened = []
         try:
-            if entry.provider == "AIHubMix" and entry.model == "seeddance2.0":
+            if entry.provider == "Aitgenne" and entry.model.startswith("happyhorse-1.0-"):
+                reference_urls = happyhorse_smoke_reference_urls(runtime_config, selected_refs, profile.reference_count)
+                payload = ai_routing.build_happyhorse_video_payload(
+                    route,
+                    VIDEO_PROMPT,
+                    reference_urls,
+                    size=profile.size,
+                    aspect_ratio=profile.aspect_ratio,
+                    seconds=profile.seconds,
+                )
+                resp = post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {runtime_config['api_key']}", "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=180,
+                )
+                data = payload
+            elif entry.provider == "AIHubMix" and entry.model == "seeddance2.0":
                 image_file = open(selected_refs[0], "rb")
                 opened.append(image_file)
                 files: Any = {"image": (Path(selected_refs[0]).name, image_file, "image/png")}
@@ -355,7 +398,8 @@ def poll_smoke_task(
 ) -> Dict[str, Any]:
     if not task_id or poll_seconds <= 0:
         return {}
-    endpoint = f"{videos_endpoint(runtime_config.get('api_base') or governance.provider_base(entry)).rstrip('/')}/{task_id}"
+    route = make_route(entry, runtime_config)
+    endpoint = ai_routing.media_task_endpoint(route, task_id)
     deadline = time.time() + poll_seconds
     last_body: Dict[str, Any] = {}
     while time.time() < deadline:
@@ -456,6 +500,7 @@ def resolve_runtime_config(
         "api_key": api_key,
         "api_base": governance.provider_base(entry),
         "model": entry.model,
+        "happyhorse_reference_urls": env.get("HAPPYHORSE_SMOKE_REFERENCE_URLS", "").strip(),
     }
 
 

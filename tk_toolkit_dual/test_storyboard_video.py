@@ -259,7 +259,12 @@ class StoryboardVideoTests(unittest.TestCase):
             )
 
         self.assertEqual(summary["provider"], "Aitgenne")
-        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(
+            summary["endpoint"],
+            "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis",
+        )
+        self.assertEqual(summary["payload"]["input"]["media"], [{"type": "first_frame", "url": "<reference_url>"}])
+        self.assertEqual(summary["payload"]["parameters"], {"resolution": "720P", "duration": 8})
         self.assertEqual(summary["api_key"], "[REDACTED]")
 
     def test_normalize_storyboard_payload_requires_final_image_prompt_and_adds_numbers(self):

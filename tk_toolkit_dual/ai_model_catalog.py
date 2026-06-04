@@ -179,7 +179,7 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
     _entry("Aitgenne", "视频", "happyhorse-1.0-r2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合多参考图九宫格"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-i2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合单张九宫格图转视频"),
     _entry("Aitgenne", "视频", "omni-flash", "视频统一格式", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合 Omni 视频候选"),
-    _entry("Aitgenne", "视频", "happyhorse-1.0-t2v", "happyhorse视频", STATUS_CANDIDATE, "官网模型广场", notes="文生视频，不适合当前九宫格主链路。"),
+    _entry("Aitgenne", "视频", "happyhorse-1.0-t2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场", notes="文生视频，使用 HappyHorse alibailian 原生端点；不作为图生视频链路默认模型。"),
     _entry(
         "Aitgenne",
         "视频编辑",
@@ -187,7 +187,7 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
         "happyhorse视频编辑",
         STATUS_ENABLED,
         "官网模型广场/用户确认",
-        notes="仅供 006 视频编辑任务表使用，不进入普通视频生成下拉。",
+        notes="006 视频编辑任务表使用 Aitgenne alibailian video-generation/video-synthesis 原生端点。",
         call_types=("happyhorse视频编辑",),
     ),
     _entry("Aitgenne", "视频", "veo-3.1-fast", "Google 音视频待验证", STATUS_CANDIDATE, "官网模型广场待确认", notes="Aitgenne /v1/models 未返回，先不进生产下拉。"),

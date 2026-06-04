@@ -76,6 +76,7 @@ class VideoEditWorkerTests(unittest.TestCase):
         ]
 
         with patch.object(video_edit, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(video_edit, "ensure_video_edit_model_enabled"), \
              patch.object(video_edit, "safe_list_records", return_value=config_records):
             route = video_edit.resolve_video_edit_route("token")
 
@@ -103,50 +104,74 @@ class VideoEditWorkerTests(unittest.TestCase):
         ]
 
         with patch.object(video_edit, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(video_edit, "ensure_video_edit_model_enabled"), \
              patch.object(video_edit, "safe_list_records", return_value=config_records), \
              self.assertRaisesRegex(ValueError, "模型配置缺少 API Key: Aitgenne / happyhorse-1.0-video-edit"):
             video_edit.resolve_video_edit_route("token")
 
-    def test_submit_video_edit_uses_happyhorse_json_schema(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            source_path = Path(tmpdir) / "source.mp4"
-            ref_path = Path(tmpdir) / "ref.png"
-            source_path.write_bytes(b"source-video")
-            ref_path.write_bytes(b"reference-image")
-            route = video_edit.default_video_edit_route()
-            route.api_key = "key"
-            response = Mock()
-            response.status_code = 200
-            response.json.return_value = {"id": "task-123"}
+    def test_submit_video_edit_uses_alibailian_video_synthesis_schema(self):
+        route = video_edit.default_video_edit_route()
+        route.api_key = "key"
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"output": {"task_id": "task-123", "task_status": "PENDING"}}
 
-            with patch.object(video_edit.requests, "post", return_value=response) as post:
-                task_id, _ = video_edit.submit_aitgenne_video_edit_task(
-                    route,
-                    "replace the shirt with @Image1",
-                    str(source_path),
-                    [str(ref_path)],
-                    {
-                        "resolution": "720P",
-                        "audio_setting": "origin",
-                        "source_video_url": "https://x.test/source.mp4",
-                        "reference_image_urls": ["https://x.test/ref.png"],
-                    },
-                )
+        with patch.object(video_edit.requests, "post", return_value=response) as post:
+            task_id, _ = video_edit.submit_aitgenne_video_edit_task(
+                route,
+                "replace the shirt with @Image1",
+                "source.mp4",
+                [],
+                {
+                    "resolution": "720P",
+                    "audio_setting": "origin",
+                    "source_video_url": "https://x.test/source.mp4",
+                    "reference_image_urls": ["https://x.test/ref.png"],
+                },
+            )
 
         self.assertEqual(task_id, "task-123")
-        self.assertEqual(post.call_args.args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(
+            post.call_args.args[0],
+            "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis",
+        )
         kwargs = post.call_args.kwargs
-        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
         self.assertEqual(kwargs["json"], {
             "model": "happyhorse-1.0-video-edit",
-            "prompt": "replace the shirt with @Image1",
-            "input.media": [
-                {"type": "video", "url": "https://x.test/source.mp4"},
-                {"type": "reference_image", "url": "https://x.test/ref.png"},
-            ],
-            "parameters.resolution": "720P",
-            "parameters.audio_setting": "origin",
+            "input": {
+                "prompt": "replace the shirt with @Image1",
+                "media": [
+                    {"type": "video", "url": "https://x.test/source.mp4"},
+                    {"type": "reference_image", "url": "https://x.test/ref.png"},
+                ],
+            },
+            "parameters": {
+                "resolution": "720P",
+                "audio_setting": "origin",
+            },
         })
+
+    def test_poll_video_edit_uses_alibailian_task_endpoint(self):
+        route = video_edit.default_video_edit_route()
+        route.api_key = "key"
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "output": {
+                "task_status": "SUCCEEDED",
+                "video_url": "https://x.test/result.mp4",
+            }
+        }
+
+        with patch.object(video_edit.requests, "get", return_value=response) as get:
+            body = video_edit.poll_aitgenne_video_edit_task(route, "task-123")
+
+        self.assertEqual(body["output"]["video_url"], "https://x.test/result.mp4")
+        self.assertEqual(
+            get.call_args.args[0],
+            "https://api.aitgenne.com/alibailian/api/v1/tasks/task-123",
+        )
 
     def test_run_video_edit_success_writes_result_attachment(self):
         with tempfile.TemporaryDirectory() as tmpdir:

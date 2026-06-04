@@ -26,6 +26,7 @@ class AiModelSmokeTests(unittest.TestCase):
         self.assertIn("OTU / veo_3_1-hd-fl", names)
         self.assertIn("AIHubMix / veo-3.1-fast-generate-preview", names)
         self.assertNotIn("AIHubMix / seeddance2.0", names)
+        self.assertIn("Aitgenne / happyhorse-1.0-t2v", names)
         self.assertIn("Aitgenne / happyhorse-1.0-i2v", names)
         self.assertIn("Aitgenne / happyhorse-1.0-r2v", names)
         self.assertIn("Aitgenne / omni-flash", names)
@@ -34,7 +35,6 @@ class AiModelSmokeTests(unittest.TestCase):
         queue_text = json.dumps([entry.display_name for entry in ai_model_smoke.build_smoke_queue(all_enabled_media=True)], ensure_ascii=False)
 
         self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", queue_text)
-        self.assertNotIn("Aitgenne / happyhorse-1.0-t2v", queue_text)
         self.assertNotIn("Aitgenne / veo-3.1-fast", queue_text)
         self.assertNotIn("AIHubMix / gpt-image-2", queue_text)
         self.assertNotIn("AIHubMix / seeddance2.0", queue_text)
@@ -43,9 +43,6 @@ class AiModelSmokeTests(unittest.TestCase):
     def test_explicit_smoke_rejects_candidate_and_discard_models(self):
         with self.assertRaisesRegex(ValueError, "不允许真实 smoke"):
             ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / happyhorse-1.0-video-edit"])
-
-        with self.assertRaisesRegex(ValueError, "不允许真实 smoke"):
-            ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / happyhorse-1.0-t2v"])
 
         with self.assertRaisesRegex(ValueError, "不允许真实 smoke"):
             ai_model_smoke.build_smoke_queue(model_names=["AIHubMix / seeddance2.0"])
@@ -156,6 +153,71 @@ class AiModelSmokeTests(unittest.TestCase):
         self.assertEqual("task_landscape", result["task_id"])
         self.assertEqual("1280x720", captured["data"]["size"])
         self.assertEqual("16:9", captured["data"]["aspect_ratio"])
+
+    def test_submit_smoke_task_uses_happyhorse_json_schema(self):
+        entry = ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / happyhorse-1.0-r2v"])[0]
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            captured["files"] = kwargs.get("files")
+            return SimpleNamespace(status_code=200, json=lambda: {"output": {"task_id": "task_happyhorse", "task_status": "PENDING"}})
+
+        result = ai_model_smoke.submit_smoke_task(
+            entry,
+            {
+                "api_key": "sk-test",
+                "api_base": "https://api.aitgenne.com/v1",
+                "model": "happyhorse-1.0-r2v",
+                "happyhorse_reference_urls": "https://x.test/reference-vertical-1.png,https://x.test/reference-vertical-2.png",
+            },
+            [],
+            post=fake_post,
+        )
+
+        self.assertEqual("task_happyhorse", result["task_id"])
+        self.assertEqual(
+            "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis",
+            captured["url"],
+        )
+        self.assertIsNone(captured["files"])
+        self.assertEqual({
+            "model": "happyhorse-1.0-r2v",
+            "input": {
+                "prompt": ai_model_smoke.VIDEO_PROMPT,
+                "media": [
+                    {"type": "reference_image", "url": "https://x.test/reference-vertical-1.png"},
+                    {"type": "reference_image", "url": "https://x.test/reference-vertical-2.png"},
+                ],
+            },
+            "parameters": {"resolution": "720P", "ratio": "9:16", "duration": 8},
+        }, captured["json"])
+
+    def test_submit_smoke_task_uses_happyhorse_t2v_without_media(self):
+        entry = ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / happyhorse-1.0-t2v"])[0]
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            captured["files"] = kwargs.get("files")
+            return SimpleNamespace(status_code=200, json=lambda: {"output": {"task_id": "task_t2v", "task_status": "PENDING"}})
+
+        result = ai_model_smoke.submit_smoke_task(
+            entry,
+            {"api_key": "sk-test", "api_base": "https://api.aitgenne.com/v1", "model": "happyhorse-1.0-t2v"},
+            [],
+            post=fake_post,
+        )
+
+        self.assertEqual("task_t2v", result["task_id"])
+        self.assertIsNone(captured["files"])
+        self.assertEqual({
+            "model": "happyhorse-1.0-t2v",
+            "input": {"prompt": ai_model_smoke.VIDEO_PROMPT},
+            "parameters": {"resolution": "720P", "ratio": "9:16", "duration": 8},
+        }, captured["json"])
 
 
 if __name__ == "__main__":

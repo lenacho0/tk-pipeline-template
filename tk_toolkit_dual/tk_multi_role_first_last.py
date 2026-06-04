@@ -95,6 +95,7 @@ from image_generation import (  # noqa: E402
     run_image_generation,
 )
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_auto_review import auto_review_enabled  # noqa: E402
 
 
 PARSE_STAGE_NAME = "多角色首尾帧解析-Gemini"
@@ -1450,6 +1451,21 @@ def advance_reference_review(record_id: str) -> Dict[str, Any]:
     return {"record_id": record_id, "status": "advanced", "triggered_keyframes": triggered}
 
 
+def maybe_auto_advance_reference_review(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
+    if not auto_review_enabled(token):
+        return {"status": "disabled"}
+    if not file_token:
+        return {"status": "skipped", "reason": "missing_file_token"}
+    if current_version(fields, "参考图版本") != 1:
+        return {"status": "manual_regeneration"}
+    safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+        "参考图审核状态": "通过",
+        "错误信息": "",
+    }))
+    advance_summary = advance_reference_review(record_id)
+    return {"status": "auto_approved", "advance": advance_summary}
+
+
 def advance_keyframe_review(record_id: str) -> Dict[str, Any]:
     ensure_multi_role_table()
     token = get_feishu_token()
@@ -1485,6 +1501,21 @@ def advance_keyframe_review(record_id: str) -> Dict[str, Any]:
         "triggered_keyframes": triggered_keyframes,
         "triggered_videos": triggered_videos,
     }
+
+
+def maybe_auto_advance_keyframe_review(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
+    if not auto_review_enabled(token):
+        return {"status": "disabled"}
+    if not file_token:
+        return {"status": "skipped", "reason": "missing_file_token"}
+    if current_version(fields, "关键帧版本") != 1:
+        return {"status": "manual_regeneration"}
+    safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+        "关键帧审核状态": "通过",
+        "错误信息": "",
+    }))
+    advance_summary = advance_keyframe_review(record_id)
+    return {"status": "auto_approved", "advance": advance_summary}
 
 
 def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -1608,7 +1639,9 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         "参考图生成时间": int(time.time() * 1000),
         "错误信息": "",
     }))
+    auto_review_summary = maybe_auto_advance_reference_review(token, record_id, fields, file_token=file_token)
     summary.update({"status": "success", "task_id": task_id, "file_token": file_token})
+    summary["auto_review"] = auto_review_summary
     return summary
 
 
@@ -1775,7 +1808,9 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
         "关键帧生成时间": int(time.time() * 1000),
         "错误信息": "",
     }))
+    auto_review_summary = maybe_auto_advance_keyframe_review(token, record_id, fields, file_token=file_token)
     summary.update({"status": "success", "task_id": task_id, "file_token": file_token})
+    summary["auto_review"] = auto_review_summary
     return summary
 
 
@@ -1844,11 +1879,44 @@ def submit_reference_video_task(
         raise ValueError(f"{route.provider} / {route.model} 缺少 API Key")
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
     endpoint = ai_routing.media_endpoint(route)
+    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_happyhorse_model(route):
+        urls = [extract_text(url).strip() for url in (reference_urls or []) if extract_text(url).strip()]
+        if not urls:
+            raise ValueError("Aitgenne 多角色视频缺少参考图 URL")
+        payload = ai_routing.build_happyhorse_video_payload(
+            route,
+            prompt,
+            urls,
+            size=size,
+            aspect_ratio=aspect_ratio,
+            seconds=seconds,
+        )
+
+        def _submit_json_once() -> Tuple[str, Dict[str, Any]]:
+            resp = requests.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=SUBMIT_TIMEOUT,
+            )
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"raw_text": resp.text[:1000]}
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{route.provider} 多角色视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
+            task_id = ai_routing.extract_video_task_id(body)
+            if not task_id:
+                raise RuntimeError(f"{route.provider} 多角色视频任务提交未返回任务 ID: {str(body)[:1200]}")
+            return task_id, body
+
+        return with_retry(_submit_json_once, max_attempts=4, label=f"submit multi-role {route.provider} video {endpoint}")
+
     if route.provider == "Aitgenne":
         urls = [extract_text(url).strip() for url in (reference_urls or []) if extract_text(url).strip()]
         if len(urls) < 2:
             raise ValueError("Aitgenne 多角色视频缺少参考图 URL")
-        payload = {
+        payload: Dict[str, Any] = {
             "model": model_name,
             "prompt": prompt,
             "input.media": [{"type": "image", "url": url} for url in urls[:2]],
@@ -1857,7 +1925,7 @@ def submit_reference_video_task(
             "parameters.seconds": str(seconds or "8"),
         }
 
-        def _submit_json_once() -> Tuple[str, Dict[str, Any]]:
+        def _submit_aitgenne_once() -> Tuple[str, Dict[str, Any]]:
             resp = requests.post(
                 endpoint,
                 headers={"Authorization": f"Bearer {route.api_key}"},
@@ -1870,12 +1938,12 @@ def submit_reference_video_task(
                 body = {"raw_text": resp.text[:1000]}
             if resp.status_code >= 400:
                 raise RuntimeError(f"{route.provider} 多角色视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
-            task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+            task_id = ai_routing.extract_video_task_id(body)
             if not task_id:
                 raise RuntimeError(f"{route.provider} 多角色视频任务提交未返回任务 ID: {str(body)[:1200]}")
             return task_id, body
 
-        return with_retry(_submit_json_once, max_attempts=4, label=f"submit multi-role {route.provider} video {endpoint}")
+        return with_retry(_submit_aitgenne_once, max_attempts=4, label=f"submit multi-role {route.provider} video {endpoint}")
 
     def _submit_once() -> Tuple[str, Dict[str, Any]]:
         with open(first_frame_path, "rb") as first_file, open(last_frame_path, "rb") as last_file:
@@ -1911,7 +1979,7 @@ def submit_reference_video_task(
 
 
 def reference_video_item_url(route: ai_routing.AiRoute, task_id: str) -> str:
-    return f"{ai_routing.media_endpoint(route).rstrip('/')}/{task_id}"
+    return ai_routing.media_task_endpoint(route, task_id)
 
 
 def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[str, Any]:
@@ -1930,11 +1998,7 @@ def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[s
         last_body = body if isinstance(body, dict) else {"raw": body}
         if resp.status_code >= 400:
             raise RuntimeError(f"{route.provider} 多角色视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
-        status = extract_text(
-            last_body.get("status")
-            or (last_body.get("data") or {}).get("status")
-            or (last_body.get("result") or {}).get("status")
-        ).lower()
+        status = ai_routing.extract_video_status(last_body)
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:

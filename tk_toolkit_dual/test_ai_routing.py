@@ -278,11 +278,43 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["media_spec"]["size"], "720p")
         self.assertEqual(summary["media_spec"]["aspect_ratio"], "9:16")
         self.assertEqual(summary["media_spec"]["seconds"], "8")
-        self.assertEqual(summary["adapter_payload_summary"]["size"], "payload.size")
-        self.assertEqual(summary["adapter_payload_summary"]["aspect_ratio"], "payload.aspect_ratio")
-        self.assertEqual(summary["adapter_payload_summary"]["seconds"], "payload.seconds")
-        self.assertEqual(summary["payload"]["seconds"], "8")
-        self.assertEqual(summary["reference_count"], 1)
+
+    def test_aitgenne_happyhorse_media_endpoint_uses_alibailian_video_synthesis(self):
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="参考图生视频",
+            model="Aitgenne / happyhorse-1.0-r2v",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-video",
+            params={"size": "720x1280", "seconds": "5", "aspect_ratio": "9:16"},
+        )
+
+        summary = ai_routing.build_media_request_summary(route, "video prompt", reference_count=2)
+
+        self.assertEqual(
+            ai_routing.media_endpoint(route),
+            "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis",
+        )
+        self.assertEqual(
+            ai_routing.media_task_endpoint(route, "task-123"),
+            "https://api.aitgenne.com/alibailian/api/v1/tasks/task-123",
+        )
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis")
+        self.assertEqual(summary["payload"], {
+            "model": "happyhorse-1.0-r2v",
+            "input": {
+                "prompt": "video prompt",
+                "media": [
+                    {"type": "reference_image", "url": "<reference_url>"},
+                    {"type": "reference_image", "url": "<reference_url>"},
+                ],
+            },
+            "parameters": {"resolution": "720P", "ratio": "9:16", "duration": 5},
+        })
+        self.assertEqual(summary["adapter_payload_summary"]["input"], "payload.input")
+        self.assertEqual(summary["adapter_payload_summary"]["parameters"], "payload.parameters")
+        self.assertEqual(summary["reference_count"], 2)
 
 
 if __name__ == "__main__":

@@ -130,6 +130,47 @@ Young Thai male, shocked / proud
 
 
 class NineGridVideoTests(unittest.TestCase):
+    def test_auto_approve_reference_asset_advances_boards_when_enabled(self):
+        updates = []
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "auto_review_enabled", return_value=True), \
+             patch.object(nine_grid, "advance_boards_after_reference_approval", return_value={"advanced_boards": 3}) as advance, \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = nine_grid.maybe_auto_approve_reference_asset(
+                "token",
+                "asset_ref",
+                {"父任务记录ID": "parent", "参考图操作": "不触发"},
+                file_token="ft_ref",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        self.assertIn(("asset_ref", {"参考图审核状态": "通过", "参考图操作": "不触发", "错误信息": ""}), updates)
+        advance.assert_called_once_with("token", "parent")
+
+    def test_auto_approve_reference_asset_skips_regeneration_and_missing_token(self):
+        with patch.object(nine_grid, "auto_review_enabled", return_value=True), \
+             patch.object(nine_grid, "safe_update_record") as updater:
+            result = nine_grid.maybe_auto_approve_reference_asset(
+                "token",
+                "asset_ref",
+                {"父任务记录ID": "parent", "参考图操作": "重新生成参考图"},
+                file_token="ft_ref",
+            )
+        self.assertEqual(result["status"], "manual_regeneration")
+        updater.assert_not_called()
+
+        with patch.object(nine_grid, "auto_review_enabled", return_value=True), \
+             patch.object(nine_grid, "safe_update_record") as updater:
+            result = nine_grid.maybe_auto_approve_reference_asset(
+                "token",
+                "asset_ref",
+                {"父任务记录ID": "parent", "参考图操作": "不触发"},
+                file_token="",
+            )
+        self.assertEqual(result["status"], "skipped")
+        updater.assert_not_called()
+
     def test_plan_system_prompt_requires_dynamic_environment_problem_anchors(self):
         prompt = prompts.NINE_GRID_PLAN_SYSTEM_PROMPT
 
@@ -1955,7 +1996,7 @@ class NineGridVideoTests(unittest.TestCase):
         ]
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.json.return_value = {"output": {"task_id": "task_aitgenne", "task_status": "PENDING"}}
         response.text = '{"id":"task_aitgenne"}'
 
         with patch.object(nine_grid.requests, "post", return_value=response) as post:
@@ -1969,20 +2010,24 @@ class NineGridVideoTests(unittest.TestCase):
             )
 
         self.assertEqual(task_id, "task_aitgenne")
-        self.assertEqual(body["status"], "queued")
+        self.assertEqual(body["output"]["task_status"], "PENDING")
         args, kwargs = post.call_args
-        self.assertEqual(args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(args[0], "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis")
         self.assertNotIn("files", kwargs)
         self.assertEqual(kwargs["json"], {
             "model": "happyhorse-1.0-r2v",
-            "prompt": "video prompt",
-            "input.media": [
-                {"type": "image", "url": "https://x.test/grid.png"},
-                {"type": "image", "url": "https://x.test/product.png"},
-            ],
-            "parameters.resolution": "720P",
-            "parameters.aspect_ratio": "9:16",
-            "parameters.seconds": "10",
+            "input": {
+                "prompt": "video prompt",
+                "media": [
+                    {"type": "reference_image", "url": "https://x.test/grid.png"},
+                    {"type": "reference_image", "url": "https://x.test/product.png"},
+                ],
+            },
+            "parameters": {
+                "resolution": "720P",
+                "ratio": "9:16",
+                "duration": 10,
+            },
         })
 
     def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):

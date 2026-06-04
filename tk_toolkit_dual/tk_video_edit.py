@@ -10,7 +10,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import requests
 
-from ai_routing import AiRoute, config_record_for_model, parse_model_display
+import ai_model_catalog
+from ai_routing import AiRoute, aitgenne_video_synthesis_endpoint, config_record_for_model, media_task_endpoint, parse_model_display
 from common import (
     APP_TOKEN,
     TABLE_CONFIG,
@@ -105,15 +106,6 @@ def attachment_tmp_url(token: str, attachment: Mapping[str, Any]) -> str:
     return get_tmp_download_url_for_attachment(token, file_token)
 
 
-def _videos_endpoint(api_base: str = "") -> str:
-    base = (api_base or DEFAULT_API_BASE).strip().rstrip("/")
-    if base.endswith("/v1/videos"):
-        return base
-    if base.endswith("/v1"):
-        return f"{base}/videos"
-    return f"{base}/v1/videos"
-
-
 def _config_record_text(fields: Mapping[str, Any], *names: str) -> str:
     for name in names:
         value = extract_text(fields.get(name)).strip()
@@ -122,7 +114,14 @@ def _config_record_text(fields: Mapping[str, Any], *names: str) -> str:
     return ""
 
 
+def ensure_video_edit_model_enabled() -> None:
+    entry = ai_model_catalog.find_model("Aitgenne", "视频编辑", MODEL_NAME)
+    if entry is None:
+        raise ValueError(f"模型未启用: {MODEL_DISPLAY_NAME}")
+
+
 def resolve_video_edit_route(token: str) -> AiRoute:
+    ensure_video_edit_model_enabled()
     config_records = safe_list_records(token, TABLE_CONFIG) if TABLE_CONFIG else []
     fields = config_record_for_model(config_records, "Aitgenne", MODEL_DISPLAY_NAME)
     if fields is None:
@@ -189,6 +188,7 @@ def submit_aitgenne_video_edit_task(
     reference_paths: Sequence[str],
     params: Mapping[str, Any],
 ) -> Tuple[str, Dict[str, Any]]:
+    ensure_video_edit_model_enabled()
     model_name = parse_model_display(route.model)["model"] or MODEL_NAME
     source_video_url = extract_text((params or {}).get("source_video_url")).strip()
     if not source_video_url:
@@ -200,20 +200,24 @@ def submit_aitgenne_video_edit_task(
             media.append({"type": "reference_image", "url": text})
     payload = {
         "model": model_name,
-        "prompt": prompt,
-        "input.media": media,
-        "parameters.resolution": params.get("resolution") or "720P",
-        "parameters.audio_setting": params.get("audio_setting") or "origin",
+        "input": {
+            "prompt": prompt,
+            "media": media,
+        },
+        "parameters": {
+            "resolution": params.get("resolution") or "720P",
+            "audio_setting": params.get("audio_setting") or "origin",
+        },
     }
     extra_params = {
         key: value
         for key, value in (params or {}).items()
         if key not in {"resolution", "audio_setting", "source_video_url", "reference_image_urls"} and value is not None
     }
-    payload.update(extra_params)
+    payload["parameters"].update(extra_params)
     resp = requests.post(
-        _videos_endpoint(route.api_base),
-        headers={"Authorization": f"Bearer {route.api_key}"},
+        aitgenne_video_synthesis_endpoint(route.api_base or DEFAULT_API_BASE),
+        headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
         json=payload,
         timeout=180,
     )
@@ -263,7 +267,7 @@ def poll_aitgenne_video_edit_task(
     timeout_seconds: int = POLL_TIMEOUT_SECONDS,
     interval_seconds: int = POLL_INTERVAL_SECONDS,
 ) -> Dict[str, Any]:
-    endpoint = f"{_videos_endpoint(route.api_base).rstrip('/')}/{task_id}"
+    endpoint = media_task_endpoint(route, task_id)
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         resp = requests.get(endpoint, headers={"Authorization": f"Bearer {route.api_key}"}, timeout=45)

@@ -106,6 +106,72 @@ def sample_plan(role_count=3):
 
 
 class MultiRoleFirstLastTests(unittest.TestCase):
+    def test_auto_advance_reference_review_triggers_keyframes_for_first_version(self):
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "advance_reference_review", return_value={"status": "advanced"}) as advance, \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = multi_role.maybe_auto_advance_reference_review(
+                "token",
+                "asset_rec",
+                {"参考图版本": 1},
+                file_token="ft_ref",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        self.assertIn(("asset_rec", {"参考图审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("asset_rec")
+
+    def test_auto_advance_reference_review_skips_regeneration_version(self):
+        with patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "safe_update_record") as updater, \
+             patch.object(multi_role, "advance_reference_review") as advance:
+            result = multi_role.maybe_auto_advance_reference_review(
+                "token",
+                "asset_rec",
+                {"参考图版本": 2},
+                file_token="ft_ref",
+            )
+
+        self.assertEqual(result["status"], "manual_regeneration")
+        updater.assert_not_called()
+        advance.assert_not_called()
+
+    def test_auto_advance_keyframe_review_triggers_downstream_for_first_version(self):
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "advance_keyframe_review", return_value={"status": "advanced"}) as advance, \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = multi_role.maybe_auto_advance_keyframe_review(
+                "token",
+                "keyframe_rec",
+                {"关键帧版本": 1},
+                file_token="ft_keyframe",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        self.assertIn(("keyframe_rec", {"关键帧审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("keyframe_rec")
+
+    def test_auto_advance_keyframe_review_skips_regeneration_version(self):
+        with patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "safe_update_record") as updater, \
+             patch.object(multi_role, "advance_keyframe_review") as advance:
+            result = multi_role.maybe_auto_advance_keyframe_review(
+                "token",
+                "keyframe_rec",
+                {"关键帧版本": 2},
+                file_token="ft_keyframe",
+            )
+
+        self.assertEqual(result["status"], "manual_regeneration")
+        updater.assert_not_called()
+        advance.assert_not_called()
+
     def test_parse_prompt_requires_english_video_prompts_and_preserves_thai(self):
         prompt = multi_role.build_parse_prompt(
             {"产品名称": "uootapet", "目标时长秒": 8},
@@ -1006,7 +1072,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         )
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.json.return_value = {"output": {"task_id": "task_aitgenne", "task_status": "PENDING"}}
         response.text = '{"id":"task_aitgenne"}'
 
         with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last, \
@@ -1023,20 +1089,22 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             )
 
         self.assertEqual(task_id, "task_aitgenne")
-        self.assertEqual(body["status"], "queued")
+        self.assertEqual(body["output"]["task_status"], "PENDING")
         args, kwargs = post.call_args
-        self.assertEqual(args[0], "https://api.aitgenne.com/v1/videos")
+        self.assertEqual(args[0], "https://api.aitgenne.com/alibailian/api/v1/services/aigc/video-generation/video-synthesis")
         self.assertNotIn("files", kwargs)
         self.assertEqual(kwargs["json"], {
             "model": "happyhorse-1.0-i2v",
-            "prompt": "video prompt",
-            "input.media": [
-                {"type": "image", "url": "https://x.test/first.png"},
-                {"type": "image", "url": "https://x.test/last.png"},
-            ],
-            "parameters.resolution": "1080P",
-            "parameters.aspect_ratio": "9:16",
-            "parameters.seconds": "5",
+            "input": {
+                "prompt": "video prompt",
+                "media": [
+                    {"type": "first_frame", "url": "https://x.test/first.png"},
+                ],
+            },
+            "parameters": {
+                "resolution": "1080P",
+                "duration": 5,
+            },
         })
 
     def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):
