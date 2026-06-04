@@ -14,6 +14,65 @@ import tk_dispatcher as dispatcher
 
 
 class ScriptDocShotsTests(unittest.TestCase):
+    def setUp(self):
+        self._auto_review_patcher = patch.object(doc_shots, "auto_review_enabled", return_value=False)
+        self._auto_review_patcher.start()
+
+    def tearDown(self):
+        self._auto_review_patcher.stop()
+
+    def test_reference_approval_advances_only_shots_with_ready_assets(self):
+        records = [
+            {"record_id": "asset_pet", "fields": {"父文档记录ID": "parent", "资产ID": "pet_hero", "参考图审核状态": "通过", "参考图file_token": "ft_pet"}},
+            {"record_id": "asset_env", "fields": {"父文档记录ID": "parent", "资产ID": "home_bg", "参考图审核状态": "待确认", "参考图file_token": "ft_env"}},
+            {"record_id": "shot_pet", "fields": {"父文档记录ID": "parent", "参考资产ID列表": "pet_hero", "分镜图生成状态": "不触发"}},
+            {"record_id": "shot_both", "fields": {"父文档记录ID": "parent", "参考资产ID列表": "pet_hero,home_bg", "分镜图生成状态": "不触发"}},
+            {"record_id": "shot_running", "fields": {"父文档记录ID": "parent", "参考资产ID列表": "pet_hero", "分镜图生成状态": "生成中"}},
+        ]
+        updates = []
+        with patch.object(doc_shots, "TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch.object(doc_shots, "TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch.object(doc_shots, "safe_list_records", side_effect=[records[:2], records[2:]]), \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((table, rid, fields))), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = doc_shots.advance_shots_after_reference_approval("token", "parent")
+
+        self.assertEqual(result["advanced_shots"], 1)
+        self.assertIn(("tbl_shots", "shot_pet", {"分镜图生成状态": "待生成", "错误信息": ""}), updates)
+        self.assertFalse(any(item[1] == "shot_both" for item in updates))
+
+    def test_auto_approve_reference_image_updates_review_and_advances_shots(self):
+        updates = []
+        with patch.object(doc_shots, "TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch.object(doc_shots, "auto_review_enabled", return_value=True) as enabled, \
+             patch.object(doc_shots, "advance_shots_after_reference_approval", return_value={"advanced_shots": 2}) as advance, \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((table, rid, fields))), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = doc_shots.maybe_auto_approve_reference_image(
+                "token",
+                "asset_pet",
+                {"父文档记录ID": "parent"},
+                file_token="ft_pet",
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=doc_shots.AUTO_REVIEW_STAGE_NAME)
+        self.assertIn(("tbl_assets", "asset_pet", {"参考图审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("token", "parent")
+
+    def test_auto_approve_reference_image_requires_switch_and_token(self):
+        with patch.object(doc_shots, "auto_review_enabled", return_value=False), \
+             patch.object(doc_shots, "safe_update_record") as updater:
+            result = doc_shots.maybe_auto_approve_reference_image("token", "asset_pet", {"父文档记录ID": "parent"}, file_token="ft_pet")
+        self.assertEqual(result["status"], "disabled")
+        updater.assert_not_called()
+
+        with patch.object(doc_shots, "auto_review_enabled", return_value=True), \
+             patch.object(doc_shots, "safe_update_record") as updater:
+            result = doc_shots.maybe_auto_approve_reference_image("token", "asset_pet", {"父文档记录ID": "parent"}, file_token="")
+        self.assertEqual(result["status"], "skipped")
+        updater.assert_not_called()
+
     def test_dispatcher_reclaims_stale_running_image_stages(self):
         watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
 

@@ -74,8 +74,10 @@ from tk_shot_storyboard import (  # noqa: E402
     filter_existing_fields,
 )
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
+AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_shots"]
 ASSET_TYPES = {"pet", "environment", "human"}
 YES_VALUES = {"是", "true", "yes", "1", "需要", "y"}
 
@@ -562,6 +564,71 @@ def ensure_script_doc_tables(*, need_tasks: bool = False, need_assets: bool = Fa
         raise RuntimeError(f"config.json 尚未配置脚本文档拆分表: {', '.join(missing)}")
 
 
+def _approved_asset_id_map(asset_records: List[Dict[str, Any]], parent_record_id: str) -> Dict[str, bool]:
+    ready: Dict[str, bool] = {}
+    for rec in asset_records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父文档记录ID")).strip() != parent_record_id:
+            continue
+        asset_id = extract_text(fields.get("资产ID")).strip()
+        if not asset_id:
+            continue
+        ready[asset_id] = (
+            extract_text(fields.get("参考图审核状态")).strip() == "通过"
+            and bool(latest_attachment_token(fields.get("参考图")) or extract_text(fields.get("参考图file_token")).strip())
+        )
+    return ready
+
+
+def advance_shots_after_reference_approval(token: str, parent_record_id: str) -> Dict[str, Any]:
+    ensure_script_doc_tables(need_assets=True, need_shots=True)
+    asset_records = safe_list_records(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS)
+    shot_records = safe_list_records(token, TABLE_SCRIPT_DOC_SHOTS)
+    approved_assets = _approved_asset_id_map(asset_records, parent_record_id)
+    advanced = 0
+    for rec in shot_records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父文档记录ID")).strip() != parent_record_id:
+            continue
+        if extract_text(fields.get("分镜图生成状态")).strip() != "不触发":
+            continue
+        requested_ids = _asset_ids_from_fields(fields)
+        if any(not approved_assets.get(asset_id) for asset_id in requested_ids):
+            continue
+        safe_update_record(
+            token,
+            TABLE_SCRIPT_DOC_SHOTS,
+            rec["record_id"],
+            filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+                "分镜图生成状态": "待生成",
+                "错误信息": "",
+            }),
+        )
+        advanced += 1
+    return {"status": "advanced" if advanced else "no_shots_to_advance", "parent_record_id": parent_record_id, "advanced_shots": advanced}
+
+
+def maybe_auto_approve_reference_image(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
+    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
+        return {"status": "disabled"}
+    if not file_token:
+        return {"status": "skipped", "reason": "missing_file_token"}
+    parent_record_id = extract_text(fields.get("父文档记录ID")).strip()
+    if not parent_record_id:
+        return {"status": "skipped", "reason": "missing_parent_record_id"}
+    safe_update_record(
+        token,
+        TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        record_id,
+        filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+            "参考图审核状态": "通过",
+            "错误信息": "",
+        }),
+    )
+    advance_summary = advance_shots_after_reference_approval(token, parent_record_id)
+    return {"status": "auto_approved", "advance": advance_summary}
+
+
 def build_reference_prompt_note(refs: List[Dict[str, str]]) -> str:
     if not refs:
         return "本分镜没有上传额外参考图；只按当前分镜提示词生成。"
@@ -928,7 +995,9 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         "参考图审核状态": "待确认",
         "错误信息": "",
     }))
+    auto_review_summary = maybe_auto_approve_reference_image(token, record_id, fields, file_token=file_token)
     summary.update({"status": "success", "file_token": file_token, "output_path": str(out_path), "task_id": submit_task_id})
+    summary["auto_review"] = auto_review_summary
     return summary
 
 
