@@ -7,16 +7,18 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ai_model_catalog  # noqa: E402
 from common import (  # noqa: E402
     APP_TOKEN,
+    CONFIG_RECORDS,
     TABLE_CONFIG,
     extract_text,
     feishu_headers,
@@ -33,7 +35,35 @@ CONFIG_PROMPT_STAGES = {
     "多图九宫格图片生成",
     "多图九宫格视频生成",
 }
+AIHUBMIX_VEO_STAGE = "分镜视频生成-Veo"
+EXPLICIT_STATUS_BY_STAGE = {
+    AIHUBMIX_VEO_STAGE: "启用",
+}
 ROUTE_SWITCH_STAGE = "统一AI路由启用状态"
+MODEL_CATALOG_TABLE_ID = "tblWjGeDIFAe5Pqd"
+TASK_DEFAULT_TABLE_ID = "tblC0IfP2ZIjMu4U"
+LEGACY_CONFIG_TABLE_NAME = "初始化-API密钥与旧运行配置"
+LEGACY_CONFIG_VIEW_RENAMES = {
+    "供应商密钥-管理员": "01-运行配置-管理员",
+    "配置总览": "02-旧运行配置总览",
+    "排错-全字段": "99-旧配置排错全字段",
+}
+MIGRATED_FIELD_NAMES = {
+    "是否统一AI预设",
+    "AI供应商",
+    "AI能力类型",
+    "AI任务类型",
+    "应用表格",
+}
+OBSOLETE_VIEWS_BY_TABLE = {
+    MODEL_CATALOG_TABLE_ID: {"Grid View"},
+    TASK_DEFAULT_TABLE_ID: {"Grid View"},
+    TABLE_CONFIG: {
+        "统一AI预设",
+        "模型目录",
+        "归档-候选旧模型",
+    },
+}
 ARCHIVE_PREFIX = "归档："
 SECRET_FIELD_NAMES = {"API Key"}
 OBSOLETE_VIEW_NAMES = {
@@ -50,6 +80,55 @@ MEDIA_DIMENSION_DEFAULTS = {
     "故事板视频生成-Omni": ("720x1280", "9:16"),
     "多图九宫格图片生成": ("720x1280", "9:16"),
     "多图九宫格视频生成": ("720x1280", "9:16"),
+}
+TASK_DEFAULT_APP_TABLE_FIELD = "应用表格"
+TASK_DEFAULT_APP_TABLE_OPTIONS = [
+    "001-多角色首尾帧生成表",
+    "002-首尾帧视频生成表",
+    "003-1脚本文档-任务表",
+    "003-2脚本文档-参考资产表",
+    "003-3脚本文档-分镜生产表",
+    "004-故事板图片视频生成表",
+    "005-多图九宫格视频生成表",
+    "006-视频编辑任务表",
+]
+MODEL_CATALOG_CAPABILITY_OPTIONS = ["文本", "图片", "视频", "视频编辑", "语音"]
+MODEL_CATALOG_CALL_TYPE_OPTIONS = [
+    "Gemini 原生 SDK",
+    "OpenAI兼容 chat/completions",
+    "OpenAI兼容 /v1/images/generations",
+    "OTU /v1/videos JSON image task",
+    "OTU /v1/videos multipart",
+    "Gemini native Veo",
+    "happyhorse视频",
+    "happyhorse视频编辑",
+    "视频统一格式",
+    "专用 API",
+    "AIHubMix 视频适配器",
+]
+VIDEO_EDIT_CONFIG_STAGE = "统一AI预设-Aitgenne / happyhorse-1.0-video-edit"
+VIDEO_EDIT_MODEL_DISPLAY = "Aitgenne / happyhorse-1.0-video-edit"
+VIDEO_EDIT_DEFAULT_ROW = {
+    "应用表格": "006-视频编辑任务表",
+    "环节": "视频编辑默认",
+    "默认供应商": "Aitgenne",
+    "默认模型显示名称": VIDEO_EDIT_MODEL_DISPLAY,
+    "画面尺寸": "720P",
+    "状态": "启用",
+    "备注": "source_config=统一AI预设-Aitgenne / happyhorse-1.0-video-edit; slot=视频编辑",
+}
+VIDEO_EDIT_MODEL_ROW = {
+    "供应商": "Aitgenne",
+    "能力类型": "视频编辑",
+    "模型名称": "happyhorse-1.0-video-edit",
+    "显示名称": VIDEO_EDIT_MODEL_DISPLAY,
+    "调用方式": "happyhorse视频编辑",
+    "API代理地址": "https://api.aitgenne.com/v1",
+    "默认参数JSON": "{\"audio_setting\":\"origin\",\"resolution\":\"720P\"}",
+    "接入状态": "已适配",
+    "测试状态": "测试通过",
+    "是否生产可用": "是",
+    "备注": "006 视频编辑默认模型；使用 Aitgenne alibailian video-generation/video-synthesis 原生端点。",
 }
 
 
@@ -94,6 +173,28 @@ class CleanupPlan:
     record_updates: List[RecordUpdate]
 
 
+@dataclass(frozen=True)
+class DeleteAuditItem:
+    record_id: str
+    stage: str
+    reason: str
+    api_key_status: str
+
+
+@dataclass(frozen=True)
+class DeleteAudit:
+    candidates: List[DeleteAuditItem]
+    skipped: List[DeleteAuditItem]
+
+    def to_public_dict(self) -> Dict[str, Any]:
+        return {
+            "candidate_count": len(self.candidates),
+            "skipped_count": len(self.skipped),
+            "candidates": [item.__dict__ for item in self.candidates],
+            "skipped": [item.__dict__ for item in self.skipped],
+        }
+
+
 def _record_id(record: Mapping[str, Any]) -> str:
     return str(record.get("record_id") or record.get("id") or "")
 
@@ -109,6 +210,10 @@ def _text(fields: Mapping[str, Any], name: str) -> str:
 
 def _has_api_key(fields: Mapping[str, Any]) -> bool:
     return bool(_text(fields, "API Key"))
+
+
+def _api_key_status(fields: Mapping[str, Any]) -> str:
+    return "存在" if _has_api_key(fields) else "为空"
 
 
 def _same_patch(fields: Mapping[str, Any], patch: Mapping[str, Any]) -> bool:
@@ -178,6 +283,11 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
                 "备注": _archive_remark(_text(fields, "备注"), reason),
             }
 
+        explicit_status = EXPLICIT_STATUS_BY_STAGE.get(stage)
+        if explicit_status and not _text(fields, "状态"):
+            category = category or "status_normalization"
+            patch.setdefault("状态", explicit_status)
+
         if stage in MEDIA_DIMENSION_DEFAULTS:
             size, ratio = MEDIA_DIMENSION_DEFAULTS[stage]
             category = category or "media_dimension_config"
@@ -223,7 +333,7 @@ def build_backup_snapshot(
             "AI参数JSON": _text(rf, "AI参数JSON"),
             "调用方式": _text(rf, "调用方式"),
             "提示词_chars": len(prompt),
-            "has_api_key": _has_api_key(rf),
+            "api_key_status": _api_key_status(rf),
             "状态": _text(rf, "状态"),
             "备注": _text(rf, "备注"),
         })
@@ -245,27 +355,20 @@ def build_backup_snapshot(
 
 
 def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, Any]]:
-    all_fields = list(field_names)
+    all_fields = [name for name in field_names if name not in MIGRATED_FIELD_NAMES]
     return {
-        "模型目录": {
-            "visible_fields": ["AI供应商", "AI能力类型", "模型名称", "AI任务类型", "画面尺寸", "画面比例", "AI参数JSON", "状态", "备注"],
+        "01-运行配置-管理员": {
+            "visible_fields": ["环节", "状态", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
             "filter": {
                 "logic": "and",
-                "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]],
+                "conditions": [["状态", "intersects", ["启用", "测试中"]]],
             },
         },
-        "供应商密钥-管理员": {
-            "visible_fields": ["环节", "状态", "模型名称", "画面尺寸", "画面比例", "API 代理地址", "调用方式", "应用表格", "备注"],
-            "filter": {
-                "logic": "or",
-                "conditions": [["API Key", "non_empty"], ["环节", "intersects", [ROUTE_SWITCH_STAGE]]],
-            },
+        "02-旧运行配置总览": {
+            "visible_fields": ["环节", "状态", "模型名称", "API 代理地址", "调用方式", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
+            "filter": {"conditions": []},
         },
-        "归档-候选旧模型": {
-            "visible_fields": ["环节", "是否统一AI预设", "AI供应商", "AI能力类型", "AI任务类型", "模型名称", "状态", "备注"],
-            "filter": {"logic": "and", "conditions": [["状态", "intersects", ["停用"]]]},
-        },
-        "排错-全字段": {
+        "99-旧配置排错全字段": {
             "visible_fields": all_fields,
             "filter": {"conditions": []},
         },
@@ -336,11 +439,48 @@ def list_views(token: str) -> List[Dict[str, Any]]:
     return (data.get("data") or {}).get("items") or []
 
 
+def list_tables(token: str) -> List[Dict[str, Any]]:
+    data = safe_request(
+        "get",
+        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables?page_size=100",
+        headers=feishu_headers(token),
+        timeout=30,
+        max_attempts=3,
+        acceptable_codes=(0,),
+    )
+    return (data.get("data") or {}).get("items") or []
+
+
+def list_fields_for_table(token: str, table_id: str) -> List[Dict[str, Any]]:
+    data = safe_request(
+        "get",
+        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/fields?page_size=200",
+        headers=feishu_headers(token),
+        timeout=30,
+        max_attempts=3,
+        acceptable_codes=(0,),
+    )
+    return (data.get("data") or {}).get("items") or []
+
+
+def list_views_for_table(token: str, table_id: str) -> List[Dict[str, Any]]:
+    data = safe_request(
+        "get",
+        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/views?page_size=200",
+        headers=feishu_headers(token),
+        timeout=30,
+        max_attempts=3,
+        acceptable_codes=(0,),
+    )
+    return (data.get("data") or {}).get("items") or []
+
+
 def run_json(argv: Sequence[str]) -> Dict[str, Any]:
-    proc = subprocess.run(list(argv), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    command = list(argv)
+    proc = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output = (proc.stdout or proc.stderr or "").strip()
     if proc.returncode != 0:
-        raise RuntimeError(f"command failed rc={proc.returncode}: {' '.join(argv)}\n{output}")
+        raise RuntimeError(f"command failed rc={proc.returncode}: {' '.join(command)}\n{output}")
     if not output:
         return {}
     return json.loads(output)
@@ -415,27 +555,243 @@ def apply_view_definitions(base_token: str, views: Mapping[str, Mapping[str, Any
     return results
 
 
-def delete_obsolete_views(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
+def rename_legacy_config_table(base_token: str, *, dry_run: bool) -> Dict[str, Any]:
+    current_name = ""
+    for table in list_tables(get_feishu_token()):
+        table_id = table.get("table_id") or table.get("id")
+        if table_id == TABLE_CONFIG:
+            current_name = str(table.get("name") or table.get("table_name") or "")
+            break
+    if not dry_run and current_name != LEGACY_CONFIG_TABLE_NAME:
+        run_json([
+            "lark-cli", "base", "+table-update",
+            "--base-token", base_token,
+            "--table-id", TABLE_CONFIG,
+            "--name", LEGACY_CONFIG_TABLE_NAME,
+        ])
+    return {
+        "table_id": TABLE_CONFIG,
+        "from": current_name or "dry-run/current-name-not-read",
+        "to": LEGACY_CONFIG_TABLE_NAME,
+        "status": "dry_run" if dry_run else ("unchanged" if current_name == LEGACY_CONFIG_TABLE_NAME else "renamed"),
+    }
+
+
+def rename_legacy_views(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
     existing = existing_view_map(list_views(get_feishu_token()))
     results = []
-    for view_name in sorted(OBSOLETE_VIEW_NAMES):
-        view_id = existing.get(view_name)
+    for old_name, new_name in LEGACY_CONFIG_VIEW_RENAMES.items():
+        view_id = existing.get(old_name)
         if not view_id:
+            results.append({"from": old_name, "to": new_name, "status": "missing"})
             continue
         if not dry_run:
             run_json([
-                "lark-cli", "base", "+view-delete",
+                "lark-cli", "base", "+view-rename",
                 "--base-token", base_token,
                 "--table-id", TABLE_CONFIG,
                 "--view-id", view_id,
-                "--yes",
+                "--name", new_name,
             ])
         results.append({
-            "view_name": view_name,
+            "from": old_name,
+            "to": new_name,
             "view_id": view_id,
-            "status": "dry_run" if dry_run else "deleted",
+            "status": "dry_run" if dry_run else "renamed",
         })
     return results
+
+
+def delete_obsolete_views(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
+    results = []
+    names_by_table = {table_id: set(names) for table_id, names in OBSOLETE_VIEWS_BY_TABLE.items()}
+    names_by_table.setdefault(TABLE_CONFIG, set()).update(OBSOLETE_VIEW_NAMES)
+    token = get_feishu_token()
+    for table_id, names in sorted(names_by_table.items()):
+        existing = existing_view_map(list_views_for_table(token, table_id))
+        for view_name in sorted(names):
+            view_id = existing.get(view_name)
+            if not view_id:
+                continue
+            if not dry_run:
+                run_json([
+                    "lark-cli", "base", "+view-delete",
+                    "--base-token", base_token,
+                    "--table-id", table_id,
+                    "--view-id", view_id,
+                    "--yes",
+                ])
+            results.append({
+                "table_id": table_id,
+                "view_name": view_name,
+                "view_id": view_id,
+                "status": "dry_run" if dry_run else "deleted",
+            })
+    return results
+
+
+def delete_migrated_fields(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
+    fields = list_fields_for_table(get_feishu_token(), TABLE_CONFIG)
+    by_name = {
+        str(item.get("field_name") or item.get("name") or ""): str(item.get("field_id") or item.get("id") or "")
+        for item in fields
+    }
+    results = []
+    for field_name in sorted(MIGRATED_FIELD_NAMES):
+        field_id = by_name.get(field_name)
+        if not field_id:
+            results.append({"field_name": field_name, "status": "missing"})
+            continue
+        if not dry_run:
+            run_json([
+                "lark-cli", "base", "+field-delete",
+                "--base-token", base_token,
+                "--table-id", TABLE_CONFIG,
+                "--field-id", field_id,
+                "--yes",
+            ])
+        results.append({"field_name": field_name, "field_id": field_id, "status": "dry_run" if dry_run else "deleted"})
+    return results
+
+
+def sync_task_default_app_table_options(base_token: str, *, dry_run: bool) -> Dict[str, Any]:
+    return sync_select_field_options(
+        base_token,
+        TASK_DEFAULT_TABLE_ID,
+        TASK_DEFAULT_APP_TABLE_FIELD,
+        TASK_DEFAULT_APP_TABLE_OPTIONS,
+        dry_run=dry_run,
+    )
+
+
+def sync_select_field_options(
+    base_token: str,
+    table_id: str,
+    field_name: str,
+    options: Sequence[str],
+    *,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    fields = list_fields_for_table(get_feishu_token(), TASK_DEFAULT_TABLE_ID)
+    if table_id != TASK_DEFAULT_TABLE_ID:
+        fields = list_fields_for_table(get_feishu_token(), table_id)
+    target = next((item for item in fields if (item.get("field_name") or item.get("name")) == field_name), None)
+    if not target:
+        return {"table_id": table_id, "field_name": field_name, "status": "missing"}
+    current_options = [item.get("name") for item in target.get("options") or []]
+    if current_options == list(options):
+        return {"table_id": table_id, "field_name": field_name, "status": "unchanged", "options": list(options)}
+    if not dry_run:
+        try:
+            run_json([
+                "lark-cli", "base", "+field-update",
+                "--base-token", base_token,
+                "--table-id", table_id,
+                "--field-id", str(target.get("field_id") or target.get("id")),
+                "--json", json.dumps({
+                    "name": field_name,
+                    "type": "select",
+                    "multiple": bool(target.get("multiple", False)),
+                    "options": [opt(name) for name in options],
+                }, ensure_ascii=False),
+                "--yes",
+            ])
+        except RuntimeError as exc:
+            if "800070003" not in str(exc) and "no operation produced" not in str(exc):
+                raise
+            return {"table_id": table_id, "field_name": field_name, "status": "unchanged", "options": list(options)}
+    return {"table_id": table_id, "field_name": field_name, "status": "dry_run" if dry_run else "updated", "options": list(options)}
+
+
+def sync_model_catalog_options(base_token: str, *, dry_run: bool) -> List[Dict[str, Any]]:
+    return [
+        sync_select_field_options(base_token, MODEL_CATALOG_TABLE_ID, "能力类型", MODEL_CATALOG_CAPABILITY_OPTIONS, dry_run=dry_run),
+        sync_select_field_options(base_token, MODEL_CATALOG_TABLE_ID, "调用方式", MODEL_CATALOG_CALL_TYPE_OPTIONS, dry_run=dry_run),
+    ]
+
+
+def ensure_video_edit_catalog_record(token: str, *, dry_run: bool) -> Dict[str, Any]:
+    existing = None
+    for record in safe_list_records(token, MODEL_CATALOG_TABLE_ID):
+        fields = record.get("fields") or {}
+        if _text(fields, "显示名称") == VIDEO_EDIT_MODEL_DISPLAY:
+            existing = record
+            break
+    if not dry_run:
+        if existing:
+            safe_update_record(token, MODEL_CATALOG_TABLE_ID, existing["record_id"], VIDEO_EDIT_MODEL_ROW)
+            action = "updated"
+        else:
+            safe_request(
+                "post",
+                f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{MODEL_CATALOG_TABLE_ID}/records",
+                headers=feishu_headers(token),
+                json={"fields": VIDEO_EDIT_MODEL_ROW},
+                timeout=30,
+                max_attempts=3,
+            )
+            action = "created"
+    else:
+        action = "dry_run_update" if existing else "dry_run_create"
+    return {
+        "table_id": MODEL_CATALOG_TABLE_ID,
+        "display_name": VIDEO_EDIT_MODEL_DISPLAY,
+        "record_id": (existing or {}).get("record_id") or "",
+        "action": action,
+    }
+
+
+def find_catalog_record_id(token: str, display_name: str) -> str:
+    for record in safe_list_records(token, MODEL_CATALOG_TABLE_ID):
+        fields = record.get("fields") or {}
+        if _text(fields, "显示名称") == display_name:
+            return record.get("record_id") or record.get("id") or ""
+    return ""
+
+
+def ensure_video_edit_default_record(token: str, base_token: str, *, dry_run: bool) -> Dict[str, Any]:
+    row = dict(VIDEO_EDIT_DEFAULT_ROW)
+    source_record_id = ""
+    for record in safe_list_records(token, TABLE_CONFIG):
+        fields = record.get("fields") or {}
+        if _text(fields, "环节") != VIDEO_EDIT_CONFIG_STAGE:
+            continue
+        source_record_id = record.get("record_id") or record.get("id") or ""
+        row["AI参数JSON"] = _text(fields, "AI参数JSON")
+        row["备注"] = f"{row['备注']}; source_record_id={source_record_id}"
+        break
+    model_record_id = find_catalog_record_id(token, row["默认模型显示名称"])
+    if model_record_id:
+        row["默认模型"] = [model_record_id]
+    existing = None
+    if not dry_run:
+        for record in safe_list_records(token, TASK_DEFAULT_TABLE_ID):
+            fields = record.get("fields") or {}
+            if _text(fields, "环节") == row["环节"] and "006-视频编辑任务表" in extract_text(fields.get("应用表格")):
+                existing = record
+                break
+        if existing:
+            safe_update_record(token, TASK_DEFAULT_TABLE_ID, existing["record_id"], row)
+            action = "updated"
+        else:
+            safe_request(
+                "post",
+                f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TASK_DEFAULT_TABLE_ID}/records",
+                headers=feishu_headers(token),
+                json={"fields": row},
+                timeout=30,
+                max_attempts=3,
+            )
+            action = "created"
+    else:
+        action = "dry_run"
+    return {
+        "table_id": TASK_DEFAULT_TABLE_ID,
+        "source_record_id": source_record_id or "not-read" if dry_run else source_record_id,
+        "action": action,
+        "fields": {key: value for key, value in row.items() if key != "默认模型"},
+        "linked_model": bool(model_record_id),
+    }
 
 
 def write_backup(path: Path, snapshot: Mapping[str, Any]) -> None:
@@ -457,11 +813,146 @@ def apply_record_updates(token: str, updates: Sequence[RecordUpdate], *, dry_run
     return results
 
 
+def _key_source_signature(fields: Mapping[str, Any]) -> str:
+    api_base = _text(fields, "API 代理地址").rstrip("/")
+    call_type = _text(fields, "调用方式")
+    if not api_base and not call_type:
+        return ""
+    return f"{api_base}|{call_type}"
+
+
+def _iter_strings(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            yield from _iter_strings(item)
+    elif isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray)):
+        for item in value:
+            yield from _iter_strings(item)
+
+
+def configured_record_ids(config_records: Mapping[str, Any]) -> Set[str]:
+    return {item for item in _iter_strings(config_records) if item.startswith("rec")}
+
+
+def task_default_source_record_ids(records: Sequence[Mapping[str, Any]]) -> Set[str]:
+    source_ids: Set[str] = set()
+    for record in records:
+        for value in _fields(record).values():
+            for text in _iter_strings(value):
+                source_ids.update(re.findall(r"source_record_id=([A-Za-z0-9_]+)", text))
+    return source_ids
+
+
+def production_code_reference_stages(stages: Sequence[str], *, root: Optional[Path] = None) -> Set[str]:
+    if not stages:
+        return set()
+    root = root or Path(__file__).resolve().parent
+    remaining = {stage for stage in stages if stage}
+    referenced: Set[str] = set()
+    for path in root.glob("*.py"):
+        if not remaining:
+            break
+        if path.name == Path(__file__).name or path.name.startswith("test_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        matched = {stage for stage in remaining if stage in text}
+        referenced.update(matched)
+        remaining.difference_update(matched)
+    return referenced
+
+
+def build_delete_audit(
+    records: Sequence[Mapping[str, Any]],
+    task_default_records: Sequence[Mapping[str, Any]],
+    *,
+    config_record_ids: Optional[Set[str]] = None,
+    code_referenced_stages: Optional[Set[str]] = None,
+) -> DeleteAudit:
+    config_record_ids = configured_record_ids(CONFIG_RECORDS) if config_record_ids is None else config_record_ids
+    task_default_sources = task_default_source_record_ids(task_default_records)
+    candidate_stages = [
+        _text(_fields(record), "环节")
+        for record in records
+        if _text(_fields(record), "状态") == "停用" and _text(_fields(record), "环节").startswith("统一AI预设-")
+    ]
+    code_referenced_stages = production_code_reference_stages(candidate_stages) if code_referenced_stages is None else code_referenced_stages
+    active_key_signatures = {
+        _key_source_signature(_fields(record))
+        for record in records
+        if _text(_fields(record), "状态") in {"启用", "测试中"} and _has_api_key(_fields(record))
+    }
+    active_key_signatures.discard("")
+
+    candidates: List[DeleteAuditItem] = []
+    skipped: List[DeleteAuditItem] = []
+    for record in records:
+        fields = _fields(record)
+        rid = _record_id(record)
+        stage = _text(fields, "环节")
+        if not rid or _text(fields, "状态") != "停用" or not stage.startswith("统一AI预设-"):
+            continue
+
+        reason = ""
+        if rid in task_default_sources:
+            reason = "被任务默认配置引用"
+        elif rid in config_record_ids:
+            reason = "被 config_records 引用"
+        elif stage in code_referenced_stages:
+            reason = "被生产代码常量引用"
+        elif _has_api_key(fields) and _key_source_signature(fields) not in active_key_signatures:
+            reason = "停用记录含唯一密钥来源"
+
+        item = DeleteAuditItem(
+            record_id=rid,
+            stage=stage,
+            reason=reason or "安全删除：停用旧统一AI预设，无引用且密钥来源可替代",
+            api_key_status=_api_key_status(fields),
+        )
+        if reason:
+            skipped.append(item)
+        else:
+            candidates.append(item)
+
+    return DeleteAudit(candidates=candidates, skipped=skipped)
+
+
+def delete_audited_records(base_token: str, candidates: Sequence[DeleteAuditItem], *, dry_run: bool) -> List[Dict[str, Any]]:
+    if not candidates:
+        return []
+    record_ids = [item.record_id for item in candidates]
+    if not dry_run:
+        argv = [
+            "lark-cli", "base", "+record-delete",
+            "--base-token", base_token,
+            "--table-id", TABLE_CONFIG,
+        ]
+        for record_id in record_ids:
+            argv.extend(["--record-id", record_id])
+        argv.append("--yes")
+        run_json(argv)
+    return [
+        {
+            "record_id": item.record_id,
+            "stage": item.stage,
+            "reason": item.reason,
+            "api_key_status": item.api_key_status,
+            "status": "dry_run_delete" if dry_run else "deleted",
+        }
+        for item in candidates
+    ]
+
+
 def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     token = get_feishu_token()
     fields = list_fields(token)
     views = list_views(token)
     records = safe_list_records(token, TABLE_CONFIG)
+    task_default_records = safe_list_records(token, TASK_DEFAULT_TABLE_ID)
     field_names = [item.get("field_name") or item.get("name") for item in fields if item.get("field_name") or item.get("name")]
     field_results = create_missing_config_fields(APP_TOKEN, field_names, dry_run=not write)
     effective_field_names = list(field_names)
@@ -472,17 +963,45 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     view_definitions = build_view_definitions(effective_field_names)
     backup = build_backup_snapshot(fields=fields, views=views, records=records)
     write_backup(backup_path, backup)
-    record_results = apply_record_updates(token, plan.record_updates, dry_run=not write)
+    writable_fields = set(effective_field_names)
+    filtered_updates = [
+        RecordUpdate(
+            record_id=update.record_id,
+            category=update.category,
+            fields={key: value for key, value in update.fields.items() if key in writable_fields},
+        )
+        for update in plan.record_updates
+    ]
+    filtered_updates = [update for update in filtered_updates if update.fields]
+    record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
+    delete_audit = build_delete_audit(records, task_default_records)
+    delete_results = delete_audited_records(APP_TOKEN, delete_audit.candidates, dry_run=not write)
+    table_rename_result = rename_legacy_config_table(APP_TOKEN, dry_run=not write)
+    model_catalog_option_results = sync_model_catalog_options(APP_TOKEN, dry_run=not write)
+    video_edit_catalog_result = ensure_video_edit_catalog_record(token, dry_run=not write)
+    task_default_field_result = sync_task_default_app_table_options(APP_TOKEN, dry_run=not write)
+    video_edit_default_result = ensure_video_edit_default_record(token, APP_TOKEN, dry_run=not write)
+    view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
     view_results = apply_view_definitions(APP_TOKEN, view_definitions, dry_run=not write)
     obsolete_view_results = delete_obsolete_views(APP_TOKEN, dry_run=not write)
+    migrated_field_results = delete_migrated_fields(APP_TOKEN, dry_run=not write)
     return {
         "mode": "write" if write else "dry_run",
         "backup_path": str(backup_path),
         "summary": plan.summary,
         "record_updates": record_results,
+        "delete_audit": delete_audit.to_public_dict(),
+        "deleted_records": delete_results,
         "fields": field_results,
+        "legacy_table": table_rename_result,
+        "model_catalog_options": model_catalog_option_results,
+        "video_edit_catalog": video_edit_catalog_result,
+        "task_default_app_table_field": task_default_field_result,
+        "video_edit_default": video_edit_default_result,
+        "legacy_view_renames": view_rename_results,
         "views": view_results,
         "obsolete_views": obsolete_view_results,
+        "migrated_fields": migrated_field_results,
         "business_tables_touched": [],
     }
 

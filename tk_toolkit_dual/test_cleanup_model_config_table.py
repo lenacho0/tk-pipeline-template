@@ -56,18 +56,13 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
         self.assertNotIn("sk-prod-token", serialized)
         self.assertNotIn("API Key", serialized)
-        self.assertEqual(snapshot["records"][0]["has_api_key"], True)
+        self.assertEqual(snapshot["records"][0]["api_key_status"], "存在")
         self.assertEqual(snapshot["records"][0]["提示词_chars"], 1000)
         self.assertNotIn("hellohello", serialized)
 
     def test_view_definitions_keep_daily_views_clean(self):
         field_names = [
             "环节",
-            "是否统一AI预设",
-            "应用表格",
-            "AI供应商",
-            "AI能力类型",
-            "AI任务类型",
             "模型名称",
             "API 代理地址",
             "画面尺寸",
@@ -82,21 +77,85 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         views = cleanup.build_view_definitions(field_names)
 
         self.assertEqual(list(views), [
-            "模型目录",
-            "供应商密钥-管理员",
-            "归档-候选旧模型",
-            "排错-全字段",
+            "01-运行配置-管理员",
+            "02-旧运行配置总览",
+            "99-旧配置排错全字段",
         ])
-        self.assertNotIn("API Key", views["模型目录"]["visible_fields"])
-        self.assertNotIn("提示词", views["模型目录"]["visible_fields"])
-        self.assertIn("画面尺寸", views["模型目录"]["visible_fields"])
-        self.assertIn("画面比例", views["模型目录"]["visible_fields"])
+        self.assertIn("API Key", views["01-运行配置-管理员"]["visible_fields"])
+        self.assertIn("提示词", views["01-运行配置-管理员"]["visible_fields"])
+        self.assertIn("画面尺寸", views["02-旧运行配置总览"]["visible_fields"])
+        self.assertIn("画面比例", views["02-旧运行配置总览"]["visible_fields"])
         self.assertEqual(
-            views["模型目录"]["filter"],
-            {"logic": "and", "conditions": [["是否统一AI预设", "intersects", ["是"]], ["状态", "intersects", ["启用"]]]},
+            views["01-运行配置-管理员"]["filter"],
+            {"logic": "and", "conditions": [["状态", "intersects", ["启用", "测试中"]]]},
         )
-        self.assertIn("API Key", views["排错-全字段"]["visible_fields"])
-        self.assertIn("提示词", views["排错-全字段"]["visible_fields"])
+        self.assertIn("API Key", views["99-旧配置排错全字段"]["visible_fields"])
+        self.assertIn("提示词", views["99-旧配置排错全字段"]["visible_fields"])
+
+    def test_blank_status_runtime_stage_is_marked_enabled(self):
+        records = [
+            rec("veo", 环节=cleanup.AIHUBMIX_VEO_STAGE, 模型名称="veo-3.1-fast-generate-preview", 状态=""),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+        patches = {item.record_id: item.fields for item in plan.record_updates}
+
+        self.assertEqual(patches["veo"]["状态"], "启用")
+
+    def test_delete_audit_only_selects_safe_stopped_legacy_presets(self):
+        records = [
+            rec("runtime_key", 环节="图片生成-OTU", 状态="启用", 调用方式="专用 API", **{"API 代理地址": "https://otuapi.com", "API Key": "sk-runtime"}),
+            rec("safe_old", 环节="统一AI预设-图片-OTU-GPTImage2-1K", 状态="停用", 调用方式="专用 API", **{"API 代理地址": "https://otuapi.com", "API Key": "sk-old"}),
+            rec("linked_old", 环节="统一AI预设-视频-AIHubMix-VeoFast-720p", 状态="停用", 调用方式="Gemini 原生 SDK", **{"API 代理地址": "https://aihubmix.com/gemini"}),
+            rec("unique_key", 环节="统一AI预设-文本-Only-Key", 状态="停用", 调用方式="OpenAI", **{"API 代理地址": "https://unique.example", "API Key": "sk-unique"}),
+            rec("current", 环节="统一AI预设-OTU / gpt-image-2", 状态="启用", 调用方式="专用 API", **{"API 代理地址": "https://otuapi.com"}),
+        ]
+        task_defaults = [
+            rec("default", 备注="source_config=统一AI预设-视频-AIHubMix-VeoFast-720p; source_record_id=linked_old"),
+        ]
+
+        audit = cleanup.build_delete_audit(
+            records,
+            task_defaults,
+            config_record_ids=set(),
+            code_referenced_stages=set(),
+        )
+
+        self.assertEqual([item.record_id for item in audit.candidates], ["safe_old"])
+        skipped = {item.record_id: item.reason for item in audit.skipped}
+        self.assertIn("被任务默认配置引用", skipped["linked_old"])
+        self.assertIn("唯一密钥来源", skipped["unique_key"])
+        self.assertNotIn("sk-", json.dumps(audit.to_public_dict(), ensure_ascii=False))
+
+    def test_delete_audit_keeps_code_referenced_or_config_id_records(self):
+        records = [
+            rec("code_ref", 环节="统一AI预设-文本-Legacy", 状态="停用"),
+            rec("config_ref", 环节="统一AI预设-图片-Legacy", 状态="停用"),
+        ]
+
+        audit = cleanup.build_delete_audit(
+            records,
+            [],
+            config_record_ids={"config_ref"},
+            code_referenced_stages={"统一AI预设-文本-Legacy"},
+        )
+
+        skipped = {item.record_id: item.reason for item in audit.skipped}
+        self.assertIn("生产代码常量引用", skipped["code_ref"])
+        self.assertIn("config_records 引用", skipped["config_ref"])
+
+    def test_cleanup_targets_remove_migrated_fields_and_obsolete_views(self):
+        self.assertEqual(cleanup.MIGRATED_FIELD_NAMES, {
+            "是否统一AI预设",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "应用表格",
+        })
+        self.assertIn("Grid View", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.MODEL_CATALOG_TABLE_ID])
+        self.assertIn("Grid View", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.TASK_DEFAULT_TABLE_ID])
+        self.assertIn("统一AI预设", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.TABLE_CONFIG])
+        self.assertEqual(cleanup.LEGACY_CONFIG_VIEW_RENAMES["供应商密钥-管理员"], "01-运行配置-管理员")
 
     def test_config_field_specs_include_media_dimensions(self):
         specs = {item["name"]: item for item in cleanup.CONFIG_FIELD_SPECS}

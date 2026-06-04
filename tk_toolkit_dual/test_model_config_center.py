@@ -22,6 +22,7 @@ class ModelConfigCenterTests(unittest.TestCase):
             rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
             rec("video", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
             rec("story", 环节="故事板图片提示词拆分-Gemini", 模型名称="gemini-3.1-pro-preview", 状态="启用", **{"API 代理地址": "https://aihubmix.com/gemini", "调用方式": "Gemini 原生 SDK", "提示词": "story prompt"}),
+            rec("edit", 环节="统一AI预设-Aitgenne / happyhorse-1.0-video-edit", 模型名称="Aitgenne / happyhorse-1.0-video-edit", 状态="启用", **{"AI供应商": "Aitgenne", "AI能力类型": "视频编辑", "API 代理地址": "https://api.aitgenne.com/v1", "画面尺寸": "720P", "调用方式": "happyhorse视频编辑"}),
             rec("old", 环节="统一AI预设-图片-OTU-GPTImage2-1K", 模型名称="gpt-image-2", 状态="停用", **{"API 代理地址": "https://otuapi.com"}),
         ]
 
@@ -37,7 +38,14 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertIn(("002-首尾帧视频生成表", "首帧图生成默认"), default_keys)
         self.assertIn(("002-首尾帧视频生成表", "首尾帧视频生成默认"), default_keys)
         self.assertIn(("004-故事板图片视频生成表", "故事板提示词拆分默认"), default_keys)
+        self.assertIn(("006-视频编辑任务表", "视频编辑默认"), default_keys)
         self.assertNotIn(("002-首尾帧视频生成表", "文档拆分默认"), default_keys)
+
+        edit_default = next(item for item in plan.task_default_rows if item["应用表格"] == "006-视频编辑任务表")
+        self.assertEqual(edit_default["默认供应商"], "Aitgenne")
+        self.assertEqual(edit_default["默认模型显示名称"], "Aitgenne / happyhorse-1.0-video-edit")
+        self.assertEqual(edit_default["画面尺寸"], "720P")
+        self.assertIn("source_config=统一AI预设-Aitgenne / happyhorse-1.0-video-edit", edit_default["备注"])
 
         archived = {item["record_id"]: item["fields"] for item in plan.legacy_archive_updates}
         self.assertEqual(archived["old"]["状态"], "停用")
@@ -278,6 +286,20 @@ class ModelConfigCenterTests(unittest.TestCase):
         )
 
         self.assertEqual(patch, {"视频生成模型": "OTU / veo_3_1-fast-fl"})
+
+    def test_runtime_defaults_keep_script_doc_video_and_video_edit_slots(self):
+        specs = {(item.table_key, item.stage): item for item in center.RUNTIME_DEFAULT_SPECS}
+        backfill = {(item.table_key, item.stage): item for item in center.RUNTIME_DEFAULT_BACKFILL_SPECS}
+
+        script_video = specs[("script_doc_shots", "分镜视频生成默认")]
+        self.assertEqual(script_video.source_config_stage, "分镜视频生成-Veo")
+        self.assertEqual(script_video.slot_name, "视频")
+        self.assertIn(("script_doc_shots", "分镜视频生成默认"), backfill)
+
+        video_edit = specs[("video_edit", "视频编辑默认")]
+        self.assertEqual(video_edit.source_config_stage, center.VIDEO_EDIT_SOURCE_CONFIG_STAGE)
+        self.assertEqual(video_edit.slot_name, "视频编辑")
+        self.assertIn(("video_edit", "视频编辑默认"), backfill)
 
 
 if __name__ == "__main__":
