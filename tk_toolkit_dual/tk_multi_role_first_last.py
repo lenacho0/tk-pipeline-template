@@ -701,6 +701,19 @@ def build_parse_prompt(parent_fields: Dict[str, Any], script: str, *, system_pro
 """.strip()
 
 
+def gemini_text_or_policy_error(response: Any) -> str:
+    text = getattr(response, "text", "") or ""
+    if text:
+        return text
+    feedback = getattr(response, "prompt_feedback", None)
+    block_reason = extract_text(getattr(feedback, "block_reason", "")).strip()
+    block_message = extract_text(getattr(feedback, "block_reason_message", "")).strip()
+    if block_reason or block_message:
+        detail = " ".join(part for part in [block_reason, block_message] if part)
+        raise RuntimeError(f"Gemini 文本模型安全拦截: {detail}")
+    return ""
+
+
 HUMAN_REFERENCE_IMAGE_RULES = """
 Human reference image hard rules:
 - Generate exactly one single person only.
@@ -1155,7 +1168,7 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
                 max_attempts=3,
                 label="multi-role first-last parse",
             )
-            raw_model_output = getattr(response, "text", "") or ""
+            raw_model_output = gemini_text_or_policy_error(response)
     payload = normalize_plan_payload(raw_model_output)
     batch_id = make_batch_id(record_id)
     deprecated = deprecate_existing_children(token, record_id)

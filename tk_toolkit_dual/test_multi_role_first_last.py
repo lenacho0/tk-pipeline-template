@@ -483,6 +483,38 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(route.api_base, "")
         self.assertEqual(route.api_key, "sk-aitgenne")
 
+    def test_parse_task_reports_gemini_prompt_block_instead_of_empty_text(self):
+        fields = {
+            "记录类型": "母任务",
+            "输入脚本": "0-8s multi role hook",
+        }
+        response = SimpleNamespace(
+            text="",
+            prompt_feedback=SimpleNamespace(
+                block_reason="PROHIBITED_CONTENT",
+                block_reason_message="The prompt is blocked due to prohibited contents",
+            ),
+        )
+        model = Mock()
+        model.generate_content.return_value = response
+        client = SimpleNamespace(models=model)
+
+        with patch.object(multi_role, "ensure_multi_role_table"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "prompt": "configured parse prompt",
+             })), \
+             patch.object(multi_role.genai, "Client", return_value=client), \
+             patch.object(multi_role, "safe_update_record"), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, f: f), \
+             self.assertRaisesRegex(RuntimeError, "PROHIBITED_CONTENT"):
+            multi_role.parse_task("recParent")
+
     def test_multi_role_media_summary_rejects_reference_video_model(self):
         config_records = [
             {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
