@@ -81,8 +81,12 @@ OBSOLETE_VIEW_NAMES = {
     "00-生产运行配置",
     "01-统一AI Catalog",
     "02-链路提示词配置",
+    "02-旧运行配置总览",
+    "04-提示词配置",
     "90-归档-旧预设",
+    "90-归档旧配置",
     "99-全字段排错",
+    "99-旧配置排错全字段",
 }
 MEDIA_DIMENSION_DEFAULTS = {
     "图片生成-OTU": ("720x1280", "9:16"),
@@ -104,6 +108,9 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "006-视频编辑任务表",
 ]
 MODEL_CATALOG_CAPABILITY_OPTIONS = ["文本", "图片", "视频", "视频编辑", "语音"]
+MODEL_CATALOG_VIEW_NAME = "03-模型目录"
+MODEL_CATALOG_VISIBLE_FIELDS = ["配置类型", "供应商", "能力类型", "显示名称", "模型名称", "调用方式", "API 代理地址", "测试状态", "是否生产可用", "备注"]
+FORCED_PRIMARY_FIELD_ALLOWANCE = 1
 
 
 def opt(name: str, hue: str = "Blue", lightness: str = "Lighter") -> Dict[str, str]:
@@ -235,7 +242,18 @@ def _fields(record: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _text(fields: Mapping[str, Any], name: str) -> str:
-    return extract_text(fields.get(name)).strip()
+    value = fields.get(name)
+    if isinstance(value, list):
+        parts: List[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("name") or item.get("value") or "").strip())
+            else:
+                parts.append(str(item).strip())
+        joined = "".join(part for part in parts if part)
+        if joined:
+            return joined.strip()
+    return extract_text(value).strip()
 
 
 def _has_api_key(fields: Mapping[str, Any]) -> bool:
@@ -255,6 +273,45 @@ def _archive_remark(existing: str, reason: str) -> str:
     if ARCHIVE_PREFIX in existing:
         return existing
     return f"{archive}；{existing}" if existing else archive
+
+
+def _prepend_remark_once(existing: str, prefix: str) -> str:
+    if not prefix:
+        return existing
+    if prefix in existing:
+        return existing
+    return f"{prefix}；{existing}" if existing else prefix
+
+
+def _clean_existing_remark_for_type(existing: str, row_type: str) -> str:
+    if row_type == "自动审核" and existing.startswith("表级自动审核通过开关；"):
+        return ""
+    if row_type == "运行环节":
+        return existing.replace("模型固定", "默认模型").replace("代码默认", "兜底默认")
+    return existing
+
+
+def _semantic_remark_patch(fields: Mapping[str, Any], row_type: str) -> Dict[str, str]:
+    existing = _clean_existing_remark_for_type(_text(fields, "备注"), row_type)
+    stage = _text(fields, "环节")
+    if row_type == "路由开关" and stage == ROUTE_SWITCH_STAGE:
+        mode = _text(fields, "模型名称") or _text(fields, "状态") or "关闭"
+        desired = (
+            f"统一AI路由开关：当前模式={mode}；记录级模型/参数优先；"
+            "模式为“指定记录启用”时，仅对任务记录中开启“使用统一AI路由”的记录生效。"
+        )
+        return {} if existing == desired else {"备注": desired}
+    role_prefixes = {
+        "运行环节": "运行环节配置：API/提示词/兜底源；任务记录自己的模型/参数优先。",
+        "任务默认": "任务默认配置：仅在任务记录未指定模型/参数时用于初始化/补默认。",
+        "模型目录": "模型目录：候选模型清单，不直接触发运行。",
+        "自动审核": "自动审核开关：表级控制；启用后仅自动放行本表新生成成功且有附件 token 的审核闸门。",
+    }
+    prefix = role_prefixes.get(row_type, "")
+    if not prefix:
+        return {}
+    desired = _prepend_remark_once(existing, prefix)
+    return {} if desired == existing else {"备注": desired}
 
 
 def _infer_provider(stage: str, api_base: str, model: str) -> str:
@@ -345,6 +402,7 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
 
         existing_type = _text(fields, "配置类型")
         patch: Dict[str, Any] = _record_type_patch(fields)
+        effective_type = existing_type or str(patch.get("配置类型") or "")
         category = ""
         if existing_type in {"任务默认", "模型目录"}:
             category = "single_source_record"
@@ -388,6 +446,15 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
             category = category or "media_dimension_config"
             patch.setdefault("画面尺寸", size)
             patch.setdefault("画面比例", ratio)
+
+        if effective_type:
+            semantic_source = dict(fields)
+            if "备注" in patch:
+                semantic_source["备注"] = patch["备注"]
+            semantic_patch = _semantic_remark_patch(semantic_source, effective_type)
+            if semantic_patch:
+                category = category or "semantic_remark"
+                patch.update(semantic_patch)
 
         if patch and not _same_patch(fields, patch):
             updates.append(RecordUpdate(record_id=rid, category=category, fields=patch))
@@ -463,17 +530,13 @@ def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, An
             "visible_fields": ["配置类型", "应用表格", "任务环节", "默认槽位", "状态", "生效来源", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "提示词", "备注"],
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["任务默认"]]]},
         },
-        "03-模型目录": {
-            "visible_fields": ["配置类型", "供应商", "能力类型", "显示名称", "模型名称", "调用方式", "API 代理地址", "测试状态", "是否生产可用", "备注"],
+        MODEL_CATALOG_VIEW_NAME: {
+            "visible_fields": MODEL_CATALOG_VISIBLE_FIELDS,
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["模型目录"]]]},
         },
-        "04-提示词配置": {
-            "visible_fields": ["配置类型", "环节", "应用表格", "任务环节", "状态", "生效来源", "模型名称", "提示词", "备注"],
-            "filter": {"logic": "and", "conditions": [["提示词", "non_empty"]]},
-        },
-        "90-归档旧配置": {
-            "visible_fields": ["配置类型", "环节", "状态", "模型名称", "供应商", "能力类型", "生效来源", "备注"],
-            "filter": {"logic": "and", "conditions": [["状态", "intersects", ["停用"]]]},
+        "05-自动审核开关": {
+            "visible_fields": ["配置类型", "环节", "状态", "备注"],
+            "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["自动审核"]]]},
         },
         "99-排错全字段": {
             "visible_fields": all_fields,
@@ -624,40 +687,139 @@ def ensure_view(base_token: str, view_name: str, view_id_by_name: Dict[str, str]
     return str(view_id)
 
 
+def configure_view(base_token: str, view_id: str, definition: Mapping[str, Any]) -> None:
+    for command, payload in [
+        ("+view-set-visible-fields", {"visible_fields": definition["visible_fields"]}),
+        ("+view-set-filter", definition.get("filter") or {"conditions": []}),
+    ]:
+        for attempt in range(4):
+            try:
+                run_json([
+                    "lark-cli", "base", command,
+                    "--base-token", base_token,
+                    "--table-id", TABLE_CONFIG,
+                    "--view-id", view_id,
+                    "--json", json.dumps(payload, ensure_ascii=False),
+                ])
+                break
+            except RuntimeError as exc:
+                text = str(exc)
+                if "800070003" in text or "no operation produced" in text:
+                    break
+                if "800004135" not in text or attempt == 3:
+                    raise
+                time.sleep(2 + attempt * 2)
+
+
+def cli_list_views(base_token: str) -> List[Dict[str, Any]]:
+    data = run_json([
+        "lark-cli", "base", "+view-list",
+        "--base-token", base_token,
+        "--table-id", TABLE_CONFIG,
+        "--format", "json",
+    ])
+    payload = data.get("data") or {}
+    views = payload.get("views") or payload.get("items") or []
+    return views if isinstance(views, list) else []
+
+
+def visible_field_count_from_view(view: Mapping[str, Any]) -> Optional[int]:
+    meta = view.get("_meta") if isinstance(view.get("_meta"), Mapping) else {}
+    raw = meta.get("visible_fields") or view.get("visible_fields") or view.get("field_count")
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, list):
+        return len(raw)
+    if isinstance(raw, str):
+        match = re.search(r"\d+", raw)
+        if match:
+            return int(match.group(0))
+    return None
+
+
+def view_visible_field_count(base_token: str, view_name: str) -> Optional[int]:
+    for view in cli_list_views(base_token):
+        name = view.get("view_name") or view.get("name")
+        if name == view_name:
+            return visible_field_count_from_view(view)
+    return None
+
+
+def view_needs_visible_field_rebuild(view_name: str, definition: Mapping[str, Any], visible_field_count: Optional[int]) -> bool:
+    if view_name != MODEL_CATALOG_VIEW_NAME or visible_field_count is None:
+        return False
+    expected_max = len(definition["visible_fields"]) + FORCED_PRIMARY_FIELD_ALLOWANCE
+    return visible_field_count > expected_max
+
+
+def rebuild_view_definition(
+    base_token: str,
+    view_name: str,
+    definition: Mapping[str, Any],
+    view_id_by_name: Dict[str, str],
+) -> Dict[str, Any]:
+    old_view_id = view_id_by_name.get(view_name)
+    if not old_view_id:
+        raise RuntimeError(f"重建视图前未找到 view_id: {view_name}")
+
+    archived_name = f"{view_name}-旧字段全量待删除-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    run_json([
+        "lark-cli", "base", "+view-rename",
+        "--base-token", base_token,
+        "--table-id", TABLE_CONFIG,
+        "--view-id", old_view_id,
+        "--name", archived_name,
+    ])
+    view_id_by_name.pop(view_name, None)
+    view_id_by_name[archived_name] = old_view_id
+
+    new_view_id = ensure_view(base_token, view_name, view_id_by_name)
+    configure_view(base_token, new_view_id, definition)
+    visible_field_count = view_visible_field_count(base_token, view_name)
+    if view_needs_visible_field_rebuild(view_name, definition, visible_field_count):
+        raise RuntimeError(f"{view_name} 重建后仍显示 {visible_field_count} 个字段")
+
+    run_json([
+        "lark-cli", "base", "+view-delete",
+        "--base-token", base_token,
+        "--table-id", TABLE_CONFIG,
+        "--view-id", old_view_id,
+        "--yes",
+    ])
+    view_id_by_name.pop(archived_name, None)
+    return {
+        "view_id": new_view_id,
+        "visible_field_count": visible_field_count,
+        "replaced_view_id": old_view_id,
+        "archived_view_name": archived_name,
+    }
+
+
 def apply_view_definitions(base_token: str, views: Mapping[str, Mapping[str, Any]], *, dry_run: bool) -> List[Dict[str, Any]]:
     existing = existing_view_map(list_views(get_feishu_token())) if not dry_run else {}
     results = []
     for view_name, definition in views.items():
         view_id = existing.get(view_name, f"dry-run:{view_name}")
+        visible_field_count = None
+        status = "dry_run" if dry_run else "updated"
+        rebuild = None
         if not dry_run:
             view_id = ensure_view(base_token, view_name, existing)
-            for command, payload in [
-                ("+view-set-visible-fields", {"visible_fields": definition["visible_fields"]}),
-                ("+view-set-filter", definition.get("filter") or {"conditions": []}),
-            ]:
-                for attempt in range(4):
-                    try:
-                        run_json([
-                            "lark-cli", "base", command,
-                            "--base-token", base_token,
-                            "--table-id", TABLE_CONFIG,
-                            "--view-id", view_id,
-                            "--json", json.dumps(payload, ensure_ascii=False),
-                        ])
-                        break
-                    except RuntimeError as exc:
-                        text = str(exc)
-                        if "800070003" in text or "no operation produced" in text:
-                            break
-                        if "800004135" not in text or attempt == 3:
-                            raise
-                        time.sleep(2 + attempt * 2)
+            configure_view(base_token, view_id, definition)
+            visible_field_count = view_visible_field_count(base_token, view_name)
+            if view_needs_visible_field_rebuild(view_name, definition, visible_field_count):
+                rebuild = rebuild_view_definition(base_token, view_name, definition, existing)
+                view_id = rebuild["view_id"]
+                visible_field_count = rebuild["visible_field_count"]
+                status = "rebuilt"
         results.append({
             "view_name": view_name,
             "view_id": view_id,
             "visible_fields": definition["visible_fields"],
             "filter": definition.get("filter") or {"conditions": []},
-            "status": "dry_run" if dry_run else "updated",
+            "visible_field_count": visible_field_count,
+            "rebuild": rebuild,
+            "status": status,
         })
     return results
 
@@ -952,6 +1114,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     backup = build_backup_snapshot(fields=fields, views=views, records=records)
     write_backup(backup_path, backup)
     writable_fields = set(effective_field_names)
+    record_fields_by_id = {_record_id(record): _fields(record) for record in records}
     filtered_updates = [
         RecordUpdate(
             record_id=update.record_id,
@@ -960,7 +1123,11 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
         )
         for update in plan.record_updates
     ]
-    filtered_updates = [update for update in filtered_updates if update.fields]
+    filtered_updates = [
+        update
+        for update in filtered_updates
+        if update.fields and not _same_patch(record_fields_by_id.get(update.record_id, {}), update.fields)
+    ]
     record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
     delete_audit = build_delete_audit(records, [])
     view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
