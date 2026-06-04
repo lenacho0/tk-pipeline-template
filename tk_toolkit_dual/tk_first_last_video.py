@@ -97,9 +97,10 @@ from image_generation import (  # noqa: E402
     run_image_generation,
 )
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
-from tk_auto_review import auto_review_enabled  # noqa: E402
+from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
+AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["first_last_video"]
 IMAGE_STAGE_NAME = "图片生成-OTU"
 VIDEO_STAGE_NAME = "分镜视频生成-OTU"
 AIHUBMIX_VIDEO_STAGE_NAME = "分镜视频生成-Veo"
@@ -1328,7 +1329,7 @@ def advance_first_review(record_id: str) -> Dict[str, Any]:
 
 
 def maybe_auto_advance_first_frame_review(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
-    if not auto_review_enabled(token):
+    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}
@@ -1561,7 +1562,7 @@ def advance_last_review(record_id: str) -> Dict[str, Any]:
 
 
 def maybe_auto_advance_last_frame_review(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
-    if not auto_review_enabled(token):
+    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}

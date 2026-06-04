@@ -106,10 +106,17 @@ def sample_plan(role_count=3):
 
 
 class MultiRoleFirstLastTests(unittest.TestCase):
+    def setUp(self):
+        self._auto_review_patcher = patch.object(multi_role, "auto_review_enabled", return_value=False)
+        self._auto_review_patcher.start()
+
+    def tearDown(self):
+        self._auto_review_patcher.stop()
+
     def test_auto_advance_reference_review_triggers_keyframes_for_first_version(self):
         updates = []
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
-             patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "auto_review_enabled", return_value=True) as enabled, \
              patch.object(multi_role, "advance_reference_review", return_value={"status": "advanced"}) as advance, \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -121,6 +128,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=multi_role.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("asset_rec", {"参考图审核状态": "通过", "错误信息": ""}), updates)
         advance.assert_called_once_with("asset_rec")
 
@@ -142,7 +150,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
     def test_auto_advance_keyframe_review_triggers_downstream_for_first_version(self):
         updates = []
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
-             patch.object(multi_role, "auto_review_enabled", return_value=True), \
+             patch.object(multi_role, "auto_review_enabled", return_value=True) as enabled, \
              patch.object(multi_role, "advance_keyframe_review", return_value={"status": "advanced"}) as advance, \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -154,6 +162,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=multi_role.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("keyframe_rec", {"关键帧审核状态": "通过", "错误信息": ""}), updates)
         advance.assert_called_once_with("keyframe_rec")
 

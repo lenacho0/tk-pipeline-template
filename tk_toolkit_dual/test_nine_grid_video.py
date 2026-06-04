@@ -130,10 +130,17 @@ Young Thai male, shocked / proud
 
 
 class NineGridVideoTests(unittest.TestCase):
+    def setUp(self):
+        self._auto_review_patcher = patch.object(nine_grid, "auto_review_enabled", return_value=False)
+        self._auto_review_patcher.start()
+
+    def tearDown(self):
+        self._auto_review_patcher.stop()
+
     def test_auto_approve_reference_asset_advances_boards_when_enabled(self):
         updates = []
         with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
-             patch.object(nine_grid, "auto_review_enabled", return_value=True), \
+             patch.object(nine_grid, "auto_review_enabled", return_value=True) as enabled, \
              patch.object(nine_grid, "advance_boards_after_reference_approval", return_value={"advanced_boards": 3}) as advance, \
              patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -145,6 +152,7 @@ class NineGridVideoTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=nine_grid.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("asset_ref", {"参考图审核状态": "通过", "参考图操作": "不触发", "错误信息": ""}), updates)
         advance.assert_called_once_with("token", "parent")
 

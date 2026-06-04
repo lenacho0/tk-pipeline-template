@@ -78,9 +78,10 @@ from aitgenne_image import (  # noqa: E402
 )
 from image_generation import image_execution_params, run_image_generation  # noqa: E402
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
-from tk_auto_review import auto_review_enabled  # noqa: E402
+from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
+AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["nine_grid_video"]
 PLAN_STAGE_NAME = "多图九宫格方案生成"
 IMAGE_STAGE_NAME = "多图九宫格图片生成"
 VIDEO_STAGE_NAME = "多图九宫格视频生成"
@@ -1360,7 +1361,7 @@ def advance_boards_for_reference_asset(record_id: str, *, dry_run: bool = False)
 
 
 def maybe_auto_approve_reference_asset(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
-    if not auto_review_enabled(token):
+    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}

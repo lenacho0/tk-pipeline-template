@@ -23,10 +23,17 @@ def parsed_payload():
 
 
 class FirstLastVideoTableTests(unittest.TestCase):
+    def setUp(self):
+        self._auto_review_patcher = patch.object(first_last, "auto_review_enabled", return_value=False)
+        self._auto_review_patcher.start()
+
+    def tearDown(self):
+        self._auto_review_patcher.stop()
+
     def test_auto_advance_first_frame_review_triggers_tail_for_first_version(self):
         updates = []
         with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
-             patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "auto_review_enabled", return_value=True) as enabled, \
              patch.object(first_last, "advance_first_review", return_value={"status": "triggered"}) as advance, \
              patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -38,6 +45,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=first_last.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("scene_rec", {"首帧审核状态": "通过", "错误信息": ""}), updates)
         advance.assert_called_once_with("scene_rec")
 
@@ -59,7 +67,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
     def test_auto_advance_last_frame_review_triggers_video_for_first_version(self):
         updates = []
         with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
-             patch.object(first_last, "auto_review_enabled", return_value=True), \
+             patch.object(first_last, "auto_review_enabled", return_value=True) as enabled, \
              patch.object(first_last, "advance_last_review", return_value={"status": "triggered"}) as advance, \
              patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -71,6 +79,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=first_last.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("scene_rec", {"尾帧审核状态": "通过", "错误信息": ""}), updates)
         advance.assert_called_once_with("scene_rec")
 
@@ -458,6 +467,13 @@ class FirstLastVideoTableTests(unittest.TestCase):
 
 
 class FirstLastVideoWorkerTests(unittest.TestCase):
+    def setUp(self):
+        self._auto_review_patcher = patch.object(first_last, "auto_review_enabled", return_value=False)
+        self._auto_review_patcher.start()
+
+    def tearDown(self):
+        self._auto_review_patcher.stop()
+
     def test_normalize_parse_payload_requires_three_prompts(self):
         payload = first_last.normalize_parse_payload({
             "first_frame_prompt": "first",
