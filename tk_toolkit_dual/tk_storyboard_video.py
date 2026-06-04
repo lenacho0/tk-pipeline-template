@@ -71,7 +71,7 @@ from image_generation import (  # noqa: E402
     resolve_image_route_from_slot,
     run_image_generation,
 )
-from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record, load_stage_config_fields  # noqa: E402
 
 
 SPLIT_STAGE_NAME = "故事板图片提示词拆分-Gemini"
@@ -652,15 +652,12 @@ def cleanup_child_storyboards(token: str, parent_record_id: str) -> int:
 
 
 def get_text_generation_config(token: str) -> Dict[str, str]:
-    record_id = CONFIG_RECORDS.get("storyboard_text_split")
-    if not record_id:
-        raise ValueError("config_records 缺少 storyboard_text_split")
-    cfg = get_model_config(token, record_id)
+    cfg = get_model_config(token, f"stage:{SPLIT_STAGE_NAME}")
     if not cfg.get("api_key"):
         raise ValueError(f"{SPLIT_STAGE_NAME} 缺少 API Key")
     prompt = extract_text(cfg.get("prompt")).strip()
     cfg["prompt"] = prompt or STORYBOARD_PROMPT_RULES
-    cfg["prompt_record_id"] = record_id if prompt else ""
+    cfg["prompt_record_id"] = SPLIT_STAGE_NAME if prompt else ""
     return cfg
 
 
@@ -745,22 +742,15 @@ def split_storyboards(record_id: str, *, dry_run: bool = False, raw_model_output
 
 def get_stage_config(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
-    for rec in safe_list_records(token, TABLE_CONFIG):
-        fields = rec.get("fields", {})
-        if extract_text(fields.get("环节")).strip() != stage_name:
-            continue
-        cfg = {
-            "model": extract_text(fields.get("模型名称")).strip() or default_model,
-            "api_key": extract_text(fields.get("API Key")).strip(),
-            "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
-            "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
-            "prompt": extract_text(fields.get("提示词")).strip(),
-            "params": extract_text(fields.get("AI参数JSON")).strip(),
-        }
-        if not cfg["api_key"]:
-            raise ValueError(f"{stage_name} 缺少 API Key")
-        return rec.get("record_id") or rec.get("id") or "", cfg
-    raise ValueError(f"找不到模型配置: {stage_name}")
+    return load_stage_config_fields(
+        token,
+        stage_name,
+        default_model=default_model,
+        default_api_base=default_api_base,
+        default_size=default_size,
+        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+        require_api_key=True,
+    )
 
 
 def maybe_unified_media_summary(

@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -94,7 +95,7 @@ from image_generation import (  # noqa: E402
     resolve_image_route_from_slot,
     run_image_generation,
 )
-from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record, load_stage_config_fields  # noqa: E402
 from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
@@ -307,6 +308,60 @@ def create_records(token: str, table_id: str, records: List[Dict[str, Dict[str, 
         )
         created += len(batch)
     return created
+
+
+def _base_v3_filter_records(token: str, table_id: str, filter_payload: Dict[str, Any], *, limit: int = 100) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    offset = 0
+    while True:
+        encoded_filter = urllib.parse.quote(json.dumps(filter_payload, ensure_ascii=False))
+        url = (
+            f"https://open.feishu.cn/open-apis/base/v3/bases/{APP_TOKEN}/tables/{table_id}/records"
+            f"?filter={encoded_filter}&limit={limit}&offset={offset}"
+        )
+        data = safe_request(
+            "get",
+            url,
+            headers=feishu_headers(token),
+            timeout=30,
+            max_attempts=3,
+            acceptable_codes=(0,),
+        )
+        payload = data.get("data") or {}
+        field_names = payload.get("fields") or []
+        rows = payload.get("data") or []
+        record_ids = payload.get("record_id_list") or []
+        for idx, row in enumerate(rows):
+            record_id = record_ids[idx] if idx < len(record_ids) else ""
+            fields = {
+                field_name: row[field_idx] if field_idx < len(row) else None
+                for field_idx, field_name in enumerate(field_names)
+                if field_name
+            }
+            records.append({"record_id": record_id, "fields": fields})
+        if not payload.get("has_more"):
+            break
+        if not rows:
+            break
+        offset += len(rows)
+    return records
+
+
+def list_multi_role_records_for_parent(token: str, parent_record_id: str, *, include_deprecated: bool = False) -> List[Dict[str, Any]]:
+    filter_payload = {
+        "logic": "and",
+        "conditions": [["父任务记录ID", "==", parent_record_id]],
+    }
+    records = _base_v3_filter_records(token, TABLE_MULTI_ROLE_FIRST_LAST, filter_payload)
+    result = []
+    for rec in records:
+        fields = rec.get("fields", {})
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        if not include_deprecated and extract_text(fields.get("记录状态")).strip() == "已废弃":
+            continue
+        result.append(rec)
+    return result
 
 
 def ensure_stage_work_dir(record_id: str, stage: str, version: int = 1) -> Path:
@@ -887,24 +942,15 @@ def apply_child_default_models(token: str, records: List[Dict[str, Dict[str, Any
 
 def get_stage_config(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
-    for rec in safe_list_records(token, TABLE_CONFIG):
-        fields = rec.get("fields", {})
-        if extract_text(fields.get("环节")).strip() != stage_name:
-            continue
-        cfg = {
-            "model": extract_text(fields.get("模型名称")).strip() or default_model,
-            "api_key": extract_text(fields.get("API Key")).strip(),
-            "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
-            "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
-            "aspect_ratio": extract_text(fields.get("画面比例")).strip() or DEFAULT_ASPECT_RATIO,
-            "call_type": extract_text(fields.get("调用方式")).strip(),
-            "prompt": extract_text(fields.get("提示词")).strip(),
-            "params": extract_text(fields.get("AI参数JSON")).strip(),
-        }
-        if not cfg["api_key"]:
-            raise ValueError(f"{stage_name} 缺少 API Key")
-        return rec.get("record_id") or rec.get("id") or "", cfg
-    raise ValueError(f"找不到模型配置: {stage_name}")
+    return load_stage_config_fields(
+        token,
+        stage_name,
+        default_model=default_model,
+        default_api_base=default_api_base,
+        default_size=default_size,
+        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+        require_api_key=True,
+    )
 
 
 def _parse_params_json(raw: Any, field_name: str) -> Dict[str, Any]:
@@ -1103,10 +1149,8 @@ def maybe_unified_media_summary(
 
 def deprecate_existing_children(token: str, parent_record_id: str) -> int:
     deprecated = 0
-    for rec in safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST):
+    for rec in list_multi_role_records_for_parent(token, parent_record_id):
         fields = rec.get("fields", {})
-        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
-            continue
         if record_type(fields) == PARENT_RECORD_TYPE or extract_text(fields.get("记录状态")).strip() == "已废弃":
             continue
         safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, rec["record_id"], filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
@@ -1424,7 +1468,7 @@ def advance_ready_videos(record_id: str) -> Dict[str, Any]:
     fields = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
     ensure_active_record(fields)
     parent_id = extract_text(fields.get("父任务记录ID")).strip() or record_id
-    records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    records = list_multi_role_records_for_parent(token, parent_id)
     triggered_videos = trigger_ready_videos_for_parent(token, parent_id, records)
     return {
         "record_id": record_id,
@@ -1442,7 +1486,7 @@ def advance_reference_review(record_id: str) -> Dict[str, Any]:
     if record_type(fields) != ASSET_RECORD_TYPE:
         raise ValueError("只有参考资产记录可以推进下游关键帧")
     parent_id = extract_text(fields.get("父任务记录ID")).strip()
-    records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    records = list_multi_role_records_for_parent(token, parent_id)
     triggered = 0
     for rec in _active_child_records(records, parent_id, KEYFRAME_RECORD_TYPE):
         keyframe_fields = rec.get("fields", {})
@@ -1488,7 +1532,7 @@ def advance_keyframe_review(record_id: str) -> Dict[str, Any]:
     if record_type(fields) != KEYFRAME_RECORD_TYPE:
         raise ValueError("只有关键帧记录可以推进下游关键帧/视频")
     parent_id = extract_text(fields.get("父任务记录ID")).strip()
-    records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    records = list_multi_role_records_for_parent(token, parent_id)
     triggered_keyframes = 0
     for rec in _active_child_records(records, parent_id, KEYFRAME_RECORD_TYPE):
         keyframe_fields = rec.get("fields", {})
@@ -1692,7 +1736,8 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     version = current_version(fields, "关键帧版本")
     work_dir = ensure_stage_work_dir(record_id, "keyframe_image", version)
     parent_fields = _parent_fields(token, fields)
-    all_records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    parent_id = extract_text(fields.get("父任务记录ID")).strip()
+    all_records = list_multi_role_records_for_parent(token, parent_id)
     refs = collect_keyframe_references(token, fields, parent_fields, all_records, work_dir)
     primary = _primary_base_reference(refs)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)
@@ -2047,7 +2092,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     parent_id = extract_text(fields.get("父任务记录ID")).strip()
     first_type = extract_text(fields.get("首关键帧类型")).strip()
     last_type = extract_text(fields.get("尾关键帧类型")).strip()
-    all_records = safe_list_records(token, TABLE_MULTI_ROLE_FIRST_LAST)
+    all_records = list_multi_role_records_for_parent(token, parent_id)
     first = _find_keyframe_for_clip(all_records, parent_id, first_type)
     last = _find_keyframe_for_clip(all_records, parent_id, last_type)
     version = current_version(fields, "视频版本")

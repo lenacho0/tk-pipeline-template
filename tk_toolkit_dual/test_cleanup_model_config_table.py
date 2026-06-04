@@ -32,17 +32,57 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertEqual(plan.summary["prompt_stage_config_count"], 1)
         self.assertEqual(plan.summary["current_catalog_preset_count"], 1)
         self.assertEqual(plan.summary["archived_preset_count"], 2)
-        self.assertEqual(patches["prod_img"], {"是否统一AI预设": "否", "画面尺寸": "720x1280", "画面比例": "9:16"})
-        self.assertEqual(patches["switch"], {"是否统一AI预设": "否"})
-        self.assertEqual(patches["ng_img"], {"是否统一AI预设": "否", "画面尺寸": "720x1280", "画面比例": "9:16"})
-        self.assertEqual(patches["current"], {"是否统一AI预设": "是", "状态": "启用"})
+        self.assertEqual(patches["prod_img"], {
+            "是否统一AI预设": "否",
+            "配置类型": "运行环节",
+            "生效来源": "线上配置",
+            "供应商": "OTU",
+            "能力类型": "图片",
+            "画面尺寸": "720x1280",
+            "画面比例": "9:16",
+        })
+        self.assertEqual(patches["switch"], {"是否统一AI预设": "否", "配置类型": "路由开关", "生效来源": "线上配置"})
+        self.assertEqual(patches["ng_img"], {
+            "是否统一AI预设": "否",
+            "配置类型": "运行环节",
+            "生效来源": "线上配置",
+            "供应商": "OTU",
+            "能力类型": "图片",
+            "画面尺寸": "720x1280",
+            "画面比例": "9:16",
+        })
+        self.assertEqual(patches["current"], {"是否统一AI预设": "是", "配置类型": "模型目录", "生效来源": "线上配置", "状态": "启用"})
         self.assertEqual(patches["candidate"]["状态"], "停用")
         self.assertEqual(patches["candidate"]["是否统一AI预设"], "否")
+        self.assertEqual(patches["candidate"]["配置类型"], "模型目录")
+        self.assertEqual(patches["candidate"]["生效来源"], "线上配置")
         self.assertIn("candidate", patches["candidate"]["备注"])
         self.assertEqual(patches["legacy"]["状态"], "停用")
         self.assertEqual(patches["legacy"]["是否统一AI预设"], "否")
+        self.assertEqual(patches["legacy"]["配置类型"], "模型目录")
+        self.assertEqual(patches["legacy"]["生效来源"], "线上配置")
         self.assertIn("归档", patches["legacy"]["备注"])
         self.assertIn("old note", patches["legacy"]["备注"])
+
+    def test_plan_marks_auto_review_switch_records_for_admin_view(self):
+        records = [
+            rec("auto", 环节="001-多角色首尾帧生成表一键审核通过模式", 状态="停用"),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+        patches = {item.record_id: item.fields for item in plan.record_updates}
+
+        self.assertEqual(patches["auto"], {"配置类型": "自动审核", "生效来源": "线上配置"})
+
+    def test_plan_preserves_existing_single_source_row_types(self):
+        records = [
+            rec("default", **{"配置类型": "任务默认", "应用表格": "002-首尾帧视频生成表", "任务环节": "首帧图生成默认", "环节": "图片生成-OTU", "生效来源": "线上配置", "状态": "启用"}),
+            rec("catalog", **{"配置类型": "模型目录", "环节": "图片生成-OTU", "显示名称": "OTU / gpt-image-2", "状态": "启用", "生效来源": "线上配置"}),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+
+        self.assertEqual(plan.record_updates, [])
 
     def test_backup_snapshot_redacts_secrets_and_long_prompts(self):
         snapshot = cleanup.build_backup_snapshot(
@@ -62,8 +102,15 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
     def test_view_definitions_keep_daily_views_clean(self):
         field_names = [
+            "配置类型",
+            "应用表格",
+            "任务环节",
+            "默认槽位",
             "环节",
             "模型名称",
+            "显示名称",
+            "供应商",
+            "能力类型",
             "API 代理地址",
             "画面尺寸",
             "画面比例",
@@ -71,6 +118,9 @@ class CleanupModelConfigTableTests(unittest.TestCase):
             "调用方式",
             "提示词",
             "API Key",
+            "生效来源",
+            "测试状态",
+            "是否生产可用",
             "状态",
             "备注",
         ]
@@ -78,19 +128,22 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
         self.assertEqual(list(views), [
             "01-运行配置-管理员",
-            "02-旧运行配置总览",
-            "99-旧配置排错全字段",
+            "02-任务默认配置",
+            "03-模型目录",
+            "04-提示词配置",
+            "90-归档旧配置",
+            "99-排错全字段",
         ])
         self.assertIn("API Key", views["01-运行配置-管理员"]["visible_fields"])
         self.assertIn("提示词", views["01-运行配置-管理员"]["visible_fields"])
-        self.assertIn("画面尺寸", views["02-旧运行配置总览"]["visible_fields"])
-        self.assertIn("画面比例", views["02-旧运行配置总览"]["visible_fields"])
+        self.assertIn("画面尺寸", views["02-任务默认配置"]["visible_fields"])
+        self.assertIn("画面比例", views["02-任务默认配置"]["visible_fields"])
         self.assertEqual(
             views["01-运行配置-管理员"]["filter"],
-            {"logic": "and", "conditions": [["状态", "intersects", ["启用", "测试中"]]]},
+            {"logic": "and", "conditions": [["配置类型", "intersects", ["运行环节", "路由开关", "自动审核"]], ["状态", "intersects", ["启用", "测试中"]]]},
         )
-        self.assertIn("API Key", views["99-旧配置排错全字段"]["visible_fields"])
-        self.assertIn("提示词", views["99-旧配置排错全字段"]["visible_fields"])
+        self.assertIn("API Key", views["99-排错全字段"]["visible_fields"])
+        self.assertIn("提示词", views["99-排错全字段"]["visible_fields"])
 
     def test_blank_status_runtime_stage_is_marked_enabled(self):
         records = [
@@ -144,16 +197,10 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertIn("生产代码常量引用", skipped["code_ref"])
         self.assertIn("config_records 引用", skipped["config_ref"])
 
-    def test_cleanup_targets_remove_migrated_fields_and_obsolete_views(self):
-        self.assertEqual(cleanup.MIGRATED_FIELD_NAMES, {
-            "是否统一AI预设",
-            "AI供应商",
-            "AI能力类型",
-            "AI任务类型",
-            "应用表格",
-        })
-        self.assertIn("Grid View", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.MODEL_CATALOG_TABLE_ID])
-        self.assertIn("Grid View", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.TASK_DEFAULT_TABLE_ID])
+    def test_cleanup_targets_do_not_delete_unified_table_fields_or_touch_legacy_tables(self):
+        self.assertEqual(cleanup.MIGRATED_FIELD_NAMES, set())
+        self.assertNotIn(cleanup.MODEL_CATALOG_TABLE_ID, cleanup.OBSOLETE_VIEWS_BY_TABLE)
+        self.assertNotIn(cleanup.TASK_DEFAULT_TABLE_ID, cleanup.OBSOLETE_VIEWS_BY_TABLE)
         self.assertIn("统一AI预设", cleanup.OBSOLETE_VIEWS_BY_TABLE[cleanup.TABLE_CONFIG])
         self.assertEqual(cleanup.LEGACY_CONFIG_VIEW_RENAMES["供应商密钥-管理员"], "01-运行配置-管理员")
 
@@ -170,6 +217,91 @@ class CleanupModelConfigTableTests(unittest.TestCase):
             "4K",
         ])
         self.assertEqual([item["name"] for item in specs["画面比例"]["options"]], ["9:16", "16:9", "1:1"])
+
+    def test_config_field_specs_include_single_source_runtime_fields(self):
+        specs = {item["name"]: item for item in cleanup.CONFIG_FIELD_SPECS}
+
+        self.assertEqual([item["name"] for item in specs["配置类型"]["options"]], ["运行环节", "任务默认", "模型目录", "路由开关", "自动审核"])
+        self.assertEqual([item["name"] for item in specs["生效来源"]["options"]], ["线上配置", "代码默认"])
+        self.assertEqual([item["name"] for item in specs["测试状态"]["options"]], ["未测试", "测试通过", "测试失败", "停用"])
+        self.assertEqual([item["name"] for item in specs["是否生产可用"]["options"]], ["是", "否"])
+        self.assertEqual([item["name"] for item in specs["应用表格"]["options"]], cleanup.TASK_DEFAULT_APP_TABLE_OPTIONS)
+        self.assertEqual([item["name"] for item in specs["默认槽位"]["options"]], ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "故事板图片", "图片", "口播音频", "视频编辑"])
+        self.assertIn("供应商", specs)
+        self.assertIn("能力类型", specs)
+        self.assertIn("显示名称", specs)
+        self.assertIn("任务环节", specs)
+
+    def test_view_definitions_expose_single_source_management_views(self):
+        views = cleanup.build_view_definitions([
+            "环节",
+            "配置类型",
+            "应用表格",
+            "任务环节",
+            "默认槽位",
+            "模型名称",
+            "显示名称",
+            "供应商",
+            "能力类型",
+            "API Key",
+            "API 代理地址",
+            "调用方式",
+            "提示词",
+            "画面尺寸",
+            "画面比例",
+            "AI参数JSON",
+            "生效来源",
+            "状态",
+            "备注",
+        ])
+
+        self.assertEqual(list(views), [
+            "01-运行配置-管理员",
+            "02-任务默认配置",
+            "03-模型目录",
+            "04-提示词配置",
+            "90-归档旧配置",
+            "99-排错全字段",
+        ])
+        self.assertIn("API Key", views["01-运行配置-管理员"]["visible_fields"])
+        self.assertIn("应用表格", views["02-任务默认配置"]["visible_fields"])
+        self.assertIn("默认槽位", views["02-任务默认配置"]["visible_fields"])
+        self.assertIn("显示名称", views["03-模型目录"]["visible_fields"])
+        self.assertIn("提示词", views["04-提示词配置"]["visible_fields"])
+
+    def test_run_cleanup_avoids_legacy_table_writes_and_field_deletes(self):
+        with patch.object(cleanup, "get_feishu_token", return_value="token"), \
+             patch.object(cleanup, "list_fields", return_value=[]), \
+             patch.object(cleanup, "list_views", return_value=[]), \
+             patch.object(cleanup, "safe_list_records", return_value=[]), \
+             patch.object(cleanup, "write_backup"), \
+             patch.object(cleanup, "create_missing_config_fields", return_value=[]), \
+             patch.object(cleanup, "apply_record_updates", return_value=[]), \
+             patch.object(cleanup, "delete_audited_records") as delete_records, \
+             patch.object(cleanup, "rename_legacy_views", return_value=[]), \
+             patch.object(cleanup, "apply_view_definitions", return_value=[]), \
+             patch.object(cleanup, "delete_obsolete_views", return_value=[]), \
+             patch.object(cleanup, "rename_legacy_config_table") as rename_table, \
+             patch.object(cleanup, "sync_model_catalog_options") as sync_catalog, \
+             patch.object(cleanup, "ensure_video_edit_catalog_record") as edit_catalog, \
+             patch.object(cleanup, "sync_task_default_app_table_options") as sync_defaults, \
+             patch.object(cleanup, "ensure_video_edit_default_record") as edit_default, \
+             patch.object(cleanup, "delete_migrated_fields") as delete_fields, \
+             patch.object(cleanup, "ensure_unified_config_table_name", return_value={"status": "dry_run"}) as rename_unified:
+            result = cleanup.run_cleanup(write=False, backup_path=Path("/tmp/cleanup.json"))
+
+        rename_table.assert_not_called()
+        rename_unified.assert_called_once()
+        sync_catalog.assert_not_called()
+        edit_catalog.assert_not_called()
+        sync_defaults.assert_not_called()
+        edit_default.assert_not_called()
+        delete_fields.assert_not_called()
+        delete_records.assert_not_called()
+        self.assertEqual(result["legacy_table"]["status"], "not_touched")
+        self.assertEqual(result["config_table_name"]["status"], "dry_run")
+        self.assertEqual(result["migrated_fields"], [])
+        self.assertEqual(result["deleted_records"], [])
 
     def test_ensure_view_falls_back_to_listing_after_create_without_id(self):
         existing = {}

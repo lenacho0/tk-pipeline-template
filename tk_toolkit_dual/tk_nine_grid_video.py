@@ -77,7 +77,7 @@ from aitgenne_image import (  # noqa: E402
     submit_aitgenne_image_generation,
 )
 from image_generation import image_execution_params, run_image_generation  # noqa: E402
-from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record, load_stage_config_fields  # noqa: E402
 from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
@@ -1441,21 +1441,16 @@ def _stage_config_records(token: str) -> List[Dict[str, Any]]:
 def get_config_record(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
     records = safe_list_records(token, TABLE_CONFIG)
-    for rec in records:
-        fields = rec.get("fields") or {}
-        if extract_text(fields.get("环节")).strip() != stage_name:
-            continue
-        cfg = {
-            "provider": extract_text(fields.get("AI供应商")).strip(),
-            "capability": extract_text(fields.get("AI能力类型")).strip(),
-            "task_type": extract_text(fields.get("AI任务类型")).strip(),
-            "model": extract_text(fields.get("模型名称")).strip() or default_model,
-            "api_key": extract_text(fields.get("API Key")).strip(),
-            "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
-            "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
-            "call_type": extract_text(fields.get("调用方式")).strip(),
-            "prompt": extract_text(fields.get("提示词")).strip(),
-        }
+    record_id, cfg = load_stage_config_fields(
+        token,
+        stage_name,
+        default_model=default_model,
+        default_api_base=default_api_base,
+        default_size=default_size,
+        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+        require_api_key=False,
+    )
+    if record_id:
         if not cfg["api_key"]:
             for fallback_stage in SECRET_FALLBACK_STAGES.get(stage_name, ()):
                 for fallback_rec in records:
@@ -1471,7 +1466,7 @@ def get_config_record(stage_name: str, *, default_model: str, default_api_base: 
                     break
                 if cfg["api_key"]:
                     break
-        return rec.get("record_id") or rec.get("id") or "", cfg
+        return record_id, cfg
     return "", {
         "provider": "",
         "capability": "",

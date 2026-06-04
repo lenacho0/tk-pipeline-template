@@ -141,12 +141,12 @@ class StoryboardVideoTests(unittest.TestCase):
         }) as getter:
             cfg = storyboard_video.get_text_generation_config("token")
 
-        getter.assert_called_once_with("token", "rec_story_split")
+        getter.assert_called_once_with("token", "stage:故事板图片提示词拆分-Gemini")
         self.assertEqual(cfg["model"], "gemini-3.1-pro-preview")
         self.assertEqual(cfg["api_key"], "sk-text")
         self.assertEqual(cfg["api_base"], "https://aihubmix.com/gemini")
         self.assertEqual(cfg["prompt"], "configured split prompt")
-        self.assertEqual(cfg["prompt_record_id"], "rec_story_split")
+        self.assertEqual(cfg["prompt_record_id"], "故事板图片提示词拆分-Gemini")
 
     def test_text_generation_config_falls_back_when_split_prompt_empty(self):
         with patch.dict(storyboard_video.CONFIG_RECORDS, {"storyboard_text_split": "rec_story_split"}, clear=True), \

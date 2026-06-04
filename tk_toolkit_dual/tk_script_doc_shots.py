@@ -78,6 +78,8 @@ from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  #
 
 
 AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_shots"]
+TEXT_SPLIT_STAGE_NAME = "脚本文档结构化拆分-Gemini"
+IMAGE_STAGE_NAME = "图片生成-OTU"
 ASSET_TYPES = {"pet", "environment", "human"}
 YES_VALUES = {"是", "true", "yes", "1", "需要", "y"}
 
@@ -801,10 +803,7 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     if not raw_script:
         raise ValueError("脚本文档正文为空")
     target_seconds = parse_target_seconds(fields.get("视频时长", "15s"))
-    config_record_id = CONFIG_RECORDS.get("script_doc_text_split")
-    if not config_record_id:
-        raise ValueError("config_records 缺少 script_doc_text_split")
-    cfg = get_model_config(token, config_record_id)
+    cfg = get_model_config(token, f"stage:{TEXT_SPLIT_STAGE_NAME}")
     model_name = cfg["model"] or "gemini-2.5-flash"
     api_key = cfg["api_key"]
     api_base = cfg["api_base"] or "https://aihubmix.com/gemini"
@@ -906,7 +905,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     if not prompt:
         raise ValueError("参考提示词为空")
     full_prompt = build_reference_image_prompt(fields)
-    cfg = get_model_config(token, CONFIG_RECORDS.get("main_image_otu"))
+    cfg = get_model_config(token, f"stage:{IMAGE_STAGE_NAME}")
     cfg = {
         **cfg,
         "provider": cfg.get("provider") or "OTU",

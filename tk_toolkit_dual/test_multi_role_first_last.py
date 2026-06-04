@@ -181,6 +181,29 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         updater.assert_not_called()
         advance.assert_not_called()
 
+    def test_list_multi_role_records_for_parent_filters_parent_and_deprecated_records(self):
+        response = {
+            "data": {
+                "fields": ["任务名称", "记录类型", "父任务记录ID", "记录状态", "关键帧类型"],
+                "record_id_list": ["asset_keep", "asset_other", "asset_deprecated"],
+                "data": [
+                    ["asset keep", ["参考资产"], "parent_a", ["有效"], None],
+                    ["asset other", ["参考资产"], "parent_b", ["有效"], None],
+                    ["asset deprecated", ["参考资产"], "parent_a", ["已废弃"], None],
+                ],
+                "has_more": False,
+            }
+        }
+
+        with patch.object(multi_role, "safe_request", return_value=response) as request:
+            records = multi_role.list_multi_role_records_for_parent("token", "parent_a")
+
+        self.assertEqual([rec["record_id"] for rec in records], ["asset_keep"])
+        self.assertEqual(records[0]["fields"]["任务名称"], "asset keep")
+        self.assertEqual(records[0]["fields"]["父任务记录ID"], "parent_a")
+        self.assertEqual(records[0]["fields"]["记录类型"], ["参考资产"])
+        request.assert_called_once()
+
     def test_parse_prompt_requires_english_video_prompts_and_preserves_thai(self):
         prompt = multi_role.build_parse_prompt(
             {"产品名称": "uootapet", "目标时长秒": 8},
@@ -763,7 +786,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
-             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key"})), \
              patch.object(multi_role, "submit_otu_image_task") as submit, \
@@ -803,6 +826,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
              patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://api.aitgenne.com", "api_key": "key", "model": "gpt-image-2"})), \
              patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
@@ -842,6 +866,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
              patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://api.aitgenne.com", "api_key": "key", "model": "gpt-image-2"})), \
              patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
@@ -881,7 +906,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "ensure_multi_role_table"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
-             patch.object(multi_role, "safe_list_records", return_value=[]), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "collect_keyframe_references", return_value=refs), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "gpt-image-2"})), \
              patch.object(multi_role, "maybe_unified_media_summary", return_value=None), \
@@ -937,7 +962,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=fields), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
              patch.object(multi_role, "get_table_field_types", return_value={}), \
@@ -956,6 +981,65 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(result["task_id"], "task_existing")
         self.assertEqual(updates[0]["视频任务ID"], "task_existing")
         self.assertIn("恢复轮询已有 OTU 视频任务", updates[0]["视频错误信息"])
+        self.assertTrue(any(update.get("视频生成状态") == "成功" for update in updates))
+
+    def test_video_clip_downloads_completed_task_content_when_result_has_no_url(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 1,
+            "视频任务ID": "task_done",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
+             patch.object(multi_role, "get_table_field_types", return_value={"视频片段URL": 15}), \
+             patch.object(multi_role, "poll_otu_video_task", return_value={"id": "task_done", "status": "completed"}), \
+             patch.object(multi_role, "download_video") as downloader, \
+             patch.object(multi_role, "upload_video_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+
+        downloader.assert_called_once()
+        self.assertEqual(downloader.call_args.args[0], "https://otuapi.com/v1/videos/task_done/content")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["video_url"], "https://otuapi.com/v1/videos/task_done/content")
         self.assertTrue(any(update.get("视频生成状态") == "成功" for update in updates))
 
     def test_video_clip_uses_record_video_generation_model_for_new_submit(self):
@@ -1000,7 +1084,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=fields), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
              patch.object(multi_role, "get_table_field_types", return_value={}), \
@@ -1131,7 +1215,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=fields), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
              patch.object(multi_role, "reference_video_route_for_model", return_value=route), \
@@ -1333,7 +1417,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=fields), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://aihubmix.com/gemini", "api_key": "key", "model": "veo-3.1-fast-generate-preview"})), \
              patch.object(multi_role, "get_table_field_types", return_value={}), \
@@ -1408,7 +1492,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=fields), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
              patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
              patch.object(multi_role, "get_table_field_types", return_value={"视频片段URL": 15}), \
@@ -1451,7 +1535,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=records[0]["fields"]), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
             result = multi_role.advance_reference_review("asset_role")
@@ -1470,7 +1554,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=records[1]["fields"]), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
             result = multi_role.advance_keyframe_review("kf_shared")
@@ -1492,7 +1576,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
              patch.object(multi_role, "safe_get_record", return_value=records[2]["fields"]), \
-             patch.object(multi_role, "safe_list_records", return_value=records), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
             result = multi_role.advance_ready_videos("kf_tail")

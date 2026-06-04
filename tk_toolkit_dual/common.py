@@ -238,13 +238,37 @@ def get_task_product_value(fields):
 
 def get_model_config(token, record_id):
     """从模型配置表读取指定环节的配置"""
-    fields = get_record(token, TABLE_CONFIG, record_id)
+    if not record_id:
+        raise ValueError('模型配置 record_id/stage 为空')
+    if isinstance(record_id, str) and (record_id.startswith('stage:') or not record_id.startswith('rec')):
+        stage_name = record_id.split(':', 1)[1] if record_id.startswith('stage:') else record_id
+        matched = []
+        for rec in safe_list_records(token, TABLE_CONFIG):
+            fields = rec.get('fields', {})
+            if extract_text(fields.get('环节')).strip() != stage_name:
+                continue
+            if extract_text(fields.get('配置类型')).strip() not in ('', '运行环节'):
+                continue
+            if extract_text(fields.get('状态')).strip() == '停用':
+                continue
+            matched.append(fields)
+        if len(matched) != 1:
+            raise ValueError(f"模型配置{stage_name}匹配数量异常: {len(matched)}")
+        fields = matched[0]
+    else:
+        fields = get_record(token, TABLE_CONFIG, record_id)
+    source_mode = extract_text(fields.get('生效来源', '')).strip() or '线上配置'
+    use_online = source_mode != '代码默认'
     return {
-        'model': extract_text(fields.get('模型名称', '')),
+        'model': extract_text(fields.get('模型名称', '')) if use_online else '',
+        'provider': extract_text(fields.get('供应商') or fields.get('AI供应商') or ''),
         'api_key': extract_text(fields.get('API Key', '')),
-        'api_base': extract_text(fields.get('API 代理地址', '')),
-        'call_type': extract_text(fields.get('调用方式', '')),
-        'prompt': extract_text(fields.get('提示词', '')),
+        'api_base': extract_text(fields.get('API 代理地址', '')) if use_online else '',
+        'call_type': extract_text(fields.get('调用方式', '')) if use_online else '',
+        'prompt': extract_text(fields.get('提示词', '')) if use_online else '',
+        'size': extract_text(fields.get('画面尺寸', '')) if use_online else '',
+        'aspect_ratio': extract_text(fields.get('画面比例', '')) if use_online else '',
+        'params': extract_text(fields.get('AI参数JSON', '')) if use_online else '',
     }
 
 def get_gemini_client(api_key, api_base):
@@ -339,6 +363,18 @@ def build_error_payload(error, stage='unknown'):
         error_code = 'CONFIG_INVALID'
         retryable = False
         failure_status = 'failed_terminal'
+    elif (
+        'open.feishu.cn' in lower
+        and (
+            '400 client error' in lower
+            or 'bad request' in lower
+            or 'code=1254002' in lower
+            or 'msg=fail' in lower
+        )
+    ) or 'api返回异常 code=1254002' in lower:
+        error_code = 'FEISHU_API_TRANSIENT'
+        retryable = True
+        failure_status = 'failed_retryable'
     elif (
         '429' in lower
         or 'http 500' in lower and (

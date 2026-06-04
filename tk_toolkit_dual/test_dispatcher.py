@@ -85,6 +85,53 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertFalse(payload["retryable"])
         self.assertEqual(payload["status"], "failed_terminal")
 
+    def test_feishu_records_400_is_retryable_transient_api_error(self):
+        payload = common.build_error_payload(
+            "400 Client Error: Bad Request for url: https://open.feishu.cn/open-apis/bitable/v1/"
+            "apps/LBWUbgRfEavAgjsXNIhcpo0Dnvb/tables/tblObiMzCDn9ilFQ/records?page_size=100",
+            stage="multi_role_first_last_video",
+        )
+
+        self.assertEqual(payload["error_code"], "FEISHU_API_TRANSIENT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_retryable")
+
+    def test_feishu_1254002_fail_is_retryable_transient_api_error(self):
+        payload = common.build_error_payload(
+            "API返回异常 code=1254002 msg=Fail",
+            stage="dispatcher_table_scan",
+        )
+
+        self.assertEqual(payload["error_code"], "FEISHU_API_TRANSIENT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_retryable")
+
+    def test_otu_in_progress_timeout_is_retryable_upstream_network(self):
+        payload = common.build_error_payload(
+            "OTU 视频任务超时: task_id=task_123, last={'id': 'task_123', "
+            "'model': 'veo_3_1-fl', 'object': 'video', 'status': 'in_progress', 'progress': 0}",
+            stage="multi_role_first_last_video",
+        )
+
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_retryable")
+
+    def test_dispatcher_timeout_reason_includes_watch_record_and_elapsed_seconds(self):
+        reason = dispatcher.format_timeout_reason(
+            {"name": "多角色视频片段生成", "timeout": 2400},
+            "rec_timeout",
+            elapsed=2412.7,
+        )
+
+        self.assertIn("多角色视频片段生成", reason)
+        self.assertIn("rec_timeout", reason)
+        self.assertIn("elapsed=2412s", reason)
+        self.assertIn("timeout=2400s", reason)
+        payload = common.build_error_payload(reason, stage="tk_dispatcher")
+        self.assertEqual(payload["error_code"], "UPSTREAM_NETWORK")
+        self.assertTrue(payload["retryable"])
+
     def test_dispatcher_normalization_does_not_make_policy_block_retryable(self):
         payload = dispatcher.normalize_dispatcher_error_payload({
             "stage": "multi_role_first_last_video",

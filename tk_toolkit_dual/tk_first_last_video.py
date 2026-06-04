@@ -96,7 +96,7 @@ from image_generation import (  # noqa: E402
     resolve_image_route_from_slot,
     run_image_generation,
 )
-from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record  # noqa: E402
+from tk_model_config_center import TASK_TABLES, apply_task_default_to_fields, apply_task_default_to_record, load_stage_config_fields  # noqa: E402
 from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 
 
@@ -853,22 +853,15 @@ def get_stage_config(
     default_size: str = "",
 ) -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
-    for rec in safe_list_records(token, TABLE_CONFIG):
-        fields = rec.get("fields", {})
-        if extract_text(fields.get("环节")).strip() != stage_name:
-            continue
-        cfg = {
-            "model": extract_text(fields.get("模型名称")).strip() or default_model,
-            "api_key": extract_text(fields.get("API Key")).strip(),
-            "api_base": extract_text(fields.get("API 代理地址")).strip() or default_api_base,
-            "size": extract_text(fields.get("画面尺寸")).strip() or default_size,
-            "aspect_ratio": extract_text(fields.get("画面比例")).strip() or DEFAULT_ASPECT_RATIO,
-            "params": extract_text(fields.get("AI参数JSON")).strip(),
-        }
-        if not cfg["api_key"]:
-            raise ValueError(f"{stage_name} 缺少 API Key")
-        return rec.get("record_id") or rec.get("id") or "", cfg
-    raise ValueError(f"找不到模型配置: {stage_name}")
+    return load_stage_config_fields(
+        token,
+        stage_name,
+        default_model=default_model,
+        default_api_base=default_api_base,
+        default_size=default_size,
+        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+        require_api_key=True,
+    )
 
 
 def _parse_params_json(raw: Any, field_name: str) -> Dict[str, Any]:

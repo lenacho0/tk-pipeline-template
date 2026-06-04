@@ -30,6 +30,7 @@ from common import (  # noqa: E402
 
 
 BACKUP_PATH = Path("docs/tk-pipeline/model-config-cleanup-backup-2026-05-31.json")
+UNIFIED_CONFIG_TABLE_NAME = "初始化-模型与API配置"
 CONFIG_PROMPT_STAGES = {
     "多图九宫格方案生成",
     "多图九宫格图片生成",
@@ -40,6 +41,26 @@ EXPLICIT_STATUS_BY_STAGE = {
     AIHUBMIX_VEO_STAGE: "启用",
 }
 ROUTE_SWITCH_STAGE = "统一AI路由启用状态"
+AUTO_REVIEW_SUFFIX = "一键审核通过模式"
+TEXT_STAGES = {
+    "脚本文档结构化拆分-Gemini",
+    "故事板图片提示词拆分-Gemini",
+    "多角色首尾帧解析-Gemini",
+    "多图九宫格方案生成",
+}
+IMAGE_STAGES = {
+    "图片生成-OTU",
+    "故事板图片生成-OTU",
+    "多图九宫格图片生成",
+}
+VIDEO_STAGES = {
+    "分镜视频生成-Veo",
+    "分镜视频生成-OTU",
+    "故事板视频生成-Omni",
+    "多图九宫格视频生成",
+}
+VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
+VOICE_STAGES = {"语音合成-MiniMax"}
 MODEL_CATALOG_TABLE_ID = "tblWjGeDIFAe5Pqd"
 TASK_DEFAULT_TABLE_ID = "tblC0IfP2ZIjMu4U"
 LEGACY_CONFIG_TABLE_NAME = "初始化-API密钥与旧运行配置"
@@ -48,16 +69,8 @@ LEGACY_CONFIG_VIEW_RENAMES = {
     "配置总览": "02-旧运行配置总览",
     "排错-全字段": "99-旧配置排错全字段",
 }
-MIGRATED_FIELD_NAMES = {
-    "是否统一AI预设",
-    "AI供应商",
-    "AI能力类型",
-    "AI任务类型",
-    "应用表格",
-}
+MIGRATED_FIELD_NAMES: Set[str] = set()
 OBSOLETE_VIEWS_BY_TABLE = {
-    MODEL_CATALOG_TABLE_ID: {"Grid View"},
-    TASK_DEFAULT_TABLE_ID: {"Grid View"},
     TABLE_CONFIG: {
         "统一AI预设",
         "模型目录",
@@ -137,6 +150,62 @@ def opt(name: str, hue: str = "Blue", lightness: str = "Lighter") -> Dict[str, s
 
 
 CONFIG_FIELD_SPECS = [
+    {
+        "name": "配置类型",
+        "type": "select",
+        "multiple": False,
+        "options": [opt("运行环节", "Green"), opt("任务默认", "Blue"), opt("模型目录", "Purple"), opt("路由开关", "Orange"), opt("自动审核", "Wathet")],
+    },
+    {
+        "name": "应用表格",
+        "type": "select",
+        "multiple": False,
+        "options": [opt(item, "Blue") for item in TASK_DEFAULT_APP_TABLE_OPTIONS],
+    },
+    {
+        "name": "任务环节",
+        "type": "text",
+    },
+    {
+        "name": "默认槽位",
+        "type": "select",
+        "multiple": False,
+        "options": [opt(item, "Wathet") for item in ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "故事板图片", "图片", "口播音频", "视频编辑"]],
+    },
+    {
+        "name": "生效来源",
+        "type": "select",
+        "multiple": False,
+        "options": [opt("线上配置", "Green"), opt("代码默认", "Gray")],
+    },
+    {
+        "name": "供应商",
+        "type": "select",
+        "multiple": False,
+        "options": [opt("AIHubMix", "Blue"), opt("Aitgenne", "Orange"), opt("OTU", "Green")],
+    },
+    {
+        "name": "能力类型",
+        "type": "select",
+        "multiple": False,
+        "options": [opt(item, "Blue") for item in MODEL_CATALOG_CAPABILITY_OPTIONS],
+    },
+    {
+        "name": "显示名称",
+        "type": "text",
+    },
+    {
+        "name": "测试状态",
+        "type": "select",
+        "multiple": False,
+        "options": [opt(item, "Blue") for item in ["未测试", "测试通过", "测试失败", "停用"]],
+    },
+    {
+        "name": "是否生产可用",
+        "type": "select",
+        "multiple": False,
+        "options": [opt(item, "Green") for item in ["是", "否"]],
+    },
     {
         "name": "画面尺寸",
         "type": "select",
@@ -227,6 +296,69 @@ def _archive_remark(existing: str, reason: str) -> str:
     return f"{archive}；{existing}" if existing else archive
 
 
+def _infer_provider(stage: str, api_base: str, model: str) -> str:
+    if " / " in model:
+        return model.split(" / ", 1)[0].strip()
+    lower_base = (api_base or "").lower()
+    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "故事板图片生成-OTU", "故事板视频生成-Omni", "多图九宫格图片生成", "多图九宫格视频生成"}:
+        return "OTU"
+    if "aitgenne" in lower_base or stage in {"语音合成-MiniMax", "视频编辑-HappyHorse"}:
+        return "Aitgenne"
+    if "aihubmix" in lower_base or "gemini" in lower_base or stage.endswith("-Gemini") or stage == "分镜视频生成-Veo":
+        return "AIHubMix"
+    return ""
+
+
+def _infer_capability(stage: str, model: str) -> str:
+    if stage in TEXT_STAGES:
+        return "文本"
+    if stage in IMAGE_STAGES:
+        return "图片"
+    if stage in VIDEO_STAGES:
+        return "视频"
+    if stage in VIDEO_EDIT_STAGES:
+        return "视频编辑"
+    if stage in VOICE_STAGES:
+        return "语音"
+    for entry in ai_model_catalog.catalog_entries(ai_model_catalog.INSPECTABLE_STATUSES):
+        if model in {entry.model, entry.display_name}:
+            return entry.capability
+    return ""
+
+
+def _record_type_patch(fields: Mapping[str, Any]) -> Dict[str, Any]:
+    existing_type = _text(fields, "配置类型")
+    if existing_type:
+        return {}
+    stage = _text(fields, "环节")
+    model = _text(fields, "模型名称")
+    api_base = _text(fields, "API 代理地址")
+    if stage == ROUTE_SWITCH_STAGE:
+        row_type = "路由开关"
+    elif stage.endswith(AUTO_REVIEW_SUFFIX):
+        row_type = "自动审核"
+    elif stage.startswith("统一AI预设-"):
+        row_type = "模型目录"
+    elif stage:
+        row_type = "运行环节"
+    else:
+        return {}
+
+    patch: Dict[str, Any] = {}
+    if _text(fields, "配置类型") != row_type:
+        patch["配置类型"] = row_type
+    if not _text(fields, "生效来源"):
+        patch["生效来源"] = "线上配置"
+    if row_type == "运行环节":
+        provider = _infer_provider(stage, api_base, model)
+        capability = _infer_capability(stage, model)
+        if provider and not _text(fields, "供应商"):
+            patch["供应商"] = provider
+        if capability and not _text(fields, "能力类型"):
+            patch["能力类型"] = capability
+    return patch
+
+
 def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
     production_models = {entry.display_name for entry in ai_model_catalog.production_models()}
     inspectable_models = {
@@ -250,24 +382,25 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
         if not rid:
             continue
 
-        patch: Dict[str, Any] = {}
+        patch: Dict[str, Any] = _record_type_patch(fields)
         category = ""
         if _has_api_key(fields):
             counts["production_config_count"] += 1
             category = "production_config"
-            patch = {"是否统一AI预设": "否"}
+            patch["是否统一AI预设"] = "否"
         elif stage == ROUTE_SWITCH_STAGE:
             counts["route_switch_count"] += 1
             category = "route_switch"
-            patch = {"是否统一AI预设": "否"}
+            patch["是否统一AI预设"] = "否"
         elif stage in CONFIG_PROMPT_STAGES:
             counts["prompt_stage_config_count"] += 1
             category = "prompt_stage_config"
-            patch = {"是否统一AI预设": "否"}
+            patch["是否统一AI预设"] = "否"
         elif stage.startswith("统一AI预设-") and model in production_models:
             counts["current_catalog_preset_count"] += 1
             category = "current_catalog_preset"
-            patch = {"是否统一AI预设": "是", "状态": "启用"}
+            patch["是否统一AI预设"] = "是"
+            patch["状态"] = "启用"
         elif stage.startswith("统一AI预设-"):
             counts["archived_preset_count"] += 1
             category = "archived_preset"
@@ -277,18 +410,16 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
                 if catalog_status
                 else "旧命名统一AI预设，已由供应商/模型显示名预设替代"
             )
-            patch = {
-                "是否统一AI预设": "否",
-                "状态": "停用",
-                "备注": _archive_remark(_text(fields, "备注"), reason),
-            }
+            patch["是否统一AI预设"] = "否"
+            patch["状态"] = "停用"
+            patch["备注"] = _archive_remark(_text(fields, "备注"), reason)
 
         explicit_status = EXPLICIT_STATUS_BY_STAGE.get(stage)
         if explicit_status and not _text(fields, "状态"):
             category = category or "status_normalization"
             patch.setdefault("状态", explicit_status)
 
-        if stage in MEDIA_DIMENSION_DEFAULTS:
+        if _text(fields, "配置类型") not in {"任务默认", "模型目录"} and stage in MEDIA_DIMENSION_DEFAULTS:
             size, ratio = MEDIA_DIMENSION_DEFAULTS[stage]
             category = category or "media_dimension_config"
             patch.setdefault("画面尺寸", size)
@@ -358,17 +489,29 @@ def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, An
     all_fields = [name for name in field_names if name not in MIGRATED_FIELD_NAMES]
     return {
         "01-运行配置-管理员": {
-            "visible_fields": ["环节", "状态", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
+            "visible_fields": ["配置类型", "环节", "状态", "生效来源", "供应商", "能力类型", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
             "filter": {
                 "logic": "and",
-                "conditions": [["状态", "intersects", ["启用", "测试中"]]],
+                "conditions": [["配置类型", "intersects", ["运行环节", "路由开关", "自动审核"]], ["状态", "intersects", ["启用", "测试中"]]],
             },
         },
-        "02-旧运行配置总览": {
-            "visible_fields": ["环节", "状态", "模型名称", "API 代理地址", "调用方式", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
-            "filter": {"conditions": []},
+        "02-任务默认配置": {
+            "visible_fields": ["配置类型", "应用表格", "任务环节", "默认槽位", "状态", "生效来源", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "提示词", "备注"],
+            "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["任务默认"]]]},
         },
-        "99-旧配置排错全字段": {
+        "03-模型目录": {
+            "visible_fields": ["配置类型", "供应商", "能力类型", "显示名称", "模型名称", "调用方式", "API 代理地址", "测试状态", "是否生产可用", "备注"],
+            "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["模型目录"]]]},
+        },
+        "04-提示词配置": {
+            "visible_fields": ["配置类型", "环节", "应用表格", "任务环节", "状态", "生效来源", "模型名称", "提示词", "备注"],
+            "filter": {"logic": "and", "conditions": [["提示词", "non_empty"]]},
+        },
+        "90-归档旧配置": {
+            "visible_fields": ["配置类型", "环节", "状态", "模型名称", "供应商", "能力类型", "生效来源", "备注"],
+            "filter": {"logic": "and", "conditions": [["状态", "intersects", ["停用"]]]},
+        },
+        "99-排错全字段": {
             "visible_fields": all_fields,
             "filter": {"conditions": []},
         },
@@ -574,6 +717,28 @@ def rename_legacy_config_table(base_token: str, *, dry_run: bool) -> Dict[str, A
         "from": current_name or "dry-run/current-name-not-read",
         "to": LEGACY_CONFIG_TABLE_NAME,
         "status": "dry_run" if dry_run else ("unchanged" if current_name == LEGACY_CONFIG_TABLE_NAME else "renamed"),
+    }
+
+
+def ensure_unified_config_table_name(base_token: str, *, dry_run: bool) -> Dict[str, Any]:
+    current_name = ""
+    for table in list_tables(get_feishu_token()):
+        table_id = table.get("table_id") or table.get("id")
+        if table_id == TABLE_CONFIG:
+            current_name = str(table.get("name") or table.get("table_name") or "")
+            break
+    if not dry_run and current_name and current_name != UNIFIED_CONFIG_TABLE_NAME:
+        run_json([
+            "lark-cli", "base", "+table-update",
+            "--base-token", base_token,
+            "--table-id", TABLE_CONFIG,
+            "--name", UNIFIED_CONFIG_TABLE_NAME,
+        ])
+    return {
+        "table_id": TABLE_CONFIG,
+        "from": current_name or "unknown",
+        "to": UNIFIED_CONFIG_TABLE_NAME,
+        "status": "dry_run" if dry_run else ("unchanged" if current_name == UNIFIED_CONFIG_TABLE_NAME else "renamed"),
     }
 
 
@@ -975,33 +1140,28 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     filtered_updates = [update for update in filtered_updates if update.fields]
     record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
     delete_audit = build_delete_audit(records, task_default_records)
-    delete_results = delete_audited_records(APP_TOKEN, delete_audit.candidates, dry_run=not write)
-    table_rename_result = rename_legacy_config_table(APP_TOKEN, dry_run=not write)
-    model_catalog_option_results = sync_model_catalog_options(APP_TOKEN, dry_run=not write)
-    video_edit_catalog_result = ensure_video_edit_catalog_record(token, dry_run=not write)
-    task_default_field_result = sync_task_default_app_table_options(APP_TOKEN, dry_run=not write)
-    video_edit_default_result = ensure_video_edit_default_record(token, APP_TOKEN, dry_run=not write)
     view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
+    table_name_result = ensure_unified_config_table_name(APP_TOKEN, dry_run=not write)
     view_results = apply_view_definitions(APP_TOKEN, view_definitions, dry_run=not write)
     obsolete_view_results = delete_obsolete_views(APP_TOKEN, dry_run=not write)
-    migrated_field_results = delete_migrated_fields(APP_TOKEN, dry_run=not write)
     return {
         "mode": "write" if write else "dry_run",
         "backup_path": str(backup_path),
         "summary": plan.summary,
         "record_updates": record_results,
         "delete_audit": delete_audit.to_public_dict(),
-        "deleted_records": delete_results,
+        "deleted_records": [],
         "fields": field_results,
-        "legacy_table": table_rename_result,
-        "model_catalog_options": model_catalog_option_results,
-        "video_edit_catalog": video_edit_catalog_result,
-        "task_default_app_table_field": task_default_field_result,
-        "video_edit_default": video_edit_default_result,
+        "legacy_table": {"table_id": TABLE_CONFIG, "status": "not_touched"},
+        "config_table_name": table_name_result,
+        "model_catalog_options": [],
+        "video_edit_catalog": {"status": "not_touched"},
+        "task_default_app_table_field": {"status": "not_touched"},
+        "video_edit_default": {"status": "not_touched"},
         "legacy_view_renames": view_rename_results,
         "views": view_results,
         "obsolete_views": obsolete_view_results,
-        "migrated_fields": migrated_field_results,
+        "migrated_fields": [],
         "business_tables_touched": [],
     }
 

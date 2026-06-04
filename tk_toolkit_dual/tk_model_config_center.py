@@ -33,6 +33,19 @@ from common import (
 MODEL_CATALOG_TABLE_NAME = "初始化-AI模型目录"
 TASK_DEFAULT_TABLE_NAME = "初始化-任务默认模型配置"
 
+CONFIG_TYPE_FIELD = "配置类型"
+CONFIG_TYPE_RUNTIME_STAGE = "运行环节"
+CONFIG_TYPE_TASK_DEFAULT = "任务默认"
+CONFIG_TYPE_MODEL_CATALOG = "模型目录"
+TASK_STAGE_FIELD = "任务环节"
+DEFAULT_SLOT_FIELD = "默认槽位"
+SOURCE_MODE_FIELD = "生效来源"
+SOURCE_MODE_ONLINE = "线上配置"
+SOURCE_MODE_CODE = "代码默认"
+PROVIDER_FIELD = "供应商"
+CAPABILITY_FIELD = "能力类型"
+DISPLAY_NAME_FIELD = "显示名称"
+
 MODEL_CATALOG_VIEWS = {
     "01-生产可用模型": {"logic": "and", "conditions": [["是否生产可用", "intersects", ["是"]]]},
     "02-待测试模型": {"logic": "and", "conditions": [["测试状态", "intersects", ["未测试"]]]},
@@ -466,6 +479,113 @@ def display_name(provider: str, model: str) -> str:
     return f"{provider} / {model}" if provider else model
 
 
+def source_mode(fields: Mapping[str, Any]) -> str:
+    return text(fields, SOURCE_MODE_FIELD) or SOURCE_MODE_ONLINE
+
+
+def is_online_config(fields: Mapping[str, Any]) -> bool:
+    return source_mode(fields) != SOURCE_MODE_CODE
+
+
+def is_active_runtime_status(fields: Mapping[str, Any]) -> bool:
+    return text(fields, "状态") in {"启用", "测试中", ""}
+
+
+def config_type(fields: Mapping[str, Any]) -> str:
+    return text(fields, CONFIG_TYPE_FIELD)
+
+
+def stage_text(fields: Mapping[str, Any]) -> str:
+    return text(fields, "环节")
+
+
+def provider_text(fields: Mapping[str, Any]) -> str:
+    return text(fields, PROVIDER_FIELD) or text(fields, "默认供应商") or text(fields, "AI供应商")
+
+
+def model_display_from_fields(fields: Mapping[str, Any]) -> str:
+    explicit_display = text(fields, DISPLAY_NAME_FIELD) or text(fields, "默认模型显示名称")
+    if explicit_display:
+        return explicit_display
+    provider = provider_text(fields) or infer_provider(stage_text(fields), text(fields, "API 代理地址"), text(fields, "模型名称"), "")
+    return display_name(provider, text(fields, "模型名称"))
+
+
+def runtime_stage_record_matches(fields: Mapping[str, Any], stage: str) -> bool:
+    if stage_text(fields) != stage:
+        return False
+    row_type = config_type(fields)
+    return row_type in {"", CONFIG_TYPE_RUNTIME_STAGE}
+
+
+def task_default_record_matches(fields: Mapping[str, Any], app_table: str, stage: str) -> bool:
+    if config_type(fields) != CONFIG_TYPE_TASK_DEFAULT:
+        return False
+    if not cell_matches(fields.get("应用表格"), app_table):
+        return False
+    return text(fields, TASK_STAGE_FIELD) == stage or text(fields, "环节") == stage
+
+
+def normalize_task_default_fields(fields: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "默认供应商": provider_text(fields),
+        "默认模型显示名称": model_display_from_fields(fields),
+        "画面尺寸": text(fields, "画面尺寸"),
+        "画面比例": text(fields, "画面比例"),
+        "AI参数JSON": text(fields, "AI参数JSON"),
+        "系统提示词": text(fields, "系统提示词") or text(fields, "提示词"),
+        "状态": text(fields, "状态"),
+        "备注": text(fields, "备注"),
+    }
+
+
+def fallback_stage_config(
+    *,
+    default_model: str,
+    default_api_base: str,
+    default_size: str = "",
+    default_aspect_ratio: str = "9:16",
+    api_key: str = "",
+) -> Dict[str, str]:
+    return {
+        "model": raw_model_name(default_model),
+        "provider": display_name("", default_model).split(" / ", 1)[0] if " / " in default_model else "",
+        "api_key": api_key,
+        "api_base": default_api_base,
+        "size": default_size,
+        "aspect_ratio": default_aspect_ratio,
+        "call_type": "",
+        "prompt": "",
+        "params": "",
+    }
+
+
+def config_from_stage_fields(
+    fields: Mapping[str, Any],
+    *,
+    default_model: str,
+    default_api_base: str,
+    default_size: str = "",
+    default_aspect_ratio: str = "9:16",
+) -> Dict[str, str]:
+    provider = provider_text(fields) or infer_provider(stage_text(fields), text(fields, "API 代理地址"), text(fields, "模型名称"), "")
+    online = is_online_config(fields)
+    raw_model = text(fields, "模型名称") if online else ""
+    model_display = raw_model or default_model
+    bits = display_name(provider, model_display)
+    return {
+        "model": raw_model_name(bits or default_model),
+        "provider": provider,
+        "api_key": text(fields, "API Key"),
+        "api_base": (text(fields, "API 代理地址") if online else "") or default_api_base,
+        "size": (text(fields, "画面尺寸") if online else "") or default_size,
+        "aspect_ratio": (text(fields, "画面比例") if online else "") or default_aspect_ratio,
+        "call_type": text(fields, "调用方式") if online else "",
+        "prompt": text(fields, "提示词") if online else "",
+        "params": text(fields, "AI参数JSON") if online else "",
+    }
+
+
 def catalog_status_for_model(provider: str, capability: str, model: str, runtime_status: str) -> Dict[str, str]:
     entry = ai_model_catalog.find_model(provider, capability, raw_model_name(model), include_candidate=True)
     if entry and entry.status in ai_model_catalog.PRODUCTION_STATUSES and runtime_status in PRODUCTION_RUNTIME_STATUSES:
@@ -549,8 +669,16 @@ def build_task_default_rows(records: Sequence[Mapping[str, Any]]) -> List[Dict[s
         provider = infer_provider(spec.source_config_stage, text(fields, "API 代理地址"), text(fields, "模型名称"), text(fields, "AI供应商"))
         model_display = display_name(provider, text(fields, "模型名称"))
         rows.append({
+            "配置类型": CONFIG_TYPE_TASK_DEFAULT,
             "应用表格": TASK_TABLES[spec.table_key],
-            "环节": spec.stage,
+            "任务环节": spec.stage,
+            "默认槽位": spec.slot_name or "stage",
+            "环节": spec.source_config_stage,
+            "生效来源": SOURCE_MODE_ONLINE,
+            "供应商": provider,
+            "能力类型": infer_capability(spec.source_config_stage, provider, text(fields, "模型名称")),
+            "模型名称": model_display,
+            "显示名称": model_display,
             "默认供应商": provider,
             "默认模型显示名称": model_display,
             "画面尺寸": text(fields, "画面尺寸"),
@@ -677,6 +805,7 @@ def cell_matches(value: Any, expected: str) -> bool:
 
 _TABLE_ID_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
 _TASK_DEFAULT_CACHE: Dict[Tuple[str, str, str], Optional[Dict[str, Any]]] = {}
+_STAGE_CONFIG_CACHE: Dict[Tuple[str, str, str, str, str, str], Tuple[str, Dict[str, str]]] = {}
 
 
 def find_table_id_by_name(token: str, table_name: str, *, base_token: str = APP_TOKEN) -> Optional[str]:
@@ -698,6 +827,28 @@ def load_task_default_fields(token: str, app_table: str, stage: str) -> Optional
     if cache_key in _TASK_DEFAULT_CACHE:
         cached = _TASK_DEFAULT_CACHE[cache_key]
         return dict(cached) if cached else None
+
+    config_matches: List[Dict[str, Any]] = []
+    code_default_seen = False
+    for record in safe_list_records(token, TABLE_CONFIG):
+        fields = record.get("fields") or {}
+        if not task_default_record_matches(fields, app_table, stage):
+            continue
+        if text(fields, "状态") == "停用":
+            continue
+        if not is_online_config(fields):
+            code_default_seen = True
+            continue
+        config_matches.append(normalize_task_default_fields(fields))
+    if len(config_matches) == 1:
+        _TASK_DEFAULT_CACHE[cache_key] = dict(config_matches[0])
+        return dict(config_matches[0])
+    if len(config_matches) > 1:
+        raise RuntimeError(f"{app_table} / {stage} 默认配置重复: {len(config_matches)} 条启用记录")
+    if code_default_seen:
+        _TASK_DEFAULT_CACHE[cache_key] = None
+        return None
+
     table_id = find_table_id_by_name(token, TASK_DEFAULT_TABLE_NAME)
     if not table_id:
         raise RuntimeError(f"找不到{TASK_DEFAULT_TABLE_NAME}，无法读取 {app_table} / {stage} 默认配置")
@@ -717,6 +868,57 @@ def load_task_default_fields(token: str, app_table: str, stage: str) -> Optional
     if not matches:
         raise RuntimeError(f"{app_table} / {stage} 找不到启用默认配置")
     raise RuntimeError(f"{app_table} / {stage} 默认配置重复: {len(matches)} 条启用记录")
+
+
+def load_stage_config_fields(
+    token: str,
+    stage: str,
+    *,
+    default_model: str,
+    default_api_base: str,
+    default_size: str = "",
+    default_aspect_ratio: str = "9:16",
+    require_api_key: bool = False,
+) -> Tuple[str, Dict[str, str]]:
+    cache_key = (APP_TOKEN, stage, default_model, default_api_base, default_size, default_aspect_ratio)
+    if cache_key in _STAGE_CONFIG_CACHE:
+        record_id, cached = _STAGE_CONFIG_CACHE[cache_key]
+        return record_id, dict(cached)
+    matches: List[Tuple[str, Dict[str, Any]]] = []
+    for record in safe_list_records(token, TABLE_CONFIG):
+        fields = record.get("fields") or {}
+        if not runtime_stage_record_matches(fields, stage):
+            continue
+        if not is_active_runtime_status(fields):
+            continue
+        matches.append((str(record.get("record_id") or record.get("id") or ""), fields))
+    if len(matches) > 1:
+        online = [item for item in matches if is_online_config(item[1])]
+        matches = online or matches
+    if len(matches) > 1:
+        raise RuntimeError(f"{stage} 运行配置重复: {len(matches)} 条启用记录")
+    if matches:
+        record_id, fields = matches[0]
+        cfg = config_from_stage_fields(
+            fields,
+            default_model=default_model,
+            default_api_base=default_api_base,
+            default_size=default_size,
+            default_aspect_ratio=default_aspect_ratio,
+        )
+        if require_api_key and not cfg["api_key"]:
+            raise ValueError(f"{stage} 缺少 API Key")
+        _STAGE_CONFIG_CACHE[cache_key] = (record_id, dict(cfg))
+        return record_id, cfg
+    cfg = fallback_stage_config(
+        default_model=default_model,
+        default_api_base=default_api_base,
+        default_size=default_size,
+        default_aspect_ratio=default_aspect_ratio,
+    )
+    if require_api_key and not cfg["api_key"]:
+        raise ValueError(f"{stage} 缺少 API Key")
+    return "", cfg
 
 
 def apply_task_default_to_record(
@@ -1002,9 +1204,17 @@ def apply_legacy_archive(token: str, updates: Sequence[Mapping[str, Any]], *, dr
     for update in updates:
         record_id = str(update.get("record_id") or "")
         fields = dict(update.get("fields") or {})
+        if not dry_run:
+            fields = filter_fields_for_table(APP_TOKEN, TABLE_CONFIG, fields)
         if not dry_run and record_id:
-            safe_update_record(token, TABLE_CONFIG, record_id, fields)
-        results.append({"record_id": record_id, "status": "dry_run" if dry_run else "updated", "fields": fields})
+            if fields:
+                safe_update_record(token, TABLE_CONFIG, record_id, fields)
+                status = "updated"
+            else:
+                status = "skipped_no_writable_fields"
+        else:
+            status = "dry_run"
+        results.append({"record_id": record_id, "status": status, "fields": fields})
     return results
 
 
@@ -1015,54 +1225,46 @@ def run_migration(*, write: bool, backup_path: Path = BACKUP_PATH) -> Dict[str, 
     write_backup(backup_path, records, plan)
 
     dry_run = not write
-    model_fields = model_catalog_fields()
-    model_table = ensure_table(APP_TOKEN, MODEL_CATALOG_TABLE_NAME, model_fields, dry_run=dry_run)
-    model_views = ensure_views(
-        APP_TOKEN,
-        model_table["table_id"],
-        MODEL_CATALOG_VIEWS,
-        MODEL_CATALOG_VIEW_FIELDS,
-        all_fields=all_field_names(model_fields),
-        dry_run=dry_run,
-    )
+    catalog_rows = []
+    for row in plan.model_catalog_rows:
+        catalog_rows.append({
+            "配置类型": CONFIG_TYPE_MODEL_CATALOG,
+            "供应商": row.get("供应商"),
+            "能力类型": row.get("能力类型"),
+            "模型名称": row.get("模型名称"),
+            "显示名称": row.get("显示名称"),
+            "调用方式": row.get("调用方式"),
+            "API 代理地址": row.get("API代理地址"),
+            "AI参数JSON": row.get("默认参数JSON"),
+            "状态": "启用" if row.get("是否生产可用") == "是" else "测试中",
+            "生效来源": SOURCE_MODE_ONLINE,
+            "测试状态": row.get("测试状态"),
+            "是否生产可用": row.get("是否生产可用"),
+            "备注": row.get("备注"),
+        })
     catalog_results = upsert_rows(
         token,
         APP_TOKEN,
-        model_table["table_id"],
-        plan.model_catalog_rows,
-        key_fields=["显示名称"],
+        TABLE_CONFIG,
+        catalog_rows,
+        key_fields=[CONFIG_TYPE_FIELD, DISPLAY_NAME_FIELD],
         dry_run=dry_run,
     )
 
-    model_id_by_display = catalog_record_id_by_display(token, model_table["table_id"]) if write else {}
-    default_fields = task_default_fields(model_table["table_id"])
-    default_table = ensure_table(APP_TOKEN, TASK_DEFAULT_TABLE_NAME, default_fields, dry_run=dry_run)
-    default_views = ensure_views(
-        APP_TOKEN,
-        default_table["table_id"],
-        TASK_DEFAULT_VIEWS,
-        TASK_DEFAULT_VIEW_FIELDS,
-        all_fields=all_field_names(default_fields),
-        dry_run=dry_run,
-    )
-    default_rows = attach_model_links(plan.task_default_rows, model_id_by_display)
     default_results = upsert_rows(
         token,
         APP_TOKEN,
-        default_table["table_id"],
-        default_rows,
-        key_fields=["应用表格", "环节"],
+        TABLE_CONFIG,
+        plan.task_default_rows,
+        key_fields=[CONFIG_TYPE_FIELD, "应用表格", TASK_STAGE_FIELD],
         dry_run=dry_run,
     )
     archive_results = apply_legacy_archive(token, plan.legacy_archive_updates, dry_run=dry_run)
     return {
         "mode": "write" if write else "dry_run",
         "backup_path": str(backup_path),
-        "model_catalog_table": model_table,
-        "model_catalog_views": model_views,
+        "config_table": {"table_name": "初始化-模型与API配置", "table_id": TABLE_CONFIG},
         "model_catalog_records": catalog_results,
-        "task_default_table": default_table,
-        "task_default_views": default_views,
         "task_default_records": default_results,
         "legacy_archive_updates": archive_results,
         "validation_errors": plan.validation_errors,

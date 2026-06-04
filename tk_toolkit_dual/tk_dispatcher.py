@@ -1181,6 +1181,14 @@ def make_task_key(watch, record_id):
     return f"{watch['script']}::{action_key}::{record_id}"
 
 
+def format_timeout_reason(watch, record_id, elapsed):
+    timeout = int(watch.get('timeout', 900) or 900)
+    return (
+        f"{watch.get('name', '任务')} worker timeout: record_id={record_id}, "
+        f"elapsed={int(elapsed)}s, timeout={timeout}s. 上游任务可能仍在生成或轮询未结束。"
+    )
+
+
 def legacy_task_key(watch, record_id):
     return f"{watch['script']}::{record_id}"
 
@@ -1399,7 +1407,7 @@ def cleanup_finished_processes(token):
                 process.kill()
             except Exception:
                 pass
-            mark_task_failed(token, watch, record_id, task_key, reason='timeout', timeout=True)
+            mark_task_failed(token, watch, record_id, task_key, reason=format_timeout_reason(watch, record_id, elapsed), timeout=True)
             finished.append(task_key)
             continue
 

@@ -35,6 +35,7 @@ from tk_model_config_center import TASK_TABLES, apply_task_default_to_record
 
 
 _TABLE_FIELDS_CACHE = {}
+IMAGE_STAGE_NAME = "图片生成-OTU"
 
 
 def script_doc_unified_route_state(fields, token):
@@ -652,7 +653,7 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     style = extract_text(parent_fields.get('分镜风格', '混合（产品写实+角色动画）'))
     visual_bible = extract_text(parent_fields.get('解析结果JSON', ''))
 
-    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
+    config = get_model_config(token, f"stage:{IMAGE_STAGE_NAME}")
     config_prompt = config.get('prompt', '') or (
         "你是TikTok电商分镜图片生成专家。请根据以下信息生成一张高质量单图分镜图。\n\n"
         "## 输出要求\n"
@@ -876,7 +877,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     if not first_frame_token:
         raise Exception('缺少分镜图附件，无法生成尾帧图')
 
-    config = get_model_config(token, CONFIG_RECORDS['main_image_otu'])
+    config = get_model_config(token, f"stage:{IMAGE_STAGE_NAME}")
     route_enabled, route_dry_run_only = script_doc_unified_route_state(fields, token)
     model_name = selected_slot_model(fields, '尾帧图', config['model'] or DEFAULT_OTU_IMAGE_MODEL, route_enabled=route_enabled)
     image_params = slot_params(fields, '尾帧图', route_enabled=route_enabled)

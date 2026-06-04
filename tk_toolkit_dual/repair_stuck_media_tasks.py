@@ -474,7 +474,7 @@ def _stage_config_for_spec(spec: MediaSpec, token: str, fields: Dict[str, Any]) 
         )
         return cfg
     if spec.key == "script_doc_reference":
-        cfg = script_doc.get_model_config(token, script_doc.CONFIG_RECORDS.get("main_image_otu"))
+        cfg = script_doc.get_model_config(token, f"stage:{script_doc.IMAGE_STAGE_NAME}")
         return {
             "api_base": cfg.get("api_base") or script_doc.DEFAULT_OTU_API_BASE,
             "api_key": cfg.get("api_key") or cfg.get("API Key") or "",

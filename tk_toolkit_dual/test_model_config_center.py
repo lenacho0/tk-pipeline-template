@@ -6,6 +6,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tk_model_config_center as center
+import common
 
 
 def rec(record_id, **fields):
@@ -16,6 +17,7 @@ class ModelConfigCenterTests(unittest.TestCase):
     def setUp(self):
         center._TABLE_ID_CACHE.clear()
         center._TASK_DEFAULT_CACHE.clear()
+        center._STAGE_CONFIG_CACHE.clear()
 
     def test_build_plan_splits_catalog_and_task_defaults(self):
         records = [
@@ -34,7 +36,7 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(catalog_by_display["OTU / gpt-image-2"]["是否生产可用"], "是")
         self.assertEqual(catalog_by_display["OTU / veo_3_1-fast-fl"]["能力类型"], "视频")
 
-        default_keys = {(item["应用表格"], item["环节"]) for item in plan.task_default_rows}
+        default_keys = {(item["应用表格"], item["任务环节"]) for item in plan.task_default_rows}
         self.assertIn(("002-首尾帧视频生成表", "首帧图生成默认"), default_keys)
         self.assertIn(("002-首尾帧视频生成表", "首尾帧视频生成默认"), default_keys)
         self.assertIn(("004-故事板图片视频生成表", "故事板提示词拆分默认"), default_keys)
@@ -42,10 +44,13 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertNotIn(("002-首尾帧视频生成表", "文档拆分默认"), default_keys)
 
         edit_default = next(item for item in plan.task_default_rows if item["应用表格"] == "006-视频编辑任务表")
+        self.assertEqual(edit_default["配置类型"], "任务默认")
+        self.assertEqual(edit_default["任务环节"], "视频编辑默认")
+        self.assertEqual(edit_default["环节"], center.VIDEO_EDIT_SOURCE_CONFIG_STAGE)
         self.assertEqual(edit_default["默认供应商"], "Aitgenne")
         self.assertEqual(edit_default["默认模型显示名称"], "Aitgenne / happyhorse-1.0-video-edit")
         self.assertEqual(edit_default["画面尺寸"], "720P")
-        self.assertIn("source_config=统一AI预设-Aitgenne / happyhorse-1.0-video-edit", edit_default["备注"])
+        self.assertIn(f"source_config={center.VIDEO_EDIT_SOURCE_CONFIG_STAGE}", edit_default["备注"])
 
         archived = {item["record_id"]: item["fields"] for item in plan.legacy_archive_updates}
         self.assertEqual(archived["old"]["状态"], "停用")
@@ -172,8 +177,206 @@ class ModelConfigCenterTests(unittest.TestCase):
 
         self.assertEqual(fields["默认模型显示名称"], "OTU / gpt-image-2")
 
+    def test_load_task_default_fields_uses_single_config_table_runtime_defaults(self):
+        rows = [
+            rec("runtime_default", **{
+                "配置类型": "任务默认",
+                "应用表格": "002-首尾帧视频生成表",
+                "任务环节": "首帧图生成默认",
+                "环节": "图片生成-OTU",
+                "模型名称": "OTU / gpt-image-2",
+                "供应商": "OTU",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "AI参数JSON": '{"size":"720x1280"}',
+                "生效来源": "线上配置",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            fields = center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
+
+        self.assertEqual(fields["默认供应商"], "OTU")
+        self.assertEqual(fields["默认模型显示名称"], "OTU / gpt-image-2")
+        self.assertEqual(fields["画面尺寸"], "720x1280")
+        self.assertEqual(fields["画面比例"], "9:16")
+        self.assertEqual(fields["AI参数JSON"], '{"size":"720x1280"}')
+
+    def test_load_task_default_fields_ignores_code_default_rows(self):
+        rows = [
+            rec("runtime_default", **{
+                "配置类型": "任务默认",
+                "应用表格": "002-首尾帧视频生成表",
+                "任务环节": "首帧图生成默认",
+                "模型名称": "OTU / gpt-image-2",
+                "生效来源": "代码默认",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            fields = center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
+
+        self.assertIsNone(fields)
+
+    def test_load_stage_config_from_single_table_by_stage(self):
+        rows = [
+            rec("image_stage", **{
+                "配置类型": "运行环节",
+                "环节": "图片生成-OTU",
+                "模型名称": "OTU / gpt-image-2",
+                "供应商": "OTU",
+                "API Key": "sk-image",
+                "API 代理地址": "https://otuapi.com",
+                "调用方式": "OTU /v1/videos JSON image task",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "AI参数JSON": '{"size":"720x1280"}',
+                "提示词": "image prompt",
+                "生效来源": "线上配置",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            record_id, cfg = center.load_stage_config_fields(
+                "real-token",
+                "图片生成-OTU",
+                default_model="gpt-image-2",
+                default_api_base="https://fallback.example",
+            )
+
+        self.assertEqual(record_id, "image_stage")
+        self.assertEqual(cfg["model"], "gpt-image-2")
+        self.assertEqual(cfg["provider"], "OTU")
+        self.assertEqual(cfg["api_key"], "sk-image")
+        self.assertEqual(cfg["api_base"], "https://otuapi.com")
+        self.assertEqual(cfg["call_type"], "OTU /v1/videos JSON image task")
+        self.assertEqual(cfg["size"], "720x1280")
+        self.assertEqual(cfg["aspect_ratio"], "9:16")
+        self.assertEqual(cfg["params"], '{"size":"720x1280"}')
+        self.assertEqual(cfg["prompt"], "image prompt")
+
+    def test_load_stage_config_uses_code_default_when_source_says_code_default(self):
+        rows = [
+            rec("image_stage", **{
+                "配置类型": "运行环节",
+                "环节": "图片生成-OTU",
+                "模型名称": "OTU / gpt-image-2-4K",
+                "API Key": "sk-image",
+                "API 代理地址": "https://otuapi.com",
+                "生效来源": "代码默认",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            record_id, cfg = center.load_stage_config_fields(
+                "real-token",
+                "图片生成-OTU",
+                default_model="gpt-image-2",
+                default_api_base="https://fallback.example",
+                default_size="720x1280",
+            )
+
+        self.assertEqual(record_id, "image_stage")
+        self.assertEqual(cfg["model"], "gpt-image-2")
+        self.assertEqual(cfg["api_key"], "sk-image")
+        self.assertEqual(cfg["api_base"], "https://fallback.example")
+        self.assertEqual(cfg["size"], "720x1280")
+
+    def test_stage_config_cache_keeps_code_default_fallbacks_separate(self):
+        rows = [
+            rec("image_stage", **{
+                "配置类型": "运行环节",
+                "环节": "图片生成-OTU",
+                "API Key": "sk-image",
+                "生效来源": "代码默认",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            _, first = center.load_stage_config_fields(
+                "real-token",
+                "图片生成-OTU",
+                default_model="gpt-image-2",
+                default_api_base="https://fallback-a.example",
+                default_size="720x1280",
+            )
+            _, second = center.load_stage_config_fields(
+                "real-token",
+                "图片生成-OTU",
+                default_model="veo_3_1-fast-fl",
+                default_api_base="https://fallback-b.example",
+                default_size="1080x1920",
+            )
+
+        self.assertEqual(first["model"], "gpt-image-2")
+        self.assertEqual(first["api_base"], "https://fallback-a.example")
+        self.assertEqual(first["size"], "720x1280")
+        self.assertEqual(second["model"], "veo_3_1-fast-fl")
+        self.assertEqual(second["api_base"], "https://fallback-b.example")
+        self.assertEqual(second["size"], "1080x1920")
+
+    def test_common_get_model_config_can_read_by_stage_name(self):
+        rows = [
+            rec("image_stage", **{
+                "配置类型": "运行环节",
+                "环节": "图片生成-OTU",
+                "模型名称": "OTU / gpt-image-2",
+                "供应商": "OTU",
+                "API Key": "sk-image",
+                "API 代理地址": "https://otuapi.com",
+                "调用方式": "OTU /v1/videos JSON image task",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "AI参数JSON": '{"size":"720x1280"}',
+                "提示词": "image prompt",
+                "生效来源": "线上配置",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(common, "safe_list_records", return_value=rows):
+            cfg = common.get_model_config("token", "stage:图片生成-OTU")
+
+        self.assertEqual(cfg["model"], "OTU / gpt-image-2")
+        self.assertEqual(cfg["provider"], "OTU")
+        self.assertEqual(cfg["api_key"], "sk-image")
+        self.assertEqual(cfg["api_base"], "https://otuapi.com")
+        self.assertEqual(cfg["call_type"], "OTU /v1/videos JSON image task")
+        self.assertEqual(cfg["size"], "720x1280")
+        self.assertEqual(cfg["aspect_ratio"], "9:16")
+        self.assertEqual(cfg["params"], '{"size":"720x1280"}')
+        self.assertEqual(cfg["prompt"], "image prompt")
+
+    def test_common_get_model_config_blanks_online_fields_for_code_default(self):
+        rows = [
+            rec("image_stage", **{
+                "配置类型": "运行环节",
+                "环节": "图片生成-OTU",
+                "模型名称": "OTU / gpt-image-2-4K",
+                "API Key": "sk-image",
+                "API 代理地址": "https://otuapi.com",
+                "提示词": "online prompt",
+                "生效来源": "代码默认",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(common, "safe_list_records", return_value=rows):
+            cfg = common.get_model_config("token", "stage:图片生成-OTU")
+
+        self.assertEqual(cfg["model"], "")
+        self.assertEqual(cfg["api_key"], "sk-image")
+        self.assertEqual(cfg["api_base"], "")
+        self.assertEqual(cfg["prompt"], "")
+
     def test_load_task_default_fields_fails_when_missing_or_ambiguous(self):
-        with mock.patch.object(center, "list_tables_api", return_value={}):
+        with mock.patch.object(center, "safe_list_records", return_value=[]), \
+             mock.patch.object(center, "list_tables_api", return_value={}):
             with self.assertRaisesRegex(RuntimeError, "找不到.*初始化-任务默认模型配置"):
                 center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
 
@@ -184,7 +387,7 @@ class ModelConfigCenterTests(unittest.TestCase):
             rec("default2", **{"应用表格": "002-首尾帧视频生成表", "环节": "首帧图生成默认", "状态": "启用"}),
         ]
         with mock.patch.object(center, "list_tables_api", return_value={center.TASK_DEFAULT_TABLE_NAME: "tbl_defaults"}), \
-             mock.patch.object(center, "safe_list_records", return_value=duplicate_rows):
+             mock.patch.object(center, "safe_list_records", side_effect=[[], duplicate_rows]):
             with self.assertRaisesRegex(RuntimeError, "默认配置重复"):
                 center.load_task_default_fields("real-token", "002-首尾帧视频生成表", "首帧图生成默认")
 
@@ -300,6 +503,41 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(video_edit.source_config_stage, center.VIDEO_EDIT_SOURCE_CONFIG_STAGE)
         self.assertEqual(video_edit.slot_name, "视频编辑")
         self.assertIn(("video_edit", "视频编辑默认"), backfill)
+
+    def test_run_migration_writes_catalog_and_defaults_to_single_config_table(self):
+        records = [
+            rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
+        ]
+        upserts = []
+
+        with mock.patch.object(center, "get_feishu_token", return_value="token"), \
+             mock.patch.object(center, "safe_list_records", return_value=records), \
+             mock.patch.object(center, "write_backup"), \
+             mock.patch.object(center, "ensure_table") as ensure_table, \
+             mock.patch.object(center, "ensure_views", return_value=[]), \
+             mock.patch.object(center, "upsert_rows", side_effect=lambda token, base, table, rows, key_fields, dry_run: upserts.append((table, list(rows), tuple(key_fields))) or []), \
+             mock.patch.object(center, "apply_legacy_archive", return_value=[]):
+            result = center.run_migration(write=False)
+
+        ensure_table.assert_not_called()
+        self.assertEqual(result["config_table"]["table_id"], center.TABLE_CONFIG)
+        self.assertEqual({item[0] for item in upserts}, {center.TABLE_CONFIG})
+        self.assertIn(("配置类型", "显示名称"), [item[2] for item in upserts])
+        self.assertIn(("配置类型", "应用表格", "任务环节"), [item[2] for item in upserts])
+
+    def test_apply_legacy_archive_filters_missing_fields_before_write(self):
+        updates = [{
+            "record_id": "recLegacy",
+            "fields": {"状态": "停用", "备注": "归档", "是否统一AI预设": "否"},
+        }]
+        calls = []
+
+        with mock.patch.object(center, "filter_fields_for_table", return_value={"状态": "停用", "备注": "归档"}), \
+             mock.patch.object(center, "safe_update_record", side_effect=lambda token, table, record_id, fields: calls.append(fields)):
+            result = center.apply_legacy_archive("token", updates, dry_run=False)
+
+        self.assertEqual(calls, [{"状态": "停用", "备注": "归档"}])
+        self.assertEqual(result[0]["fields"], {"状态": "停用", "备注": "归档"})
 
 
 if __name__ == "__main__":

@@ -451,7 +451,7 @@ class ScriptDocShotsTests(unittest.TestCase):
              }) as getter:
             result = doc_shots.parse_parent_record("recParent", dry_run=True)
 
-        getter.assert_called_once_with("token", "rec_script_split")
+        getter.assert_called_once_with("token", "stage:脚本文档结构化拆分-Gemini")
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["record_id"], "recParent")
 
