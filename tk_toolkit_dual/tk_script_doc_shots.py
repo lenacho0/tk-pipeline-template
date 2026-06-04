@@ -399,6 +399,7 @@ def build_child_shot_records(
         )
         if parent_fields.get(name)
     }
+    inherited_route_fields.setdefault("使用统一AI路由", "是")
     records = []
     for shot in payload.get("shots", []):
         refs = shot["reference_requirements"]

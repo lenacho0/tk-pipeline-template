@@ -30,6 +30,13 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(ai_routing.route_switch_mode(records), "仅dry-run")
         self.assertTrue(ai_routing.unified_route_enabled({"使用统一AI路由": "是"}, records))
 
+    def test_route_switch_all_mode_ignores_hidden_record_field(self):
+        records = [{"fields": {"环节": "统一AI路由启用状态", "状态": "启用", "模型名称": "全量启用"}}]
+
+        self.assertTrue(ai_routing.unified_route_enabled({}, records))
+        self.assertTrue(ai_routing.unified_route_enabled({"使用统一AI路由": ""}, records))
+        self.assertTrue(ai_routing.unified_route_enabled({"使用统一AI路由": "否"}, records))
+
     def test_validate_model_rejects_wrong_provider_or_capability(self):
         route = ai_routing.AiRoute(
             provider="Aitgenne",

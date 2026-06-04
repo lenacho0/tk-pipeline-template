@@ -576,6 +576,8 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         shared = next(row for row in by_type["关键帧"] if row["关键帧类型"] == "S01_TAIL_SHARED_S02_FIRST")
         self.assertEqual(shared["需要产品参考图"], "是")
         self.assertEqual(shared["依赖关键帧类型"], "S01_FIRST")
+        for item in records:
+            self.assertEqual(item["fields"]["使用统一AI路由"], "是")
 
     def test_environment_asset_prompt_removes_character_product_and_pet_positives(self):
         payload = sample_plan(role_count=4)

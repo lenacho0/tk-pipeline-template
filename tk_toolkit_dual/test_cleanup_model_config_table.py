@@ -110,6 +110,7 @@ class CleanupModelConfigTableTests(unittest.TestCase):
             rec("default", **{"配置类型": "任务默认", "应用表格": "001-多角色首尾帧生成表", "任务环节": "参考图生成默认", "状态": "启用"}),
             rec("catalog", **{"配置类型": "模型目录", "显示名称": "OTU / gpt-image-2", "状态": "启用"}),
             rec("route", **{"配置类型": "路由开关", "环节": "统一AI路由启用状态", "模型名称": "指定记录启用", "状态": "启用", "备注": "恢复关闭"}),
+            rec("route_all", **{"配置类型": "路由开关", "环节": "统一AI路由启用状态", "模型名称": "全量启用", "状态": "启用", "备注": "old note"}),
             rec("auto", **{"配置类型": "自动审核", "环节": "001-多角色首尾帧生成表一键审核通过模式", "状态": "停用", "备注": "表级自动审核通过开关；启用后仅自动放行本表新生成成功且有附件 token 的审核闸门。"}),
         ]
 
@@ -124,6 +125,8 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertIn("候选模型清单，不直接触发运行", patches["catalog"]["备注"])
         self.assertIn("当前模式=指定记录启用", patches["route"]["备注"])
         self.assertNotIn("关闭", patches["route"]["备注"])
+        self.assertIn("当前模式=全量启用", patches["route_all"]["备注"])
+        self.assertIn("隐藏字段 使用统一AI路由 不再是必要条件", patches["route_all"]["备注"])
         self.assertNotIn("状态", patches["route"])
         self.assertEqual(
             patches["auto"]["备注"],

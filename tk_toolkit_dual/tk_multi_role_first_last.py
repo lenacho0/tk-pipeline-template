@@ -830,6 +830,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
         )
         if parent_fields.get(name)
     }
+    inherited_route_fields.setdefault("使用统一AI路由", "是")
     records: List[Dict[str, Dict[str, Any]]] = []
     for asset in payload["assets"]:
         records.append({"fields": {

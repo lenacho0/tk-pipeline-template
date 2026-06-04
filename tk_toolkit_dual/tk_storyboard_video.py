@@ -555,6 +555,7 @@ def build_child_storyboard_records(
         )
         if parent_fields.get(name)
     }
+    inherited_route_fields.setdefault("使用统一AI路由", "是")
     for item in storyboards:
         no = int(item["storyboard_no"])
         fields = {

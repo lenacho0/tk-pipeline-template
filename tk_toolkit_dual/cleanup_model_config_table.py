@@ -296,10 +296,10 @@ def _semantic_remark_patch(fields: Mapping[str, Any], row_type: str) -> Dict[str
     stage = _text(fields, "环节")
     if row_type == "路由开关" and stage == ROUTE_SWITCH_STAGE:
         mode = _text(fields, "模型名称") or _text(fields, "状态") or "关闭"
-        desired = (
-            f"统一AI路由开关：当前模式={mode}；记录级模型/参数优先；"
-            "模式为“指定记录启用”时，仅对任务记录中开启“使用统一AI路由”的记录生效。"
-        )
+        mode_note = "全量启用时拥有统一AI路由能力的任务默认走统一路由，隐藏字段 使用统一AI路由 不再是必要条件。"
+        if mode != "全量启用":
+            mode_note = "模式为“指定记录启用”时，仅对任务记录中开启“使用统一AI路由”的记录生效。"
+        desired = f"统一AI路由开关：当前模式={mode}；记录级模型/参数优先；{mode_note}"
         return {} if existing == desired else {"备注": desired}
     role_prefixes = {
         "运行环节": "运行环节配置：API/提示词/兜底源；任务记录自己的模型/参数优先。",

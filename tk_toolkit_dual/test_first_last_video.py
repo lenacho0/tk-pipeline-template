@@ -519,6 +519,23 @@ class FirstLastVideoWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scene 1.*video_prompt"):
             first_last.normalize_batch_parse_payload({"scenes": [{"first_frame_prompt": "first", "last_frame_prompt": "last"}]})
 
+    def test_child_scene_records_default_to_unified_route(self):
+        records = first_last.build_child_scene_records(
+            "recParent",
+            {"任务名称": "first last task", "目标时长秒": 8},
+            [{
+                "scene_no": 1,
+                "title": "Opening",
+                "first_frame_prompt": "first",
+                "last_frame_prompt": "last",
+                "video_prompt": "video",
+            }],
+            batch_id="BATCH-1",
+            split_version=1,
+        )
+
+        self.assertEqual(records[0]["fields"]["使用统一AI路由"], "是")
+
     def test_parse_structured_markdown_scenes_extracts_three_prompts_per_scene(self):
         doc = """
 ## S01 浅瓷砖地板

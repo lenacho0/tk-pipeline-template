@@ -460,6 +460,7 @@ Storyboard 02 Prompt:
         self.assertEqual(records[0]["fields"]["Time Range"], "0-10s")
         self.assertEqual(records[0]["fields"]["故事板图片生成状态"], "待生成")
         self.assertEqual(records[0]["fields"]["视频生成状态"], "不触发")
+        self.assertEqual(records[0]["fields"]["使用统一AI路由"], "是")
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
         self.assertEqual(records[0]["fields"]["选择模特"], ["recModel"])
         self.assertEqual(records[0]["fields"]["故事板图片提示词"], complete_storyboard_prompt(1))

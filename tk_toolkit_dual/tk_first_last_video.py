@@ -637,6 +637,7 @@ def build_child_scene_records(
         )
         if parent_fields.get(name)
     }
+    inherited_route_fields.setdefault("使用统一AI路由", "是")
     records: List[Dict[str, Dict[str, Any]]] = []
     for scene in scenes:
         scene_no = normalize_int(scene.get("scene_no"), len(records) + 1)

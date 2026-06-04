@@ -247,7 +247,9 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(shot_records[0]["fields"]["参考资产ID列表"], "pet_hero,owner_a,home_bg")
         self.assertEqual(shot_records[0]["fields"]["视频通道"], "AIHubMix")
         self.assertEqual(shot_records[0]["fields"]["视频生成模型"], "AIHubMix / 默认（配置表）")
+        self.assertEqual(shot_records[0]["fields"]["使用统一AI路由"], "是")
         self.assertEqual(shot_records[1]["fields"]["需要产品参考图"], "是")
+        self.assertEqual(shot_records[1]["fields"]["使用统一AI路由"], "是")
         self.assertIn("slow push-in on product", shot_records[1]["fields"]["视频提示词"])
 
     def test_child_shots_inherit_media_dimensions_from_parent(self):
