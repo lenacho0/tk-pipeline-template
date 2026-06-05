@@ -100,7 +100,11 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         plan = cleanup.build_cleanup_plan(records)
         patches = {item.record_id: item.fields for item in plan.record_updates}
 
-        self.assertEqual(patches["default"], {"备注": "任务默认配置：仅在任务记录未指定模型/参数时用于初始化/补默认。"})
+        self.assertEqual(patches["default"], {
+            "业务环节名": "002-首尾帧视频生成表-首帧图生成",
+            "调度环节名": "首尾帧首帧图生成",
+            "备注": "任务默认配置：仅在任务记录未指定模型/参数时用于初始化/补默认。",
+        })
         self.assertEqual(patches["catalog"], {"备注": "模型目录：候选模型清单，不直接触发运行。"})
 
     def test_plan_adds_clear_role_remarks_without_changing_statuses(self):
@@ -153,7 +157,11 @@ class CleanupModelConfigTableTests(unittest.TestCase):
             cleanup.RecordUpdate(
                 record_id="video_edit_default",
                 category="single_source_record",
-                fields={"备注": "任务默认配置：仅在任务记录未指定模型/参数时用于初始化/补默认。"},
+                fields={
+                    "业务环节名": "006-视频编辑任务表-视频编辑生成",
+                    "调度环节名": "视频编辑生成",
+                    "备注": "任务默认配置：仅在任务记录未指定模型/参数时用于初始化/补默认。",
+                },
             )
         ])
 
@@ -222,6 +230,85 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertIn("状态", views["05-自动审核开关"]["visible_fields"])
         self.assertIn("API Key", views["99-排错全字段"]["visible_fields"])
         self.assertIn("提示词", views["99-排错全字段"]["visible_fields"])
+
+    def test_config_field_specs_include_concurrency_fields(self):
+        specs = {item["name"]: item for item in cleanup.CONFIG_FIELD_SPECS}
+
+        self.assertEqual(specs["环节最大并发"]["type"], "number")
+        self.assertEqual(specs["全局最大并发"]["type"], "number")
+        self.assertEqual(specs["业务环节名"]["type"], "text")
+        self.assertEqual(specs["调度环节名"]["type"], "text")
+        self.assertEqual(specs["使用位置摘要"]["type"], "text")
+
+    def test_admin_view_shows_concurrency_fields(self):
+        views = cleanup.build_view_definitions(["配置类型", "环节", "业务环节名", "调度环节名", "使用位置摘要", "环节最大并发", "全局最大并发"])
+        visible = views["01-运行配置-管理员"]["visible_fields"]
+
+        self.assertIn("业务环节名", visible)
+        self.assertIn("调度环节名", visible)
+        self.assertIn("使用位置摘要", visible)
+        self.assertIn("环节最大并发", visible)
+        self.assertIn("全局最大并发", visible)
+
+    def test_task_default_rows_get_business_and_dispatch_names(self):
+        fields = {
+            "配置类型": "任务默认",
+            "应用表格": "001-多角色首尾帧生成表",
+            "任务环节": "多角色解析默认",
+            "环节": "多角色首尾帧解析-Gemini",
+        }
+
+        patch = cleanup.task_default_metadata_patch(fields)
+
+        self.assertEqual(patch["业务环节名"], "001-多角色首尾帧生成表-文本分析")
+        self.assertEqual(patch["调度环节名"], "多角色首尾帧解析")
+
+    def test_runtime_rows_get_usage_summary_and_single_use_business_name(self):
+        records = [
+            rec("runtime", **{"配置类型": "运行环节", "环节": "多角色首尾帧解析-Gemini", "状态": "启用"}),
+            rec("default", **{
+                "配置类型": "任务默认",
+                "应用表格": "001-多角色首尾帧生成表",
+                "任务环节": "多角色解析默认",
+                "环节": "多角色首尾帧解析-Gemini",
+                "状态": "启用",
+            }),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+        patches = {item.record_id: item.fields for item in plan.record_updates}
+
+        self.assertEqual(patches["runtime"]["业务环节名"], "001-多角色首尾帧生成表-文本分析")
+        self.assertEqual(patches["runtime"]["调度环节名"], "多角色首尾帧解析")
+        self.assertEqual(patches["runtime"]["使用位置摘要"], "001-多角色首尾帧生成表-文本分析 -> 多角色首尾帧解析")
+
+    def test_shared_runtime_concurrency_is_copied_to_task_defaults_without_single_dispatch_name(self):
+        records = [
+            rec("runtime", **{"配置类型": "运行环节", "环节": "图片生成-OTU", "状态": "启用", "环节最大并发": 10}),
+            rec("default1", **{
+                "配置类型": "任务默认",
+                "应用表格": "001-多角色首尾帧生成表",
+                "任务环节": "参考图生成默认",
+                "环节": "图片生成-OTU",
+                "状态": "启用",
+            }),
+            rec("default2", **{
+                "配置类型": "任务默认",
+                "应用表格": "002-首尾帧视频生成表",
+                "任务环节": "首帧图生成默认",
+                "环节": "图片生成-OTU",
+                "状态": "启用",
+            }),
+        ]
+
+        plan = cleanup.build_cleanup_plan(records)
+        patches = {item.record_id: item.fields for item in plan.record_updates}
+
+        self.assertIn("001-多角色首尾帧生成表-参考图生成 -> 多角色参考图生成", patches["runtime"]["使用位置摘要"])
+        self.assertIn("002-首尾帧视频生成表-首帧图生成 -> 首尾帧首帧图生成", patches["runtime"]["使用位置摘要"])
+        self.assertNotIn("调度环节名", patches["runtime"])
+        self.assertEqual(patches["default1"]["环节最大并发"], 10)
+        self.assertEqual(patches["default2"]["环节最大并发"], 10)
 
     def test_blank_status_runtime_stage_is_marked_enabled(self):
         records = [
@@ -328,6 +415,28 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertIn("能力类型", specs)
         self.assertIn("显示名称", specs)
         self.assertIn("任务环节", specs)
+
+    def test_dispatcher_concurrency_control_record_is_created_when_missing(self):
+        result = cleanup.ensure_dispatcher_concurrency_control_record("token", [], dry_run=True)
+
+        self.assertEqual(result["status"], "dry_run_create")
+        self.assertEqual(result["fields"]["配置类型"], "路由开关")
+        self.assertEqual(result["fields"]["环节"], cleanup.DISPATCHER_CONCURRENCY_STAGE)
+        self.assertEqual(result["fields"]["全局最大并发"], 0)
+
+    def test_dispatcher_concurrency_control_record_is_not_duplicated(self):
+        records = [
+            rec("rec_control", **{
+                "配置类型": "路由开关",
+                "环节": cleanup.DISPATCHER_CONCURRENCY_STAGE,
+                "状态": "启用",
+                "全局最大并发": 3,
+            }),
+        ]
+
+        result = cleanup.ensure_dispatcher_concurrency_control_record("token", records, dry_run=True)
+
+        self.assertEqual(result, {"status": "exists", "record_id": "rec_control"})
 
     def test_view_definitions_expose_single_source_management_views(self):
         views = cleanup.build_view_definitions([

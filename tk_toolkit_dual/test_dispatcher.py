@@ -10,6 +10,215 @@ import tk_dispatcher as dispatcher
 
 
 class DispatcherRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        dispatcher._CONCURRENCY_POLICY_CACHE = {
+            "loaded_at": 0,
+            "policy": {"stage_policies": {}, "global_max_concurrency": None},
+        }
+
+    def test_parse_concurrency_cell_handles_blank_default_and_zero_pause(self):
+        self.assertIsNone(dispatcher.parse_concurrency_cell(""))
+        self.assertIsNone(dispatcher.parse_concurrency_cell(None))
+        self.assertEqual(dispatcher.parse_concurrency_cell("0"), 0)
+        self.assertEqual(dispatcher.parse_concurrency_cell("3"), 3)
+
+    def test_parse_concurrency_cell_rejects_invalid_values(self):
+        self.assertIsNone(dispatcher.parse_concurrency_cell("-1"))
+        self.assertIsNone(dispatcher.parse_concurrency_cell("1.5"))
+        self.assertIsNone(dispatcher.parse_concurrency_cell("fast"))
+
+    def test_load_feishu_concurrency_policy_reads_stage_and_global_limits(self):
+        records = [
+            {
+                "record_id": "rec_stage",
+                "fields": {
+                    "配置类型": "运行环节",
+                    "环节": "多角色视频片段生成",
+                    "状态": "启用",
+                    "生效来源": "线上配置",
+                    "环节最大并发": "0",
+                },
+            },
+            {
+                "record_id": "rec_global",
+                "fields": {
+                    "配置类型": "路由开关",
+                    "环节": "Dispatcher并发控制",
+                    "状态": "启用",
+                    "全局最大并发": "5",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["stage_policies"], {"多角色视频片段生成": {"max_concurrency": 0}})
+        self.assertEqual(policy["global_max_concurrency"], 5)
+
+    def test_load_feishu_concurrency_policy_prefers_dispatch_stage_name(self):
+        records = [
+            {
+                "record_id": "rec_default",
+                "fields": {
+                    "配置类型": "任务默认",
+                    "环节": "图片生成-OTU",
+                    "调度环节名": "多角色参考图生成",
+                    "状态": "启用",
+                    "生效来源": "线上配置",
+                    "环节最大并发": "7",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["stage_policies"], {"多角色参考图生成": {"max_concurrency": 7}})
+        self.assertEqual(policy["source_rows"][0]["matched_stage"], "多角色参考图生成")
+        self.assertEqual(policy["source_rows"][0]["环节"], "图片生成-OTU")
+
+    def test_load_feishu_concurrency_policy_keeps_legacy_stage_fallback(self):
+        records = [
+            {
+                "record_id": "rec_stage",
+                "fields": {
+                    "配置类型": "运行环节",
+                    "环节": "多图九宫格视频生成",
+                    "状态": "启用",
+                    "环节最大并发": "4",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["stage_policies"], {"多图九宫格视频生成": {"max_concurrency": 4}})
+
+    def test_load_feishu_concurrency_policy_prefers_task_default_over_runtime_duplicate(self):
+        records = [
+            {
+                "record_id": "rec_runtime",
+                "fields": {
+                    "配置类型": "运行环节",
+                    "环节": "多角色首尾帧解析-Gemini",
+                    "调度环节名": "多角色首尾帧解析",
+                    "状态": "启用",
+                    "环节最大并发": "5",
+                },
+            },
+            {
+                "record_id": "rec_default",
+                "fields": {
+                    "配置类型": "任务默认",
+                    "环节": "多角色首尾帧解析-Gemini",
+                    "调度环节名": "多角色首尾帧解析",
+                    "状态": "启用",
+                    "环节最大并发": "8",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["stage_policies"], {"多角色首尾帧解析": {"max_concurrency": 8}})
+        self.assertEqual(policy["source_rows"][0]["record_id"], "rec_default")
+
+    def test_dispatcher_policy_diagnostics_reports_unmatched_rows(self):
+        policy = {
+            "source_rows": [
+                {"record_id": "rec1", "matched_stage": "多角色参考图生成"},
+                {"record_id": "rec2", "matched_stage": "图片生成-OTU"},
+            ],
+        }
+        watches = [{"name": "多角色参考图生成"}]
+
+        diagnostics = dispatcher.concurrency_policy_diagnostics(policy, watches)
+
+        self.assertEqual(diagnostics["unmatched_rows"], [{"record_id": "rec2", "matched_stage": "图片生成-OTU"}])
+
+    def test_load_feishu_concurrency_policy_ignores_blank_and_disabled_rows(self):
+        records = [
+            {
+                "record_id": "rec_blank",
+                "fields": {
+                    "配置类型": "运行环节",
+                    "环节": "多角色视频片段生成",
+                    "状态": "启用",
+                    "环节最大并发": "",
+                },
+            },
+            {
+                "record_id": "rec_disabled",
+                "fields": {
+                    "配置类型": "运行环节",
+                    "环节": "多图九宫格视频生成",
+                    "状态": "停用",
+                    "环节最大并发": "9",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["stage_policies"], {})
+        self.assertIsNone(policy["global_max_concurrency"])
+
+    def test_load_feishu_concurrency_policy_skips_fake_token_without_force(self):
+        with patch.object(dispatcher, "safe_list_records", return_value=[]) as list_records:
+            policy = dispatcher.load_feishu_concurrency_policy("token")
+
+        list_records.assert_not_called()
+        self.assertEqual(policy, {"stage_policies": {}, "global_max_concurrency": None})
+
+    def test_apply_stage_policy_prefers_feishu_concurrency_over_local_config(self):
+        watch = {
+            "name": "多角色视频片段生成",
+            "script": "tk_multi_role_first_last.py",
+            "args": ["video"],
+            "max_concurrency": 1,
+            "timeout": 2400,
+        }
+
+        with patch.object(dispatcher, "STAGE_CFG", {"多角色视频片段生成": {"max_concurrency": 2}}), \
+             patch.object(dispatcher, "get_current_concurrency_policy", return_value={
+                 "stage_policies": {"多角色视频片段生成": {"max_concurrency": 0}},
+                 "global_max_concurrency": None,
+             }):
+            applied = dispatcher.apply_stage_policy(watch)
+
+        self.assertEqual(applied["max_concurrency"], 0)
+
+    def test_check_and_run_uses_feishu_global_concurrency_limit(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "tk_nine_grid_video.py",
+            "table": "tbl_nine",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 3,
+        }
+        record = {"record_id": "recWait", "fields": {"图片生成状态": "待生成", "任务名称": "waiting task"}}
+
+        with patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": 1,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_active_running_tasks", return_value=1), \
+             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
     def test_claim_payload_skips_attachment_fields_when_clearing_outputs(self):
         claim_fields = {
             "视频生成状态": "生成中",

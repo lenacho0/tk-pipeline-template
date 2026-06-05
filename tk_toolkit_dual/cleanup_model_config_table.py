@@ -41,6 +41,7 @@ EXPLICIT_STATUS_BY_STAGE = {
     AIHUBMIX_VEO_STAGE: "启用",
 }
 ROUTE_SWITCH_STAGE = "统一AI路由启用状态"
+DISPATCHER_CONCURRENCY_STAGE = "Dispatcher并发控制"
 AUTO_REVIEW_SUFFIX = "一键审核通过模式"
 TEXT_STAGES = {
     "脚本文档结构化拆分-Gemini",
@@ -107,6 +108,51 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "005-多图九宫格视频生成表",
     "006-视频编辑任务表",
 ]
+TASK_STAGE_BUSINESS_ACTIONS = {
+    "多角色解析默认": "文本分析",
+    "参考图生成默认": "参考图生成",
+    "关键帧生成默认": "关键帧生成",
+    "视频片段生成默认": "视频片段生成",
+    "首帧图生成默认": "首帧图生成",
+    "尾帧图生成默认": "尾帧图生成",
+    "首尾帧视频生成默认": "首尾帧视频生成",
+    "脚本文档结构化拆分默认": "文本分析",
+    "参考底图生成默认": "参考底图生成",
+    "分镜图生成默认": "分镜图生成",
+    "尾帧图生成默认": "尾帧图生成",
+    "口播音频生成默认": "口播音频生成",
+    "分镜视频生成默认": "分镜视频生成",
+    "故事板提示词拆分默认": "文本分析",
+    "故事板图片生成默认": "故事板图片生成",
+    "Omni视频生成默认": "Omni视频生成",
+    "九宫格方案生成默认": "九宫格方案生成",
+    "九宫格图片生成默认": "九宫格图片生成",
+    "九宫格视频生成默认": "九宫格视频生成",
+    "视频编辑默认": "视频编辑生成",
+}
+TASK_DEFAULT_DISPATCH_STAGE_BY_TABLE_AND_STAGE = {
+    ("001-多角色首尾帧生成表", "多角色解析默认"): "多角色首尾帧解析",
+    ("001-多角色首尾帧生成表", "参考图生成默认"): "多角色参考图生成",
+    ("001-多角色首尾帧生成表", "关键帧生成默认"): "多角色关键帧生成",
+    ("001-多角色首尾帧生成表", "视频片段生成默认"): "多角色视频片段生成",
+    ("002-首尾帧视频生成表", "首帧图生成默认"): "首尾帧首帧图生成",
+    ("002-首尾帧视频生成表", "尾帧图生成默认"): "首尾帧尾帧图生成",
+    ("002-首尾帧视频生成表", "首尾帧视频生成默认"): "首尾帧视频生成",
+    ("003-1脚本文档-任务表", "脚本文档结构化拆分默认"): "脚本文档解析拆分",
+    ("003-2脚本文档-参考资产表", "参考底图生成默认"): "脚本文档参考底图生成",
+    ("003-3脚本文档-分镜生产表", "分镜图生成默认"): "脚本文档分镜图生成",
+    ("003-3脚本文档-分镜生产表", "尾帧图生成默认"): "脚本文档尾帧图生成",
+    ("003-3脚本文档-分镜生产表", "口播音频生成默认"): "脚本文档口播音频生成",
+    ("003-3脚本文档-分镜生产表", "分镜视频生成默认"): "脚本文档分镜视频生成",
+    ("004-故事板图片视频生成表", "故事板提示词拆分默认"): "故事板提示词拆分",
+    ("004-故事板图片视频生成表", "故事板图片生成默认"): "故事板图片生成",
+    ("004-故事板图片视频生成表", "Omni视频生成默认"): "故事板Omni视频生成",
+    ("005-多图九宫格视频生成表", "九宫格方案生成默认"): "多图九宫格方案生成",
+    ("005-多图九宫格视频生成表", "参考图生成默认"): "多图九宫格参考图生成",
+    ("005-多图九宫格视频生成表", "九宫格图片生成默认"): "多图九宫格图片生成",
+    ("005-多图九宫格视频生成表", "九宫格视频生成默认"): "多图九宫格视频生成",
+    ("006-视频编辑任务表", "视频编辑默认"): "视频编辑生成",
+}
 MODEL_CATALOG_CAPABILITY_OPTIONS = ["文本", "图片", "视频", "视频编辑", "语音"]
 MODEL_CATALOG_VIEW_NAME = "03-模型目录"
 MODEL_CATALOG_VISIBLE_FIELDS = ["配置类型", "供应商", "能力类型", "显示名称", "模型名称", "调用方式", "API 代理地址", "测试状态", "是否生产可用", "备注"]
@@ -145,6 +191,26 @@ CONFIG_FIELD_SPECS = [
         "type": "select",
         "multiple": False,
         "options": [opt("线上配置", "Green"), opt("代码默认", "Gray")],
+    },
+    {
+        "name": "业务环节名",
+        "type": "text",
+    },
+    {
+        "name": "调度环节名",
+        "type": "text",
+    },
+    {
+        "name": "使用位置摘要",
+        "type": "text",
+    },
+    {
+        "name": "环节最大并发",
+        "type": "number",
+    },
+    {
+        "name": "全局最大并发",
+        "type": "number",
     },
     {
         "name": "供应商",
@@ -377,6 +443,93 @@ def _record_type_patch(fields: Mapping[str, Any]) -> Dict[str, Any]:
     return patch
 
 
+def business_stage_name(app_table: str, task_stage: str) -> str:
+    action = TASK_STAGE_BUSINESS_ACTIONS.get(task_stage) or task_stage.replace("默认", "")
+    if not app_table or not action:
+        return ""
+    return f"{app_table}-{action}"
+
+
+def dispatch_stage_name(app_table: str, task_stage: str) -> str:
+    return TASK_DEFAULT_DISPATCH_STAGE_BY_TABLE_AND_STAGE.get((app_table, task_stage), "")
+
+
+def _number_field_value(value: Any) -> Any:
+    if isinstance(value, bool) or value in (None, ""):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else value
+    text = str(value).strip()
+    if text.isdigit():
+        return int(text)
+    return value
+
+
+def task_default_metadata_patch(fields: Mapping[str, Any], runtime_stage_limits: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    if _text(fields, "配置类型") != "任务默认":
+        return {}
+    app_table = _text(fields, "应用表格")
+    task_stage = _text(fields, "任务环节") or _text(fields, "环节")
+    source_stage = _text(fields, "环节")
+    patch: Dict[str, Any] = {}
+    business_name = business_stage_name(app_table, task_stage)
+    dispatch_name = dispatch_stage_name(app_table, task_stage)
+    if business_name:
+        patch["业务环节名"] = business_name
+    if dispatch_name:
+        patch["调度环节名"] = dispatch_name
+    if runtime_stage_limits is not None and source_stage and not _text(fields, "环节最大并发"):
+        inherited_limit = runtime_stage_limits.get(source_stage)
+        if inherited_limit not in (None, ""):
+            patch["环节最大并发"] = _number_field_value(inherited_limit)
+    return patch
+
+
+def _task_default_usage_entries(records: Sequence[Mapping[str, Any]]) -> Dict[str, List[Dict[str, str]]]:
+    usage_by_stage: Dict[str, List[Dict[str, str]]] = {}
+    for record in records:
+        fields = _fields(record)
+        if _text(fields, "配置类型") != "任务默认" or _text(fields, "状态") == "停用":
+            continue
+        app_table = _text(fields, "应用表格")
+        task_stage = _text(fields, "任务环节") or _text(fields, "环节")
+        source_stage = _text(fields, "环节")
+        business_name = business_stage_name(app_table, task_stage)
+        dispatch_name = dispatch_stage_name(app_table, task_stage)
+        if not source_stage or not business_name:
+            continue
+        usage_by_stage.setdefault(source_stage, []).append({
+            "business_name": business_name,
+            "dispatch_name": dispatch_name,
+        })
+    return usage_by_stage
+
+
+def runtime_usage_patch(fields: Mapping[str, Any], usage_entries: Sequence[Mapping[str, str]]) -> Dict[str, Any]:
+    if not usage_entries:
+        return {}
+    patch: Dict[str, Any] = {}
+    summary_parts = []
+    for entry in usage_entries:
+        business_name = str(entry.get("business_name") or "")
+        dispatch_name = str(entry.get("dispatch_name") or "")
+        if dispatch_name:
+            summary_parts.append(f"{business_name} -> {dispatch_name}")
+        else:
+            summary_parts.append(business_name)
+    patch["使用位置摘要"] = "；".join(summary_parts)
+    if len(usage_entries) == 1:
+        business_name = str(usage_entries[0].get("business_name") or "")
+        dispatch_name = str(usage_entries[0].get("dispatch_name") or "")
+        if business_name:
+            patch["业务环节名"] = business_name
+        if dispatch_name:
+            patch["调度环节名"] = dispatch_name
+    return patch
+
+
 def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
     production_models = {entry.display_name for entry in ai_model_catalog.production_models()}
     inspectable_models = {
@@ -391,6 +544,12 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
         "archived_preset_count": 0,
     }
     updates: List[RecordUpdate] = []
+    usage_by_stage = _task_default_usage_entries(records)
+    runtime_stage_limits = {
+        _text(_fields(record), "环节"): _fields(record).get("环节最大并发")
+        for record in records
+        if _text(_fields(record), "配置类型") == "运行环节" and _fields(record).get("环节最大并发") not in (None, "")
+    }
 
     for record in records:
         fields = _fields(record)
@@ -404,6 +563,17 @@ def build_cleanup_plan(records: Sequence[Mapping[str, Any]]) -> CleanupPlan:
         patch: Dict[str, Any] = _record_type_patch(fields)
         effective_type = existing_type or str(patch.get("配置类型") or "")
         category = ""
+        if existing_type == "任务默认":
+            metadata_patch = task_default_metadata_patch(fields, runtime_stage_limits)
+            if metadata_patch:
+                category = category or "task_default_metadata"
+                patch.update(metadata_patch)
+        elif (effective_type or existing_type) == "运行环节":
+            usage_patch = runtime_usage_patch(fields, usage_by_stage.get(stage, []))
+            if usage_patch:
+                category = category or "runtime_usage_metadata"
+                patch.update(usage_patch)
+
         if existing_type in {"任务默认", "模型目录"}:
             category = "single_source_record"
         elif _has_api_key(fields):
@@ -520,14 +690,14 @@ def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, An
     all_fields = [name for name in field_names if name not in MIGRATED_FIELD_NAMES]
     return {
         "01-运行配置-管理员": {
-            "visible_fields": ["配置类型", "环节", "状态", "生效来源", "供应商", "能力类型", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
+            "visible_fields": ["配置类型", "环节", "业务环节名", "调度环节名", "使用位置摘要", "状态", "生效来源", "环节最大并发", "全局最大并发", "供应商", "能力类型", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
             "filter": {
                 "logic": "and",
                 "conditions": [["配置类型", "intersects", ["运行环节", "路由开关", "自动审核"]], ["状态", "intersects", ["启用", "测试中"]]],
             },
         },
         "02-任务默认配置": {
-            "visible_fields": ["配置类型", "应用表格", "任务环节", "默认槽位", "状态", "生效来源", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "提示词", "备注"],
+            "visible_fields": ["配置类型", "应用表格", "业务环节名", "调度环节名", "任务环节", "默认槽位", "状态", "生效来源", "环节最大并发", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "提示词", "备注"],
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["任务默认"]]]},
         },
         MODEL_CATALOG_VIEW_NAME: {
@@ -1098,6 +1268,49 @@ def delete_audited_records(base_token: str, candidates: Sequence[DeleteAuditItem
     ]
 
 
+def dispatcher_concurrency_control_fields() -> Dict[str, Any]:
+    return {
+        "配置类型": "路由开关",
+        "环节": DISPATCHER_CONCURRENCY_STAGE,
+        "状态": "启用",
+        "生效来源": "线上配置",
+        "全局最大并发": 0,
+        "备注": "Dispatcher 全局并发控制；0 或空值表示不启用全局限制，大于 0 表示所有环节合计最大并发。",
+    }
+
+
+def ensure_dispatcher_concurrency_control_record(token: str, records: Sequence[Mapping[str, Any]], *, dry_run: bool) -> Dict[str, Any]:
+    for record in records:
+        fields = _fields(record)
+        if _text(fields, "配置类型") != "路由开关":
+            continue
+        if _text(fields, "环节") != DISPATCHER_CONCURRENCY_STAGE:
+            continue
+        if _text(fields, "状态") == "停用":
+            continue
+        return {"status": "exists", "record_id": _record_id(record)}
+
+    fields = dispatcher_concurrency_control_fields()
+    if dry_run:
+        return {"status": "dry_run_create", "fields": fields}
+
+    data = safe_request(
+        "post",
+        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_CONFIG}/records",
+        headers=feishu_headers(token),
+        json={"fields": fields},
+        timeout=30,
+        max_attempts=3,
+        acceptable_codes=(0,),
+    )
+    record = ((data.get("data") or {}).get("record") or {})
+    return {
+        "status": "created",
+        "record_id": record.get("record_id") or record.get("id"),
+        "fields": fields,
+    }
+
+
 def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     token = get_feishu_token()
     fields = list_fields(token)
@@ -1129,6 +1342,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
         if update.fields and not _same_patch(record_fields_by_id.get(update.record_id, {}), update.fields)
     ]
     record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
+    dispatcher_concurrency_control = ensure_dispatcher_concurrency_control_record(token, records, dry_run=not write)
     delete_audit = build_delete_audit(records, [])
     view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
     table_name_result = ensure_unified_config_table_name(APP_TOKEN, dry_run=not write)
@@ -1148,6 +1362,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
         "video_edit_catalog": {"status": "not_touched"},
         "task_default_app_table_field": {"status": "not_touched"},
         "video_edit_default": {"status": "not_touched"},
+        "dispatcher_concurrency_control": dispatcher_concurrency_control,
         "legacy_view_renames": view_rename_results,
         "views": view_results,
         "obsolete_views": obsolete_view_results,

@@ -33,6 +33,12 @@ CIRCUIT_BREAKER_FILE = os.path.join(SCRIPTS_DIR, f'.circuit_breakers.{INSTANCE}.
 STAGE_CFG = DISPATCHER_CFG.get('stages', {})
 CIRCUIT_CFG = DISPATCHER_CFG.get('circuit_breaker', {})
 GLOBAL_MAX_CONCURRENCY = int(DISPATCHER_CFG.get('global_max_concurrency') or 0)
+CONCURRENCY_CONTROL_STAGE = 'Dispatcher并发控制'
+CONCURRENCY_POLICY_TTL_SECONDS = int(DISPATCHER_CFG.get('concurrency_policy_ttl_seconds', 60) or 60)
+_CONCURRENCY_POLICY_CACHE = {
+    'loaded_at': 0,
+    'policy': {'stage_policies': {}, 'global_max_concurrency': None, 'source_rows': []},
+}
 TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, f'.table_scan_state.{INSTANCE}.json')
 RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, f'.record_state_cache.{INSTANCE}.json')
 SCAN_CFG = DISPATCHER_CFG.get('scan', {})
@@ -929,6 +935,132 @@ def save_circuit_breakers(data):
     save_json_file(CIRCUIT_BREAKER_FILE, data)
 
 
+def parse_concurrency_cell(value):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        if value >= 0:
+            return value
+        log.warning(f"忽略无效并发配置: {value!r}")
+        return None
+    if isinstance(value, float):
+        if value >= 0 and value.is_integer():
+            return int(value)
+        log.warning(f"忽略无效并发配置: {value!r}")
+        return None
+
+    text_value = extract_text(value).strip()
+    if not text_value:
+        return None
+    if not text_value.isdigit():
+        log.warning(f"忽略无效并发配置: {text_value!r}")
+        return None
+    return int(text_value)
+
+
+def _config_status_is_active(fields):
+    return extract_text(fields.get('状态', '')).strip() != '停用'
+
+
+def get_current_concurrency_policy():
+    return _CONCURRENCY_POLICY_CACHE.get('policy') or {'stage_policies': {}, 'global_max_concurrency': None, 'source_rows': []}
+
+
+def load_feishu_concurrency_policy(token, *, force=False):
+    now = time.time()
+    cached = get_current_concurrency_policy()
+    loaded_at = float(_CONCURRENCY_POLICY_CACHE.get('loaded_at') or 0)
+    if not force and (token in {'t', 'token', 'test-token', 'fake-token'} or str(token).startswith('test_')):
+        return cached
+    if not force and loaded_at and now - loaded_at < CONCURRENCY_POLICY_TTL_SECONDS:
+        return cached
+
+    try:
+        records = safe_list_records(token, TABLE_CONFIG)
+    except Exception as exc:
+        log.warning(f"读取飞书并发配置失败，沿用缓存/本地默认: {exc}")
+        return cached
+
+    stage_candidates = {}
+    global_limit = None
+
+    for record in records:
+        fields = record.get('fields') or {}
+        if not _config_status_is_active(fields):
+            continue
+        config_type = extract_text(fields.get('配置类型', '')).strip()
+        stage = extract_text(fields.get('环节', '')).strip()
+        if config_type in {'运行环节', '任务默认'}:
+            limit = parse_concurrency_cell(fields.get('环节最大并发'))
+            matched_stage = extract_text(fields.get('调度环节名', '')).strip() or stage
+            if limit is None or not matched_stage:
+                continue
+            source_row = {
+                'record_id': record.get('record_id') or record.get('id'),
+                '配置类型': config_type,
+                '环节': stage,
+                '调度环节名': extract_text(fields.get('调度环节名', '')).strip(),
+                'matched_stage': matched_stage,
+                '环节最大并发': limit,
+            }
+            stage_candidates.setdefault(matched_stage, []).append((fields, limit, source_row))
+        elif config_type == '路由开关' and stage == CONCURRENCY_CONTROL_STAGE:
+            parsed_global = parse_concurrency_cell(fields.get('全局最大并发'))
+            if parsed_global is not None:
+                global_limit = parsed_global
+
+    stage_policies = {}
+    source_rows = []
+    for stage, candidates in stage_candidates.items():
+        online = [
+            item for item in candidates
+            if extract_text(item[0].get('生效来源', '')).strip() in ('', '线上配置')
+        ]
+        selected = online or candidates
+        task_default_selected = [
+            item for item in selected
+            if (item[2] or {}).get('配置类型') == '任务默认'
+        ]
+        if task_default_selected:
+            selected = task_default_selected
+        if len(selected) != 1:
+            log.warning(f"忽略重复并发配置: stage={stage} count={len(selected)}")
+            continue
+        stage_policies[stage] = {'max_concurrency': selected[0][1]}
+        source_rows.append(selected[0][2])
+
+    policy = {'stage_policies': stage_policies, 'global_max_concurrency': global_limit, 'source_rows': source_rows}
+    _CONCURRENCY_POLICY_CACHE['loaded_at'] = now
+    _CONCURRENCY_POLICY_CACHE['policy'] = policy
+    return policy
+
+
+def concurrency_policy_diagnostics(policy, watches=None):
+    watch_list = watches if watches is not None else WATCH_LIST
+    watch_names = {
+        extract_text((watch or {}).get('name', '')).strip()
+        for watch in watch_list
+        if extract_text((watch or {}).get('name', '')).strip()
+    }
+    source_rows = list(policy.get('source_rows') or [])
+    unmatched_rows = [
+        row for row in source_rows
+        if extract_text(row.get('matched_stage', '')).strip() not in watch_names
+    ]
+    return {
+        'matched_count': len(source_rows) - len(unmatched_rows),
+        'unmatched_count': len(unmatched_rows),
+        'unmatched_rows': unmatched_rows,
+    }
+
+
+def current_global_max_concurrency(policy):
+    configured = policy.get('global_max_concurrency')
+    if configured is None:
+        return GLOBAL_MAX_CONCURRENCY
+    return int(configured)
+
+
 def apply_stage_policy(watch):
     merged = dict(watch)
     args_key = ' '.join(watch.get('args') or [])
@@ -943,6 +1075,11 @@ def apply_stage_policy(watch):
         for key in ('max_concurrency', 'max_retries', 'timeout'):
             if key in cfg:
                 merged[key] = cfg[key]
+    feishu_stage_policy = (get_current_concurrency_policy().get('stage_policies') or {}).get(watch.get('name'))
+    if feishu_stage_policy:
+        for key in ('max_concurrency',):
+            if key in feishu_stage_policy:
+                merged[key] = feishu_stage_policy[key]
     return merged
 
 
@@ -1600,13 +1737,15 @@ def get_table_records_cached(token, table_id, force=False):
 
 
 def check_and_run(token, watch):
+    policy = load_feishu_concurrency_policy(token)
     watch = apply_stage_policy(watch)
     cleanup_finished_processes(token)
     running_state = load_running_tasks()
     current_running = count_running_by_watch(watch['name']) + count_live_persisted_by_watch(watch, running_state)
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
-    if GLOBAL_MAX_CONCURRENCY > 0:
-        global_slots = max(0, GLOBAL_MAX_CONCURRENCY - count_active_running_tasks())
+    global_limit = current_global_max_concurrency(policy)
+    if global_limit > 0:
+        global_slots = max(0, global_limit - count_active_running_tasks())
         available_slots = min(available_slots, global_slots)
     if available_slots <= 0:
         return
