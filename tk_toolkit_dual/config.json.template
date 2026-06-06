@@ -8,7 +8,6 @@
       "script_doc_tasks": "脚本文档任务表的 table_id",
       "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
-      "storyboard_video": "故事板图片视频生成表的 table_id",
       "nine_grid_video": "多图九宫格视频生成表的 table_id",
       "first_last_video": "首尾帧视频生成表的 table_id",
       "multi_role_first_last": "多角色首尾帧生成表的 table_id",
@@ -24,7 +23,6 @@
   },
   "config_records": {
     "script_doc_text_split": "脚本文档结构化拆分-Gemini 在「模型与API配置」表中的 record_id",
-    "storyboard_text_split": "故事板图片提示词拆分-Gemini 在「模型与API配置」表中的 record_id",
     "main_image_otu": "图片生成-OTU 在「模型与API配置」表中的 record_id"
   },
   "products": {},
@@ -54,10 +52,6 @@
         "timeout": 2400,
         "max_retries": 1
       },
-      "tk_storyboard_video.py": {
-        "timeout": 2400,
-        "max_retries": 1
-      },
       "tk_shot_voiceover.py": {
         "timeout": 300,
         "max_retries": 2
@@ -75,12 +69,6 @@
         "max_concurrency": 3
       },
       "脚本文档口播音频生成": {
-        "max_concurrency": 3
-      },
-      "故事板图片生成": {
-        "max_concurrency": 3
-      },
-      "故事板Omni视频生成": {
         "max_concurrency": 3
       },
       "多图九宫格参考图生成": {

@@ -8,7 +8,6 @@ import tk_create_first_last_video_table as first_last_table
 import tk_create_multi_role_first_last_table as multi_role_table
 import tk_create_nine_grid_video_table as nine_grid_table
 import tk_create_script_doc_shots_table as script_doc_tables
-import tk_create_storyboard_video_table as storyboard_table
 
 
 def field_options(fields, field_name):
@@ -65,7 +64,6 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
     def test_reference_video_tables_use_reference_video_model_options(self):
         nine_grid_options = field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频AI模型")
         nine_grid_generation_options = field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频生成模型")
-        storyboard_options = field_options(storyboard_table.STORYBOARD_VIDEO_FIELDS, "视频AI模型")
 
         self.assertEqual(nine_grid_options, [
             "OTU / omni_flash-10s",
@@ -73,7 +71,6 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
             "Aitgenne / omni-flash",
         ])
         self.assertEqual(nine_grid_generation_options, ["默认（配置表）", *nine_grid_options])
-        self.assertEqual(storyboard_options, nine_grid_options)
         self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", nine_grid_options)
         self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", nine_grid_options)
         self.assertNotIn("OTU / veo_3_1-fast-fl", nine_grid_options)

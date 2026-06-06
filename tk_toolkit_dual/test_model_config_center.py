@@ -23,7 +23,6 @@ class ModelConfigCenterTests(unittest.TestCase):
         records = [
             rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
             rec("video", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16", "调用方式": "专用 API"}),
-            rec("story", 环节="故事板图片提示词拆分-Gemini", 模型名称="gemini-3.1-pro-preview", 状态="启用", **{"API 代理地址": "https://aihubmix.com/gemini", "调用方式": "Gemini 原生 SDK", "提示词": "story prompt"}),
             rec("edit", 环节="视频编辑-HappyHorse", 模型名称="Aitgenne / happyhorse-1.0-video-edit", 状态="启用", **{"AI供应商": "Aitgenne", "AI能力类型": "视频编辑", "API 代理地址": "https://api.aitgenne.com/v1", "画面尺寸": "720P", "调用方式": "happyhorse视频编辑"}),
             rec("old", 环节="统一AI预设-图片-OTU-GPTImage2-1K", 模型名称="gpt-image-2", 状态="停用", **{"API 代理地址": "https://otuapi.com"}),
         ]
@@ -39,7 +38,6 @@ class ModelConfigCenterTests(unittest.TestCase):
         default_keys = {(item["应用表格"], item["任务环节"]) for item in plan.task_default_rows}
         self.assertIn(("002-首尾帧视频生成表", "首帧图生成默认"), default_keys)
         self.assertIn(("002-首尾帧视频生成表", "首尾帧视频生成默认"), default_keys)
-        self.assertIn(("004-故事板图片视频生成表", "故事板提示词拆分默认"), default_keys)
         self.assertIn(("006-视频编辑任务表", "视频编辑默认"), default_keys)
         self.assertNotIn(("002-首尾帧视频生成表", "文档拆分默认"), default_keys)
 

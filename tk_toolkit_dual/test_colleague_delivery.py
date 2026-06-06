@@ -22,7 +22,6 @@ class RebindCopiedBaseTests(unittest.TestCase):
                     "script_doc_tasks": "",
                     "script_doc_reference_assets": "",
                     "script_doc_shots": "",
-                    "storyboard_video": "",
                     "first_last_video": "",
                     "multi_role_first_last": "",
                     "nine_grid_video": "",
@@ -33,7 +32,6 @@ class RebindCopiedBaseTests(unittest.TestCase):
             },
             "config_records": {
                 "script_doc_text_split": "",
-                "storyboard_text_split": "",
                 "main_image_otu": "",
             },
         }
@@ -44,7 +42,6 @@ class RebindCopiedBaseTests(unittest.TestCase):
             "003-1脚本文档-任务表": "tbl_doc_tasks",
             "003-2脚本文档-参考资产表": "tbl_doc_assets",
             "003-3脚本文档-分镜生产表": "tbl_doc_shots",
-            "004-故事板图片视频生成表": "tbl_storyboard",
             "002-首尾帧视频生成表": "tbl_first_last",
             "001-多角色首尾帧生成表": "tbl_multi_role",
             "005-多图九宫格视频生成表": "tbl_nine_grid",
@@ -54,7 +51,6 @@ class RebindCopiedBaseTests(unittest.TestCase):
         }
         records_by_stage = {
             "脚本文档结构化拆分-Gemini": "rec_script_split",
-            "故事板图片提示词拆分-Gemini": "rec_storyboard_split",
             "图片生成-OTU": "rec_image_otu",
         }
 

@@ -54,14 +54,13 @@ from tk_nine_grid_video_prompt import (  # noqa: E402
     NINE_GRID_VIDEO_SYSTEM_PROMPT,
 )
 from tk_shot_script_gen import extract_json_object  # noqa: E402
-from tk_storyboard_video import (  # noqa: E402
+from tk_reference_media import (  # noqa: E402
     build_reference_contact_sheet,
-    build_reference_urls,
     compact_json,
-    filter_existing_fields,
     poll_omni_video_task,
     submit_omni_video_task,
 )
+from tk_shot_storyboard import build_reference_urls, filter_existing_fields  # noqa: E402
 from tk_shot_video import (  # noqa: E402
     download_video,
     extract_video_url,
@@ -167,8 +166,7 @@ ENVIRONMENT_FORBIDDEN_CLEANUP_PATTERNS = [
     (re.compile(r"(人物|人像|真人|女人|男人|女孩|男孩|小狗|狗狗|猫|宠物|动物|产品|喷雾|瓶|手)"), ""),
 ]
 SECRET_FALLBACK_STAGES = {
-    PLAN_STAGE_NAME: ("故事板图片提示词拆分-Gemini",),
-    IMAGE_STAGE_NAME: ("图片生成-OTU", "故事板图片生成-OTU"),
+    IMAGE_STAGE_NAME: ("图片生成-OTU",),
     VIDEO_STAGE_NAME: ("分镜视频生成-OTU",),
 }
 

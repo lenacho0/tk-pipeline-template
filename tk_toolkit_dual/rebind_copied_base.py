@@ -26,7 +26,6 @@ TABLE_ALIASES: Dict[str, List[str]] = {
     "script_doc_tasks": ["003-1脚本文档-任务表", "脚本文档-任务表"],
     "script_doc_reference_assets": ["003-2脚本文档-参考资产表", "脚本文档-参考资产表"],
     "script_doc_shots": ["003-3脚本文档-分镜生产表", "脚本文档-分镜生产表"],
-    "storyboard_video": ["004-故事板图片视频生成表", "故事板图片视频生成表"],
     "first_last_video": ["002-首尾帧视频生成表", "首尾帧视频生成表"],
     "multi_role_first_last": ["001-多角色首尾帧生成表", "多角色首尾帧生成表"],
     "nine_grid_video": ["005-多图九宫格视频生成表", "多图九宫格视频生成表"],
@@ -35,7 +34,6 @@ TABLE_ALIASES: Dict[str, List[str]] = {
 
 CONFIG_RECORD_STAGES: Dict[str, str] = {
     "script_doc_text_split": "脚本文档结构化拆分-Gemini",
-    "storyboard_text_split": "故事板图片提示词拆分-Gemini",
     "main_image_otu": "图片生成-OTU",
 }
 

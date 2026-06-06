@@ -33,7 +33,6 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
                 "tables": {
                     "config": "tbl_config",
                     "nine_grid_video": "tbl_nine",
-                    "storyboard_video": "tbl_story",
                     "first_last_video": "tbl_first_last",
                     "script_doc_tasks": "tbl_tasks",
                     "script_doc_shots": "tbl_shots",
@@ -50,7 +49,6 @@ class AiModelCatalogGovernanceTests(unittest.TestCase):
         self.assertEqual(by_key[("nine_grid_video", "图片AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertEqual(by_key[("nine_grid_video", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS])
         self.assertEqual(by_key[("nine_grid_video", "视频生成模型")], [opt["name"] for opt in ai_model_catalog.REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS])
-        self.assertEqual(by_key[("storyboard_video", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS])
         self.assertEqual(by_key[("first_last_video", "拆分AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("文本")])
         self.assertEqual(by_key[("first_last_video", "首帧图AI模型")], [entry.display_name for entry in ai_model_catalog.production_models("图片")])
         self.assertEqual(by_key[("first_last_video", "视频AI模型")], [opt["name"] for opt in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS])

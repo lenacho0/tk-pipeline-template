@@ -19,7 +19,6 @@ from common import (
     TABLE_NINE_GRID_VIDEO,
     TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     TABLE_SCRIPT_DOC_SHOTS,
-    TABLE_STORYBOARD_VIDEO,
     TABLE_VIDEO_EDIT,
     extract_text,
     feishu_headers,
@@ -79,19 +78,16 @@ PRODUCTION_RUNTIME_STATUSES = {"启用", "测试中", ""}
 
 TEXT_STAGES = {
     "脚本文档结构化拆分-Gemini",
-    "故事板图片提示词拆分-Gemini",
     "多角色首尾帧解析-Gemini",
     "多图九宫格方案生成",
 }
 IMAGE_STAGES = {
     "图片生成-OTU",
-    "故事板图片生成-OTU",
     "多图九宫格图片生成",
 }
 VIDEO_STAGES = {
     "分镜视频生成-Veo",
     "分镜视频生成-OTU",
-    "故事板视频生成-Omni",
     "多图九宫格视频生成",
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
@@ -104,7 +100,6 @@ TASK_TABLES = {
     "script_doc_tasks": "003-1脚本文档-任务表",
     "script_doc_reference_assets": "003-2脚本文档-参考资产表",
     "script_doc_shots": "003-3脚本文档-分镜生产表",
-    "storyboard_video": "004-故事板图片视频生成表",
     "nine_grid_video": "005-多图九宫格视频生成表",
     "video_edit": "006-视频编辑任务表",
 }
@@ -132,9 +127,6 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("script_doc_shots", "尾帧图生成默认", "图片生成-OTU", "尾帧图"),
     RuntimeDefaultSpec("script_doc_shots", "口播音频生成默认", "语音合成-MiniMax", "口播音频"),
     RuntimeDefaultSpec("script_doc_shots", "分镜视频生成默认", "分镜视频生成-Veo", "视频"),
-    RuntimeDefaultSpec("storyboard_video", "故事板提示词拆分默认", "故事板图片提示词拆分-Gemini"),
-    RuntimeDefaultSpec("storyboard_video", "故事板图片生成默认", "故事板图片生成-OTU", "故事板图片"),
-    RuntimeDefaultSpec("storyboard_video", "Omni视频生成默认", "故事板视频生成-Omni", "视频"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格方案生成默认", "多图九宫格方案生成"),
     RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图九宫格图片生成", "参考图"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
@@ -169,7 +161,6 @@ TABLE_IDS_BY_KEY: Dict[str, str] = {
     "first_last_video": TABLE_FIRST_LAST_VIDEO,
     "script_doc_reference_assets": TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     "script_doc_shots": TABLE_SCRIPT_DOC_SHOTS,
-    "storyboard_video": TABLE_STORYBOARD_VIDEO,
     "nine_grid_video": TABLE_NINE_GRID_VIDEO,
     "video_edit": TABLE_VIDEO_EDIT,
 }
@@ -189,8 +180,6 @@ RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
     RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "分镜图生成默认", "分镜图生成状态", "分镜图AI模型", "分镜图画面尺寸", "分镜图画面比例", "分镜图AI参数JSON"),
     RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "尾帧图生成默认", "尾帧图生成状态", "尾帧图AI模型", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图AI参数JSON"),
     RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "分镜视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
-    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "故事板图片生成默认", "故事板图片生成状态", "故事板图片AI模型", "故事板图片画面尺寸", "故事板图片画面比例", "故事板图片AI参数JSON"),
-    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "Omni视频生成默认", "视频生成状态", "视频AI模型", "Omni画面尺寸", "Omni画面比例", "视频AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "参考图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
@@ -460,7 +449,7 @@ def infer_provider(stage: str, api_base: str, model: str, explicit: str = "") ->
     if " / " in model:
         return model.split(" / ", 1)[0].strip()
     lower_base = (api_base or "").lower()
-    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "故事板图片生成-OTU", "故事板视频生成-Omni", "多图九宫格图片生成", "多图九宫格视频生成"}:
+    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "多图九宫格图片生成", "多图九宫格视频生成"}:
         return "OTU"
     if "aitgenne" in lower_base or stage in {"语音合成-MiniMax", "视频编辑-HappyHorse"}:
         return "Aitgenne"

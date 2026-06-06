@@ -69,7 +69,7 @@ def discover_whitelist_roots(repo_root: Path) -> list[Path]:
             if path.is_dir() and path.name.endswith("_work")
         )
 
-    for name in ("first_last_video_work", "storyboard_video_work", "multi_role_first_last_work"):
+    for name in ("first_last_video_work", "multi_role_first_last_work"):
         path = repo_root / name
         if path.is_dir():
             roots.append(path)

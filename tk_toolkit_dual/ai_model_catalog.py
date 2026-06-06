@@ -321,7 +321,6 @@ AI_PROVIDER_OPTIONS = [opt("AIHubMix"), opt("Aitgenne", "Purple"), opt("OTU", "G
 AI_CAPABILITY_OPTIONS = [opt("文本"), opt("图片", "Green"), opt("视频", "Blue"), opt("视频编辑", "Purple"), opt("语音", "Purple")]
 AI_TASK_TYPE_OPTIONS = [
     opt("脚本解析拆分"),
-    opt("故事板提示词拆分"),
     opt("多角色首尾帧解析"),
     opt("视频分析"),
     opt("脚本生成"),

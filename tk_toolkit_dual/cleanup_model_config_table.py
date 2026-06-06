@@ -45,19 +45,16 @@ DISPATCHER_CONCURRENCY_STAGE = "Dispatcher并发控制"
 AUTO_REVIEW_SUFFIX = "一键审核通过模式"
 TEXT_STAGES = {
     "脚本文档结构化拆分-Gemini",
-    "故事板图片提示词拆分-Gemini",
     "多角色首尾帧解析-Gemini",
     "多图九宫格方案生成",
 }
 IMAGE_STAGES = {
     "图片生成-OTU",
-    "故事板图片生成-OTU",
     "多图九宫格图片生成",
 }
 VIDEO_STAGES = {
     "分镜视频生成-Veo",
     "分镜视频生成-OTU",
-    "故事板视频生成-Omni",
     "多图九宫格视频生成",
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
@@ -92,8 +89,6 @@ OBSOLETE_VIEW_NAMES = {
 MEDIA_DIMENSION_DEFAULTS = {
     "图片生成-OTU": ("720x1280", "9:16"),
     "分镜视频生成-OTU": ("720x1280", "9:16"),
-    "故事板图片生成-OTU": ("1280x720", "16:9"),
-    "故事板视频生成-Omni": ("720x1280", "9:16"),
     "多图九宫格图片生成": ("720x1280", "9:16"),
     "多图九宫格视频生成": ("720x1280", "9:16"),
 }
@@ -104,7 +99,6 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "003-1脚本文档-任务表",
     "003-2脚本文档-参考资产表",
     "003-3脚本文档-分镜生产表",
-    "004-故事板图片视频生成表",
     "005-多图九宫格视频生成表",
     "006-视频编辑任务表",
 ]
@@ -122,9 +116,6 @@ TASK_STAGE_BUSINESS_ACTIONS = {
     "尾帧图生成默认": "尾帧图生成",
     "口播音频生成默认": "口播音频生成",
     "分镜视频生成默认": "分镜视频生成",
-    "故事板提示词拆分默认": "文本分析",
-    "故事板图片生成默认": "故事板图片生成",
-    "Omni视频生成默认": "Omni视频生成",
     "九宫格方案生成默认": "九宫格方案生成",
     "九宫格图片生成默认": "九宫格图片生成",
     "九宫格视频生成默认": "九宫格视频生成",
@@ -144,9 +135,6 @@ TASK_DEFAULT_DISPATCH_STAGE_BY_TABLE_AND_STAGE = {
     ("003-3脚本文档-分镜生产表", "尾帧图生成默认"): "脚本文档尾帧图生成",
     ("003-3脚本文档-分镜生产表", "口播音频生成默认"): "脚本文档口播音频生成",
     ("003-3脚本文档-分镜生产表", "分镜视频生成默认"): "脚本文档分镜视频生成",
-    ("004-故事板图片视频生成表", "故事板提示词拆分默认"): "故事板提示词拆分",
-    ("004-故事板图片视频生成表", "故事板图片生成默认"): "故事板图片生成",
-    ("004-故事板图片视频生成表", "Omni视频生成默认"): "故事板Omni视频生成",
     ("005-多图九宫格视频生成表", "九宫格方案生成默认"): "多图九宫格方案生成",
     ("005-多图九宫格视频生成表", "参考图生成默认"): "多图九宫格参考图生成",
     ("005-多图九宫格视频生成表", "九宫格图片生成默认"): "多图九宫格图片生成",
@@ -184,7 +172,7 @@ CONFIG_FIELD_SPECS = [
         "name": "默认槽位",
         "type": "select",
         "multiple": False,
-        "options": [opt(item, "Wathet") for item in ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "故事板图片", "图片", "口播音频", "视频编辑"]],
+        "options": [opt(item, "Wathet") for item in ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "图片", "口播音频", "视频编辑"]],
     },
     {
         "name": "生效来源",
@@ -384,7 +372,7 @@ def _infer_provider(stage: str, api_base: str, model: str) -> str:
     if " / " in model:
         return model.split(" / ", 1)[0].strip()
     lower_base = (api_base or "").lower()
-    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "故事板图片生成-OTU", "故事板视频生成-Omni", "多图九宫格图片生成", "多图九宫格视频生成"}:
+    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "多图九宫格图片生成", "多图九宫格视频生成"}:
         return "OTU"
     if "aitgenne" in lower_base or stage in {"语音合成-MiniMax", "视频编辑-HappyHorse"}:
         return "Aitgenne"

@@ -25,7 +25,6 @@ import tk_first_last_video as first_last  # noqa: E402
 import tk_multi_role_first_last as multi_role  # noqa: E402
 import tk_nine_grid_video as nine_grid  # noqa: E402
 import tk_script_doc_shots as script_doc  # noqa: E402
-import tk_storyboard_video as storyboard_video  # noqa: E402
 from common import (  # noqa: E402
     WORKSPACE,
     build_error_payload,
@@ -239,21 +238,6 @@ def _media_specs() -> Dict[str, MediaSpec]:
             file_suffix="multi_role_clip",
             file_ext=".mp4",
         ),
-        "storyboard_image": MediaSpec(
-            key="storyboard_image",
-            label="故事板图片",
-            media_type="image",
-            table_id=storyboard_video.TABLE_STORYBOARD_VIDEO,
-            script="tk_storyboard_video.py",
-            action="image",
-            status_field="故事板图片生成状态",
-            attachment_field="故事板图",
-            task_id_field="故事板图片任务ID",
-            error_field="故事板图片错误信息",
-            filter_fn=storyboard_video.filter_existing_fields,
-            file_suffix="storyboard",
-            file_ext=".png",
-        ),
         "script_doc_reference": MediaSpec(
             key="script_doc_reference",
             label="脚本文档参考底图",
@@ -463,14 +447,6 @@ def _stage_config_for_spec(spec: MediaSpec, token: str, fields: Dict[str, Any]) 
             default_model=nine_grid.DEFAULT_OTU_IMAGE_MODEL,
             default_api_base=nine_grid.DEFAULT_OTU_API_BASE,
             default_size=nine_grid.DEFAULT_IMAGE_SIZE,
-        )
-        return cfg
-    if spec.key == "storyboard_image":
-        _, cfg = storyboard_video.get_stage_config(
-            storyboard_video.IMAGE_STAGE_NAME,
-            default_model=storyboard_video.DEFAULT_STORYBOARD_IMAGE_MODEL,
-            default_api_base=storyboard_video.DEFAULT_OTU_API_BASE,
-            default_size=storyboard_video.DEFAULT_STORYBOARD_IMAGE_SIZE,
         )
         return cfg
     if spec.key == "script_doc_reference":

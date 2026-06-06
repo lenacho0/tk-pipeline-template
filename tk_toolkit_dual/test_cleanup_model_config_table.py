@@ -110,7 +110,7 @@ class CleanupModelConfigTableTests(unittest.TestCase):
     def test_plan_adds_clear_role_remarks_without_changing_statuses(self):
         records = [
             rec("runtime", **{"配置类型": "运行环节", "环节": "图片生成-OTU", "状态": "启用", "备注": "OTU 单张分镜图生成"}),
-            rec("runtime_fixed", **{"配置类型": "运行环节", "环节": "故事板视频生成-Omni", "状态": "启用", "备注": "模型固定 omni_flash-10s"}),
+            rec("runtime_fixed", **{"配置类型": "运行环节", "环节": "多图九宫格视频生成", "状态": "启用", "备注": "模型固定 omni_flash-10s"}),
             rec("default", **{"配置类型": "任务默认", "应用表格": "001-多角色首尾帧生成表", "任务环节": "参考图生成默认", "状态": "启用"}),
             rec("catalog", **{"配置类型": "模型目录", "显示名称": "OTU / gpt-image-2", "状态": "启用"}),
             rec("route", **{"配置类型": "路由开关", "环节": "统一AI路由启用状态", "模型名称": "指定记录启用", "状态": "启用", "备注": "恢复关闭"}),
@@ -410,7 +410,7 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in specs["测试状态"]["options"]], ["未测试", "测试通过", "测试失败", "停用"])
         self.assertEqual([item["name"] for item in specs["是否生产可用"]["options"]], ["是", "否"])
         self.assertEqual([item["name"] for item in specs["应用表格"]["options"]], cleanup.TASK_DEFAULT_APP_TABLE_OPTIONS)
-        self.assertEqual([item["name"] for item in specs["默认槽位"]["options"]], ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "故事板图片", "图片", "口播音频", "视频编辑"])
+        self.assertEqual([item["name"] for item in specs["默认槽位"]["options"]], ["stage", "参考图", "关键帧", "视频", "首帧图", "尾帧图", "分镜图", "图片", "口播音频", "视频编辑"])
         self.assertIn("供应商", specs)
         self.assertIn("能力类型", specs)
         self.assertIn("显示名称", specs)
