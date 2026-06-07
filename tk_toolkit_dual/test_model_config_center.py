@@ -488,9 +488,13 @@ class ModelConfigCenterTests(unittest.TestCase):
         image_default = specs[("prompt_image_video", "图片生成默认")]
         self.assertEqual(image_default.source_config_stage, "图片生成-OTU")
         self.assertEqual(image_default.slot_name, "图片")
+        self.assertEqual(image_default.dispatch_stage_name, "008图生视频图片生成")
+        self.assertEqual(image_default.max_concurrency, "10")
         video_default = specs[("prompt_image_video", "图生视频生成默认")]
         self.assertEqual(video_default.source_config_stage, "分镜视频生成-OTU")
         self.assertEqual(video_default.slot_name, "视频")
+        self.assertEqual(video_default.dispatch_stage_name, "008图生视频视频生成")
+        self.assertEqual(video_default.max_concurrency, "10")
         image_backfill = backfill[("prompt_image_video", "图片生成默认")]
         self.assertEqual(image_backfill.status_field, "图片生成状态")
         self.assertEqual(image_backfill.model_field, "图片AI模型")
@@ -517,6 +521,22 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(video_edit.source_config_stage, center.VIDEO_EDIT_SOURCE_CONFIG_STAGE)
         self.assertEqual(video_edit.slot_name, "视频编辑")
         self.assertIn(("video_edit", "视频编辑默认"), backfill)
+
+    def test_prompt_image_video_default_rows_include_dispatch_concurrency(self):
+        rows = center.build_task_default_rows([
+            rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2-2K", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "1080x1920", "画面比例": "9:16"}),
+            rec("vid", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl-hd", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
+        ])
+        by_stage = {
+            item["任务环节"]: item
+            for item in rows
+            if item.get("应用表格") == center.TASK_TABLES["prompt_image_video"]
+        }
+
+        self.assertEqual(by_stage["图片生成默认"]["调度环节名"], "008图生视频图片生成")
+        self.assertEqual(by_stage["图片生成默认"]["环节最大并发"], "10")
+        self.assertEqual(by_stage["图生视频生成默认"]["调度环节名"], "008图生视频视频生成")
+        self.assertEqual(by_stage["图生视频生成默认"]["环节最大并发"], "10")
 
     def test_run_migration_writes_catalog_and_defaults_to_single_config_table(self):
         records = [

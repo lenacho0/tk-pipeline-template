@@ -113,6 +113,8 @@ class RuntimeDefaultSpec:
     stage: str
     source_config_stage: str
     slot_name: str = ""
+    dispatch_stage_name: str = ""
+    max_concurrency: str = ""
 
 
 RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
@@ -134,8 +136,8 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格视频生成默认", "多图九宫格视频生成", "视频"),
     RuntimeDefaultSpec("video_edit", "视频编辑默认", VIDEO_EDIT_SOURCE_CONFIG_STAGE, "视频编辑"),
-    RuntimeDefaultSpec("prompt_image_video", "图片生成默认", "图片生成-OTU", "图片"),
-    RuntimeDefaultSpec("prompt_image_video", "图生视频生成默认", "分镜视频生成-OTU", "视频"),
+    RuntimeDefaultSpec("prompt_image_video", "图片生成默认", "图片生成-OTU", "图片", "008图生视频图片生成", "10"),
+    RuntimeDefaultSpec("prompt_image_video", "图生视频生成默认", "分镜视频生成-OTU", "视频", "008图生视频视频生成", "10"),
 )
 
 
@@ -681,6 +683,8 @@ def build_task_default_rows(records: Sequence[Mapping[str, Any]]) -> List[Dict[s
             "画面比例": text(fields, "画面比例"),
             "AI参数JSON": text(fields, "AI参数JSON"),
             "系统提示词": text(fields, "提示词"),
+            "调度环节名": spec.dispatch_stage_name,
+            "环节最大并发": spec.max_concurrency,
             "状态": "启用" if text(fields, "状态") != "停用" else "停用",
             "备注": f"source_config={spec.source_config_stage}; source_record_id={source['record_id']}; slot={spec.slot_name or 'stage'}",
         })
