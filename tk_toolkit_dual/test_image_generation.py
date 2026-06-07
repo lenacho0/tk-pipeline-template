@@ -86,6 +86,76 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "9:16")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
 
+    def test_run_image_generation_uses_reference_count_override_for_contact_sheet(self):
+        submitter = Mock(return_value=("task_contact", {"id": "task_contact"}))
+        poller = Mock(return_value={"result_url": "https://x.test/out.png"})
+        downloader = Mock()
+        route = ai_routing.AiRoute(
+            provider="OTU",
+            capability="图片",
+            task_type="图生图/参考图重绘",
+            model="OTU / gpt-image-2",
+            call_type="OTU /v1/videos",
+            api_base="https://otuapi.com",
+            api_key="sk-test",
+            params={"size": "720x1280", "aspect_ratio": "9:16"},
+        )
+
+        result = image_generation.run_image_generation(
+            route,
+            "Render from a contact sheet.",
+            "/tmp/out.png",
+            input_mode="image-to-image",
+            image_path="/tmp/reference_contact_sheet.png",
+            reference_image_paths=None,
+            reference_count_override=3,
+            metadata={"reference_roles": ["product_table:1", "model_table:1", "uploaded_reference:1"]},
+            size="720x1280",
+            aspect_ratio="9:16",
+            otu_submitter=submitter,
+            otu_poller=poller,
+            otu_downloader=downloader,
+        )
+
+        self.assertEqual(result.request_summary["reference_count"], 3)
+        self.assertEqual(submitter.call_args.kwargs["image_path"], "/tmp/reference_contact_sheet.png")
+        self.assertIsNone(submitter.call_args.kwargs["reference_image_paths"])
+
+    def test_run_image_generation_reports_otu_submitted_reference_cap(self):
+        submitter = Mock(return_value=("task_refs", {"id": "task_refs"}))
+        poller = Mock(return_value={"result_url": "https://x.test/out.png"})
+        downloader = Mock()
+        route = ai_routing.AiRoute(
+            provider="OTU",
+            capability="图片",
+            task_type="图生图/参考图重绘",
+            model="OTU / gpt-image-2",
+            call_type="OTU /v1/videos",
+            api_base="https://otuapi.com",
+            api_key="sk-test",
+            params={"size": "720x1280", "aspect_ratio": "9:16"},
+        )
+
+        result = image_generation.run_image_generation(
+            route,
+            "Render from many references.",
+            "/tmp/out.png",
+            input_mode="image-to-image",
+            image_path="/tmp/primary.png",
+            reference_image_paths=[f"/tmp/ref_{idx}.png" for idx in range(6)],
+            reference_count_override=7,
+            metadata={"reference_roles": ["primary", "product_table:1", "model_table:1", "uploaded_reference:1"]},
+            size="720x1280",
+            aspect_ratio="9:16",
+            otu_submitter=submitter,
+            otu_poller=poller,
+            otu_downloader=downloader,
+        )
+
+        self.assertEqual(result.request_summary["reference_count"], 7)
+        self.assertEqual(result.request_summary["submitted_reference_count"], 5)
+        self.assertEqual(result.request_summary["dropped_reference_count"], 2)
+
     def test_run_image_generation_uses_aitgenne_image_to_image(self):
         submitter = Mock(return_value={"data": [{"url": "https://x.test/out.png"}]})
         saver = Mock()

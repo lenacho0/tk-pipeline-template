@@ -119,11 +119,12 @@ R2 `pub-*.r2.dev` 下载 mp4 时出现过 SSL EOF、read timeout；OTU `/v1/vide
 
 ## 14. 参考图不是“传了就一定强约束”
 
-001 故事板图曾出现人物和产品跑偏：父任务、产品、模特和环境图都没错，但拆分 prompt 继承了脚本文字里的服装/产品外观，和参考图冲突；同时 OTU 图片接口只有第一张图作为强 `image_base64`，其他参考图主要在 `metadata.urls`。
+001/008 图片参考曾出现人物和产品跑偏：父任务、产品、模特和环境图都没错，但拆分 prompt 继承了脚本文字里的服装/产品外观，和参考图冲突；另一次根因是 OTU gpt-image-2 图片参考图按旧顶层 `image_base64` / multipart 方式提交，没有走当前接口文档要求的 JSON `metadata.urls`。
 
 以后涉及多参考图时：
-- 先确认目标 API 对第一张图、附加 URL、metadata 的真实权重
-- 如果多张参考图都必须强约束，考虑合成 contact sheet 作为主垫图
+- OTU gpt-image-2 图片参考图统一走 `metadata.urls`，本地文件必须转成 `data:image/...;base64,...`
+- OTU 图片参考上限按接口文档为 5 张，优先保留产品图、主参考图、模特图，再保留普通参考图
+- 不要把 OTU 图片的 JSON `metadata.urls` 和 OTU/Veo/Omni 视频的 multipart `input_reference[]` 混用
 - prompt 中明确“参考图优先于脚本文字外观”
 - 测试不仅看字段是否传入，还要看最终参考图顺序和主图选择
 

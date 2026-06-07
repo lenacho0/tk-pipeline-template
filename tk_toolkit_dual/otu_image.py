@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,6 +15,7 @@ DEFAULT_OTU_API_BASE = "https://otuapi.com"
 DEFAULT_OTU_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_OTU_IMAGE_SIZE = "1024x1024"
 DEFAULT_ASPECT_RATIO = "9:16"
+MAX_OTU_IMAGE_REFERENCES = 5
 SUBMIT_TIMEOUT = 180
 POLL_TIMEOUT = 45
 DOWNLOAD_TIMEOUT = 300
@@ -103,6 +103,77 @@ def extract_otu_result_url(data: Dict[str, Any]) -> str:
     return ""
 
 
+def _mime_type_for_image_path(path: str) -> str:
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    return "image/png"
+
+
+def _image_path_to_data_url(path: str) -> str:
+    with open(path, "rb") as image_file:
+        image_b64 = base64.b64encode(image_file.read()).decode("ascii")
+    return f"data:{_mime_type_for_image_path(path)};base64,{image_b64}"
+
+
+def _reference_priority(role: str, *, source: str, index: int) -> Tuple[int, int]:
+    raw = (role or "").lower()
+    if "product" in raw or "产品" in raw:
+        return 0, index
+    if source in {"image_path", "image_url"} or "primary" in raw or "首帧" in raw or "主参考" in raw:
+        return 1, index
+    if "model" in raw or "模特" in raw or "person" in raw or "human" in raw:
+        return 2, index
+    return 3, index
+
+
+def _limited_reference_urls(
+    metadata_urls: List[str],
+    roles: List[str],
+    *,
+    image_url: str = "",
+    image_path: str = "",
+    reference_image_paths: Optional[List[str]] = None,
+) -> List[str]:
+    items: List[Dict[str, Any]] = []
+
+    def append_item(url: str, role: str, source: str) -> None:
+        if not url:
+            return
+        index = len(items)
+        items.append({
+            "url": url,
+            "role": role,
+            "source": source,
+            "index": index,
+        })
+
+    for idx, url in enumerate(metadata_urls):
+        append_item(url, roles[idx] if idx < len(roles) else "", "metadata_url")
+    role_offset = len(metadata_urls)
+    if image_url:
+        append_item(image_url, roles[role_offset] if role_offset < len(roles) else "primary_reference", "image_url")
+        role_offset += 1
+    if image_path:
+        append_item(_image_path_to_data_url(image_path), roles[role_offset] if role_offset < len(roles) else "primary_reference", "image_path")
+        role_offset += 1
+    for path in reference_image_paths or []:
+        append_item(_image_path_to_data_url(path), roles[role_offset] if role_offset < len(roles) else "", "reference_image_path")
+        role_offset += 1
+
+    deduped: List[Dict[str, Any]] = []
+    seen = set()
+    for item in items:
+        if item["url"] in seen:
+            continue
+        seen.add(item["url"])
+        deduped.append(item)
+    deduped.sort(key=lambda item: _reference_priority(item.get("role", ""), source=item.get("source", ""), index=int(item.get("index", 0))))
+    return [item["url"] for item in deduped[:MAX_OTU_IMAGE_REFERENCES]]
+
+
 def submit_otu_image_task(
     config: Dict[str, str],
     prompt: str,
@@ -130,43 +201,28 @@ def submit_otu_image_task(
         "input_mode": input_mode,
         "size": size,
     }
-    if image_url:
-        payload["image_url"] = image_url
-    if image_path:
-        with open(image_path, "rb") as image_file:
-            payload["image_base64"] = base64.b64encode(image_file.read()).decode("ascii")
     reference_image_paths = [path for path in (reference_image_paths or []) if path]
+    reference_urls = _limited_reference_urls(
+        list(submit_metadata.get("urls") or []) if isinstance(submit_metadata.get("urls"), list) else [],
+        [extract_text(role).strip() for role in (submit_metadata.get("reference_roles") or [])] if isinstance(submit_metadata.get("reference_roles"), list) else [],
+        image_url=image_url,
+        image_path=image_path,
+        reference_image_paths=reference_image_paths,
+    )
+    if reference_urls:
+        submit_metadata["urls"] = reference_urls
     last_submit_error: Optional[requests.RequestException] = None
     for attempt in range(1, MAX_SUBMIT_REQUEST_ERRORS + 1):
-        opened = []
         try:
-            if reference_image_paths:
-                files = []
-                for path in reference_image_paths:
-                    image_file = open(path, "rb")
-                    opened.append(image_file)
-                    files.append(("input_reference[]", (os.path.basename(path), image_file, "image/png")))
-                data = {
-                    "model": payload["model"],
-                    "prompt": payload["prompt"],
-                    "metadata": json.dumps(submit_metadata, ensure_ascii=False),
-                    "input_mode": payload["input_mode"],
-                    "size": payload["size"],
-                }
-                resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
-            else:
-                json_headers = dict(headers)
-                json_headers["Content-Type"] = "application/json"
-                resp = requests.post(url, headers=json_headers, json=payload, timeout=SUBMIT_TIMEOUT)
+            json_headers = dict(headers)
+            json_headers["Content-Type"] = "application/json"
+            resp = requests.post(url, headers=json_headers, json=payload, timeout=SUBMIT_TIMEOUT)
             break
         except requests.RequestException as exc:
             last_submit_error = exc
             if attempt >= MAX_SUBMIT_REQUEST_ERRORS:
                 raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={exc}") from exc
             time.sleep(POLL_INTERVAL)
-        finally:
-            for handle in opened:
-                handle.close()
     else:
         raise RuntimeError(f"OTU 图片任务提交网络连续失败: error={last_submit_error}")
     try:

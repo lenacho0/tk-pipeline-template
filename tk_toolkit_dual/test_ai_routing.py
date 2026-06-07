@@ -260,6 +260,7 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["payload"]["metadata"]["aspectRatio"], "9:16")
         self.assertEqual(summary["payload"]["metadata"]["aspect_ratio"], "9:16")
         self.assertEqual(summary["payload"]["metadata"]["size"], "1024x1024")
+        self.assertEqual(summary["payload"]["metadata"]["urls"], ["<reference_url>", "<reference_url>"])
         self.assertEqual(summary["media_spec"]["size"], "1024x1024")
         self.assertEqual(summary["media_spec"]["aspect_ratio"], "9:16")
         self.assertEqual(summary["adapter_payload_summary"]["size"], "payload.size")

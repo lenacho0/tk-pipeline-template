@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import base64
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -31,7 +32,7 @@ class OtuImagePollingTests(unittest.TestCase):
         self.assertEqual(body, {"id": "task_123"})
         self.assertEqual(poster.call_count, 2)
 
-    def test_submit_reference_image_paths_sends_multipart_input_references(self):
+    def test_submit_reference_image_paths_sends_json_metadata_urls(self):
         submitted = Mock(status_code=200)
         submitted.json.return_value = {"id": "task_multi"}
 
@@ -55,17 +56,18 @@ class OtuImagePollingTests(unittest.TestCase):
         self.assertEqual(task_id, "task_multi")
         self.assertEqual(body, {"id": "task_multi"})
         kwargs = poster.call_args.kwargs
-        self.assertNotIn("json", kwargs)
-        self.assertNotIn("Content-Type", kwargs["headers"])
-        self.assertEqual(kwargs["data"]["model"], "gpt-image-2")
-        self.assertEqual(kwargs["data"]["input_mode"], "image-to-image")
-        self.assertIn('"reference_roles": ["product:1", "human:owner"]', kwargs["data"]["metadata"])
-        self.assertIn('"aspectRatio": "16:9"', kwargs["data"]["metadata"])
-        self.assertIn('"aspect_ratio": "16:9"', kwargs["data"]["metadata"])
-        self.assertIn('"size": "1280x720"', kwargs["data"]["metadata"])
-        self.assertEqual(kwargs["data"]["size"], "1280x720")
-        self.assertEqual([item[0] for item in kwargs["files"]], ["input_reference[]", "input_reference[]"])
-        self.assertEqual([item[1][0] for item in kwargs["files"]], ["product.png", "human.png"])
+        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
+        payload = kwargs["json"]
+        self.assertEqual(payload["model"], "gpt-image-2")
+        self.assertEqual(payload["input_mode"], "image-to-image")
+        self.assertEqual(payload["metadata"]["reference_roles"], ["product:1", "human:owner"])
+        self.assertEqual(payload["metadata"]["aspectRatio"], "16:9")
+        self.assertEqual(payload["metadata"]["aspect_ratio"], "16:9")
+        self.assertEqual(payload["metadata"]["size"], "1280x720")
+        self.assertEqual(len(payload["metadata"]["urls"]), 2)
+        self.assertTrue(payload["metadata"]["urls"][0].startswith("data:image/png;base64,"))
+        self.assertTrue(payload["metadata"]["urls"][1].startswith("data:image/png;base64,"))
 
     def test_submit_json_image_payload_includes_aspect_ratio_metadata_aliases(self):
         submitted = Mock(status_code=200)
@@ -88,35 +90,72 @@ class OtuImagePollingTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["aspect_ratio"], "1:1")
         self.assertEqual(payload["metadata"]["size"], "1024x1024")
 
-    def test_submit_reference_image_paths_does_not_fall_back_to_weak_url_refs(self):
-        rejected = Mock(status_code=400)
-        rejected.json.return_value = {"message": '{"error":{"message":"Invalid JSON body"}}'}
+    def test_submit_image_path_uses_metadata_urls_data_url(self):
+        submitted = Mock(status_code=200)
+        submitted.json.return_value = {"id": "task_image_path"}
 
         with tempfile.TemporaryDirectory() as tmp:
             first = Path(tmp) / "product.png"
-            second = Path(tmp) / "human.png"
             first.write_bytes(b"product")
-            second.write_bytes(b"human")
 
-            with patch.object(otu_image.requests, "post", return_value=rejected) as poster:
-                with self.assertRaises(RuntimeError) as ctx:
-                    otu_image.submit_otu_image_task(
-                        {"api_key": "test-key", "api_base": "https://otu.example", "model": "gpt-image-2"},
-                        "prompt",
-                        input_mode="image-to-image",
-                        reference_image_paths=[str(first), str(second)],
-                        metadata={
-                            "urls": ["https://x.test/product.png", "https://x.test/human.png"],
-                            "reference_roles": ["product:1", "human:owner"],
-                            "aspectRatio": "9:16",
-                        },
-                        size="720x1280",
-                    )
+            with patch.object(otu_image.requests, "post", return_value=submitted) as poster:
+                task_id, body = otu_image.submit_otu_image_task(
+                    {"api_key": "test-key", "api_base": "https://otu.example", "model": "gpt-image-2"},
+                    "prompt",
+                    input_mode="image-to-image",
+                    image_path=str(first),
+                    metadata={"reference_roles": ["product:1"]},
+                    aspect_ratio="9:16",
+                )
 
-        self.assertIn("OTU 图片任务提交失败", str(ctx.exception))
+        self.assertEqual(task_id, "task_image_path")
+        self.assertEqual(body, {"id": "task_image_path"})
         self.assertEqual(poster.call_count, 1)
-        self.assertIn("files", poster.call_args.kwargs)
-        self.assertNotIn("json", poster.call_args.kwargs)
+        payload = poster.call_args.kwargs["json"]
+        self.assertNotIn("image_base64", payload)
+        self.assertEqual(payload["metadata"]["reference_roles"], ["product:1"])
+        self.assertEqual(len(payload["metadata"]["urls"]), 1)
+        self.assertTrue(payload["metadata"]["urls"][0].startswith("data:image/png;base64,"))
+
+    def test_submit_caps_metadata_urls_to_five_with_role_priority(self):
+        submitted = Mock(status_code=200)
+        submitted.json.return_value = {"id": "task_priority"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary.png"
+            ordinary_one = Path(tmp) / "ordinary_one.png"
+            model = Path(tmp) / "model.png"
+            product_one = Path(tmp) / "product_one.png"
+            ordinary_two = Path(tmp) / "ordinary_two.png"
+            product_two = Path(tmp) / "product_two.png"
+            for path in [primary, ordinary_one, model, product_one, ordinary_two, product_two]:
+                path.write_bytes(path.stem.encode("utf-8"))
+
+            with patch.object(otu_image.requests, "post", return_value=submitted) as poster:
+                otu_image.submit_otu_image_task(
+                    {"api_key": "test-key", "api_base": "https://otu.example", "model": "gpt-image-2"},
+                    "prompt",
+                    input_mode="image-to-image",
+                    image_path=str(primary),
+                    reference_image_paths=[str(ordinary_one), str(model), str(product_one), str(ordinary_two), str(product_two)],
+                    metadata={
+                        "reference_roles": [
+                            "generated_primary",
+                            "uploaded_reference:1",
+                            "model_table:1",
+                            "product_table:1",
+                            "uploaded_reference:2",
+                            "uploaded_product:1",
+                        ],
+                    },
+                )
+
+        urls = poster.call_args.kwargs["json"]["metadata"]["urls"]
+        selected_payloads = [
+            base64.b64decode(url.split(",", 1)[1]).decode("utf-8")
+            for url in urls
+        ]
+        self.assertEqual(selected_payloads, ["product_one", "product_two", "primary", "model", "ordinary_one"])
 
     def test_poll_continues_after_transient_request_error(self):
         completed = Mock(status_code=200)

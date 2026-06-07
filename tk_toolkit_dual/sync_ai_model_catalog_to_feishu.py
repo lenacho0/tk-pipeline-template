@@ -213,6 +213,8 @@ def build_candidate_media_summary(route: ai_routing.AiRoute, prompt: str, *, ref
         payload["metadata"] = {"aspectRatio": params.get("aspect_ratio") or "9:16"}
         if reference_count:
             payload["input_mode"] = "image-to-image"
+            if route.provider == "OTU":
+                payload["metadata"]["urls"] = ["<reference_url>"] * min(int(reference_count or 0), 5)
     else:
         payload["size"] = params.get("size") or "720x1280"
         payload["seconds"] = str(params.get("seconds") or "8")

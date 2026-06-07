@@ -575,6 +575,8 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         payload["metadata"] = adapt_image_metadata(size=size, aspect_ratio=aspect_ratio)
         if reference_count:
             payload["input_mode"] = "image-to-image"
+            if str(route.provider or "").strip().upper() == "OTU":
+                payload["metadata"]["urls"] = ["<reference_url>"] * min(int(reference_count or 0), 5)
         spec = media_spec_from_values(size=size, aspect_ratio=aspect_ratio, slot_name=route.task_type, capability=route.capability)
         adapter_payload_summary = {
             "size": "payload.size",

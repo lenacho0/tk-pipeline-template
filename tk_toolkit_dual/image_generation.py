@@ -66,14 +66,19 @@ def _request_summary(
     input_mode: str,
     reference_count: int,
     metadata: Optional[Dict[str, Any]] = None,
+    submitted_reference_count: Optional[int] = None,
 ) -> Dict[str, Any]:
+    requested_count = int(reference_count or 0)
+    submitted_count = requested_count if submitted_reference_count is None else int(submitted_reference_count or 0)
     return {
         "provider": provider,
         "model": model,
         "size": size,
         "aspect_ratio": aspect_ratio,
         "input_mode": input_mode,
-        "reference_count": int(reference_count or 0),
+        "reference_count": requested_count,
+        "submitted_reference_count": submitted_count,
+        "dropped_reference_count": max(0, requested_count - submitted_count),
         "metadata_keys": sorted((metadata or {}).keys()),
         "adapter_payload_summary": {
             "size": "payload.size",
@@ -207,6 +212,7 @@ def run_image_generation(
     image_path: str = "",
     image_url: str = "",
     reference_image_paths: Optional[List[str]] = None,
+    reference_count_override: Optional[int] = None,
     metadata: Optional[Dict[str, Any]] = None,
     size: str = DEFAULT_OTU_IMAGE_SIZE,
     aspect_ratio: str = "9:16",
@@ -224,6 +230,7 @@ def run_image_generation(
     model_name = execution["model"]
     size = execution["size"]
     aspect_ratio = execution["aspect_ratio"]
+    reference_count = int(reference_count_override) if reference_count_override is not None else len(reference_image_paths or [])
     if route.provider == "OTU":
         cfg = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
         request_summary: Dict[str, Any]
@@ -236,8 +243,9 @@ def run_image_generation(
                 size=size,
                 aspect_ratio=aspect_ratio,
                 input_mode=input_mode,
-                reference_count=len(reference_image_paths or []),
+                reference_count=reference_count,
                 metadata=metadata,
+                submitted_reference_count=min(reference_count, 5) if reference_count else 0,
             )
             request_summary["existing_task_id"] = task_id
         else:
@@ -248,8 +256,9 @@ def run_image_generation(
                 size=size,
                 aspect_ratio=aspect_ratio,
                 input_mode=input_mode,
-                reference_count=len(reference_image_paths or []),
+                reference_count=reference_count,
                 metadata=effective_metadata,
+                submitted_reference_count=min(reference_count, 5) if reference_count else 0,
             )
             submit_kwargs: Dict[str, Any] = {
                 "input_mode": input_mode,
@@ -283,8 +292,9 @@ def run_image_generation(
             size=size,
             aspect_ratio=aspect_ratio,
             input_mode=input_mode,
-            reference_count=len(reference_image_paths or []),
+            reference_count=reference_count,
             metadata=effective_metadata,
+            submitted_reference_count=reference_count,
         )
         body = _submit_aitgenne_image_with_retry(
             aitgenne_submitter,

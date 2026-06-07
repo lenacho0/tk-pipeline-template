@@ -40,6 +40,14 @@ class _RuntimeConfig(Dict[str, str]):
     pass
 
 
+def image_path_to_data_url(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    mime_type = "image/jpeg" if suffix in {".jpg", ".jpeg"} else "image/webp" if suffix == ".webp" else "image/png"
+    with open(path, "rb") as image_file:
+        image_b64 = base64.b64encode(image_file.read()).decode("ascii")
+    return f"data:{mime_type};base64,{image_b64}"
+
+
 @dataclass(frozen=True)
 class SmokeProfile:
     name: str
@@ -303,15 +311,17 @@ def submit_smoke_task(
     selected_refs = select_reference_paths(reference_paths, profile)
     if entry.capability == "图片":
         image_path = selected_refs[0]
-        with open(image_path, "rb") as image_file:
-            payload = {
-                "model": entry.model,
-                "prompt": IMAGE_PROMPT,
-                "metadata": {"aspectRatio": profile.aspect_ratio},
-                "input_mode": "image-to-image",
-                "size": profile.size,
-                "image_base64": base64.b64encode(image_file.read()).decode("ascii"),
-            }
+        payload = {
+            "model": entry.model,
+            "prompt": IMAGE_PROMPT,
+            "metadata": {
+                "aspectRatio": profile.aspect_ratio,
+                "aspect_ratio": profile.aspect_ratio,
+                "urls": [image_path_to_data_url(image_path)],
+            },
+            "input_mode": "image-to-image",
+            "size": profile.size,
+        }
         resp = post(endpoint, headers={"Authorization": f"Bearer {runtime_config['api_key']}", "Content-Type": "application/json"}, json=payload, timeout=180)
         payload_keys = sorted(payload.keys())
     else:
