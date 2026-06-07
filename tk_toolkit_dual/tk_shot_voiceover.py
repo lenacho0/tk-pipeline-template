@@ -129,6 +129,11 @@ def normalize_audio_length_seconds(value):
     return round(number / 1000, 3) if number > 60 else round(number, 3)
 
 
+def normalize_minimax_model_name(model):
+    raw = extract_text(model).strip()
+    return raw.split(' / ', 1)[1].strip() if ' / ' in raw else raw
+
+
 def build_minimax_payload(text, config):
     options = config.get('options') or {}
     voice_setting = dict(options.get('voice_setting') or {})
@@ -149,7 +154,7 @@ def build_minimax_payload(text, config):
         audio_setting.update(options['audio_setting'])
 
     payload = {
-        'model': config.get('model') or DEFAULT_MODEL,
+        'model': normalize_minimax_model_name(config.get('model')) or DEFAULT_MODEL,
         'text': text,
         'voice_setting': voice_setting,
         'audio_setting': audio_setting,

@@ -39,6 +39,13 @@ class ShotVoiceoverTests(unittest.TestCase):
         self.assertEqual(payload['language_boost'], 'Thai')
         self.assertEqual(payload['audio_setting']['format'], 'mp3')
 
+    def test_build_payload_uses_raw_model_from_display_name(self):
+        payload = voiceover.build_minimax_payload('สวัสดี', {
+            'model': 'Aitgenne / speech-2.8-hd',
+            'options': {'voice_id': 'voice-x'},
+        })
+        self.assertEqual(payload['model'], 'speech-2.8-hd')
+
     def test_record_voice_id_overrides_default_config_voice_id(self):
         config = {'model': 'speech-2.8-turbo', 'options': {'voice_id': 'default-voice', 'speed': 1.0}}
         merged = voiceover.apply_record_voice_options(config, {'口播音色ID': 'record-voice'})

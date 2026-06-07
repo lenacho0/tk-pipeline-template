@@ -28,6 +28,7 @@ from tk_shot_voiceover import (
     find_stage_config,
     filter_existing_fields,
     normalize_audio_length_seconds,
+    normalize_minimax_model_name,
     redact_secret,
     upload_audio_to_feishu,
 )
@@ -143,7 +144,7 @@ def clone_voice(file_id, voice_id, preview_text, config):
     if preview_text:
         payload.update({
             'text': preview_text,
-            'model': config.get('model') or 'speech-2.8-turbo',
+            'model': normalize_minimax_model_name(config.get('model')) or 'speech-2.8-turbo',
             'language_boost': options.get('language_boost', 'Thai'),
         })
     resp = requests.post(

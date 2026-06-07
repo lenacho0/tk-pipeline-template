@@ -105,6 +105,22 @@ class VoiceLibraryTests(unittest.TestCase):
         self.assertEqual(payload['voice_id'], 'tkvoice_record_1')
         self.assertEqual(payload['language_boost'], 'Thai')
 
+    def test_clone_voice_uses_raw_model_from_display_name(self):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            'demo_audio': 'https://example.com/demo.mp3',
+            'base_resp': {'status_code': 0, 'status_msg': 'success'},
+        }
+        with patch.object(voices.requests, 'post', return_value=response) as post:
+            voices.clone_voice(123, 'tkvoice_record_1', 'preview', {
+                'api_key': 'key',
+                'api_base': 'https://api.aitgenne.com/v1',
+                'model': 'Aitgenne / speech-2.8-hd',
+            })
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['model'], 'speech-2.8-hd')
+
     def test_clone_voice_reports_non_json_response_context(self):
         response = Mock()
         response.status_code = 404
