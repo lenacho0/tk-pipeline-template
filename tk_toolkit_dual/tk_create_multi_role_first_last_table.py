@@ -85,7 +85,7 @@ REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("
 REFERENCE_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成参考图", "Orange")]
 KEYFRAME_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成关键帧图", "Orange")]
 VIDEO_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成视频片段", "Orange")]
-ASSET_TYPE_OPTIONS = [opt("human"), opt("pet"), opt("environment"), opt("object")]
+ASSET_TYPE_OPTIONS = [opt("human"), opt("pet"), opt("environment")]
 KEYFRAME_TYPE_OPTIONS = [
     opt("S01_FIRST"),
     opt("S01_TAIL_SHARED_S02_FIRST"),

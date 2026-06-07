@@ -229,6 +229,37 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertTrue(payload["shots"][1]["reference_requirements"]["use_product_reference"])
         self.assertEqual(payload["shots"][1]["reference_requirements"]["asset_ids"], [])
 
+    def test_normalize_payload_filters_product_assets_and_keeps_product_reference_flag(self):
+        raw = self.sample_payload()
+        raw["global_assets"].append({
+            "asset_id": "product_ref",
+            "asset_type": "product",
+            "asset_name": "Product bottle",
+            "prompt": "Use the uploaded product reference image for exact packaging.",
+            "required_for_story": True,
+        })
+        raw["global_assets"].append({
+            "asset_id": "object_product",
+            "asset_type": "object",
+            "asset_name": "Spray bottle product reference",
+            "prompt": "Exact product bottle reference, do not redesign the packaging.",
+            "required_for_story": True,
+        })
+        raw["shots"][1]["reference_requirements"]["asset_ids"] = ["product_ref", "object_product"]
+        raw["shots"][1]["reference_requirements"]["use_product_reference"] = False
+        raw["shots"][1]["image_prompt"] = "Product bottle close-up with packaging visible"
+
+        payload = doc_shots.validate_and_normalize_payload(raw, target_seconds=8)
+
+        asset_ids = {asset["asset_id"] for asset in payload["global_assets"]}
+        self.assertNotIn("product_ref", asset_ids)
+        self.assertNotIn("object_product", asset_ids)
+        self.assertTrue(payload["shots"][1]["reference_requirements"]["use_product_reference"])
+        self.assertEqual(payload["shots"][1]["reference_requirements"]["asset_ids"], [])
+
+        asset_records = doc_shots.build_reference_asset_records("recParent", payload)
+        self.assertNotIn("product_ref", [item["fields"]["资产ID"] for item in asset_records])
+
     def test_build_records_creates_asset_and_shot_rows(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)
 

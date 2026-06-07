@@ -82,6 +82,64 @@ TEXT_SPLIT_STAGE_NAME = "脚本文档结构化拆分-Gemini"
 IMAGE_STAGE_NAME = "图片生成-OTU"
 ASSET_TYPES = {"pet", "environment", "human"}
 YES_VALUES = {"是", "true", "yes", "1", "需要", "y"}
+PRODUCT_REFERENCE_TERMS = (
+    "product",
+    "branded",
+    "package",
+    "packaging",
+    "label",
+    "bottle",
+    "spray",
+    "sprayer",
+    "cleaner",
+    "deodorizer",
+    "deodoriser",
+    "odor remover",
+    "odour remover",
+    "产品",
+    "包装",
+    "瓶身",
+    "瓶子",
+    "喷雾",
+    "喷瓶",
+    "清洁剂",
+    "除味剂",
+    "除臭剂",
+    "去味剂",
+    "展示产品",
+    "拿着产品",
+    "使用产品",
+)
+PRODUCT_REFERENCE_NEGATIONS = (
+    "no product",
+    "without product",
+    "product not visible",
+    "no bottle",
+    "without bottle",
+    "no spray bottle",
+    "without spray bottle",
+    "无产品",
+    "没有产品",
+    "不出现产品",
+    "产品不出镜",
+)
+PRODUCT_ASSET_ID_TERMS = (
+    "product",
+    "product_ref",
+    "product_reference",
+    "product_image",
+    "bottle",
+    "spray_bottle",
+    "sprayer",
+    "package",
+    "packaging",
+    "产品",
+    "商品",
+    "包装",
+    "瓶",
+    "喷雾",
+    "喷瓶",
+)
 
 DEFAULT_PARSE_PROMPT = """
 你是短视频脚本文档结构化拆解器。用户会给你一整篇已经写好的脚本文档。
@@ -100,6 +158,7 @@ DEFAULT_PARSE_PROMPT = """
    - environment prompt 不能默认套用尿渍，不能默认套用虫害，也不能默认套用污渍、破损或任何固定事故类型；脚本没有明确可见问题锚点时，不得编造事故点。
    - environment prompt 必须是直接给图片模型使用的画面描述，只写场景中可见内容；不得写 source script、if present、if one exists、when present in the script、script-defined 这类元指令。
    - environment prompt 仍然禁止人物、宠物、产品瓶、喷雾瓶、手、身体局部、字幕、logo、水印；只允许保留房间、家具、材质、光线、生活道具和可见问题痕迹。
+   - 产品、产品包装、瓶身、喷雾瓶、清洁剂/除味剂/除臭剂/去味剂不得进入 global_assets；产品只通过 shot.reference_requirements.use_product_reference=true 表达，由系统从关联产品记录读取真实上传产品图。
 2. 按分镜拆成 shots。
 3. 对每条 shot 判断生成分镜图时到底需要哪些参考图：
    - 只有该分镜画面里需要保持某个宠物/环境/人物一致时，才把对应 asset_id 放进 asset_ids。
@@ -241,6 +300,36 @@ def normalize_asset(asset: Dict[str, Any], idx: int) -> Dict[str, Any]:
     }
 
 
+def text_implies_product_reference(*values: Any) -> bool:
+    text = " ".join(extract_text(value).strip() for value in values if extract_text(value).strip()).lower()
+    if not text:
+        return False
+    if any(negation in text for negation in PRODUCT_REFERENCE_NEGATIONS):
+        return False
+    return any(term in text for term in PRODUCT_REFERENCE_TERMS)
+
+
+def product_reference_asset_id_like(value: Any) -> bool:
+    text = extract_text(value).strip().lower()
+    if not text:
+        return False
+    return any(term in text for term in PRODUCT_ASSET_ID_TERMS)
+
+
+def raw_asset_is_product_reference(asset: Dict[str, Any]) -> bool:
+    asset_type = extract_text(asset.get("asset_type") or asset.get("type")).strip().lower()
+    if asset_type == "product":
+        return True
+    values = [
+        asset.get("asset_id") or asset.get("id"),
+        asset.get("asset_name") or asset.get("name"),
+        asset.get("prompt") or asset.get("reference_prompt"),
+    ]
+    if asset_type == "object":
+        return product_reference_asset_id_like(values[0]) or text_implies_product_reference(*values)
+    return False
+
+
 def normalize_reference_requirements(raw: Any) -> Dict[str, Any]:
     data = raw if isinstance(raw, dict) else {}
     asset_ids = []
@@ -300,7 +389,20 @@ def normalize_shot(shot: Dict[str, Any], idx: int) -> Dict[str, Any]:
 def validate_and_normalize_payload(payload: Dict[str, Any], target_seconds: float) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("脚本文档解析 JSON 顶层必须是对象")
-    assets = [normalize_asset(asset, idx) for idx, asset in enumerate(_as_list(payload.get("global_assets")), start=1)]
+    raw_assets = [asset for asset in _as_list(payload.get("global_assets")) if isinstance(asset, dict)]
+    product_asset_ids = {
+        extract_text(asset.get("asset_id") or asset.get("id")).strip()
+        for asset in raw_assets
+        if raw_asset_is_product_reference(asset)
+    }
+    product_asset_ids = {asset_id for asset_id in product_asset_ids if asset_id}
+    assets = [
+        normalize_asset(asset, idx)
+        for idx, asset in enumerate(
+            [asset for asset in raw_assets if not raw_asset_is_product_reference(asset)],
+            start=1,
+        )
+    ]
     shots = [normalize_shot(shot, idx) for idx, shot in enumerate(_as_list(payload.get("shots")), start=1)]
     if not shots:
         raise ValueError("脚本文档解析 JSON 缺少 shots")
@@ -312,6 +414,22 @@ def validate_and_normalize_payload(payload: Dict[str, Any], target_seconds: floa
             shot.get("character_ids", []),
             [shot.get("environment_id", "")] if shot.get("environment_id") else [],
         )
+        cleaned_asset_ids = []
+        removed_product_asset = False
+        for asset_id in required_asset_ids:
+            if asset_id in product_asset_ids or product_reference_asset_id_like(asset_id):
+                removed_product_asset = True
+                continue
+            cleaned_asset_ids.append(asset_id)
+        if removed_product_asset or text_implies_product_reference(
+            shot.get("visual"),
+            shot.get("image_prompt"),
+            shot.get("video_prompt"),
+            shot.get("product_visibility"),
+            shot.get("reference_requirements", {}).get("reason") if isinstance(shot.get("reference_requirements"), dict) else "",
+        ):
+            shot["reference_requirements"]["use_product_reference"] = True
+        required_asset_ids = cleaned_asset_ids
         shot["reference_requirements"]["asset_ids"] = required_asset_ids
         missing = [asset_id for asset_id in required_asset_ids if asset_id not in known_assets]
         if missing:

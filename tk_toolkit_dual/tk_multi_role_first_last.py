@@ -145,9 +145,9 @@ DEFAULT_PARSE_PROMPT = """
   "assets": [
     {
       "asset_id": "role_a",
-      "asset_type": "human | pet | environment | object",
+      "asset_type": "human | pet | environment",
       "asset_name": "参考资产名称",
-      "prompt": "生成该角色/环境/物件参考图的完整提示词",
+      "prompt": "生成该角色/环境参考图的完整提示词",
       "source_role_ids": ["role_a"]
     }
   ],
@@ -188,7 +188,9 @@ DEFAULT_PARSE_PROMPT = """
 - 单独写清楚 dialogue、ambient noise、sound effects、voice tone/timbre；没有口播时写 No speech. Natural ambient sound only.
 
 参考资产规则：
-- human / pet / object 资产只生成该资产本身，不要混入其他角色、产品或完整剧情。
+- assets[] 只允许 human / pet / environment。产品、产品包装、瓶身、喷雾瓶、清洁剂/除味剂/除臭剂/去味剂不得进入 assets[]，不得生成 product_ref / product / bottle / spray_bottle 等产品参考资产。
+- 产品一致性只能通过 keyframes[].reference_requirements.use_product_reference=true 表达，由系统从关联产品记录读取真实上传产品图。
+- human / pet 资产只生成该资产本身，不要混入其他角色、产品或完整剧情。
 - human 资产必须生成 single person 的真实人物参考图：one angle, front-facing upper-body portrait, full unobstructed face visible, pure white background；人物必须正对镜头，腰部以上半身构图，完整露出全脸，双眼、鼻子、嘴巴清晰可见。
 - human 资产必须写成 UGC smartphone photo 风格：普通手机拍摄质感、自然光感、日常衣着、本地素人感、natural skin texture、毛孔、细纹、小瑕疵、轻微不完美；背景仍必须是 pure white background；not studio, not advertising, not commercial portrait, not fashion model, not beauty retouching。
 - human 资产必须明确禁止 no side profile、侧脸、背影、低头遮脸、墨镜遮脸、头发/手/道具遮挡脸部。
@@ -524,7 +526,7 @@ def sanitize_environment_prompt(prompt: str) -> str:
 
 def normalize_asset(asset: Dict[str, Any], idx: int) -> Dict[str, Any]:
     asset_type = extract_text(asset.get("asset_type") or asset.get("type")).strip().lower() or "human"
-    if asset_type not in {"human", "pet", "environment", "object"}:
+    if asset_type not in {"human", "pet", "environment"}:
         raise ValueError(f"assets[{idx}] asset_type 无效: {asset_type}")
     asset_id = extract_text(asset.get("asset_id") or asset.get("id")).strip() or f"{asset_type}_{idx}"
     prompt = extract_text(asset.get("prompt") or asset.get("reference_prompt")).strip()
@@ -609,6 +611,24 @@ PRODUCT_REFERENCE_NEGATIONS = (
     "没有喷雾",
 )
 
+PRODUCT_ASSET_ID_TERMS = (
+    "product",
+    "product_ref",
+    "product_reference",
+    "product_image",
+    "bottle",
+    "spray_bottle",
+    "sprayer",
+    "package",
+    "packaging",
+    "产品",
+    "商品",
+    "包装",
+    "瓶",
+    "喷雾",
+    "喷瓶",
+)
+
 
 def keyframe_text_implies_product_reference(*values: Any) -> bool:
     text = " ".join(extract_text(value).strip() for value in values if extract_text(value).strip()).lower()
@@ -617,6 +637,32 @@ def keyframe_text_implies_product_reference(*values: Any) -> bool:
     if any(negation in text for negation in PRODUCT_REFERENCE_NEGATIONS):
         return False
     return any(term in text for term in PRODUCT_REFERENCE_TERMS)
+
+
+def product_reference_asset_id_like(value: Any) -> bool:
+    text = extract_text(value).strip().lower()
+    if not text:
+        return False
+    return any(term in text for term in PRODUCT_ASSET_ID_TERMS)
+
+
+def raw_asset_is_product_reference(asset: Dict[str, Any]) -> bool:
+    asset_type = extract_text(asset.get("asset_type") or asset.get("type")).strip().lower()
+    if asset_type == "product":
+        return True
+    values = [
+        asset.get("asset_id") or asset.get("id"),
+        asset.get("asset_name") or asset.get("name"),
+        asset.get("prompt") or asset.get("reference_prompt"),
+    ]
+    if asset_type == "object":
+        return product_reference_asset_id_like(values[0]) or keyframe_text_implies_product_reference(*values)
+    return False
+
+
+def raw_asset_is_unsupported_object(asset: Dict[str, Any]) -> bool:
+    asset_type = extract_text(asset.get("asset_type") or asset.get("type")).strip().lower()
+    return asset_type in {"object", "product"}
 
 
 def normalize_keyframe(frame: Dict[str, Any], idx: int) -> Dict[str, Any]:
@@ -698,7 +744,26 @@ def normalize_plan_payload(payload: Any) -> Dict[str, Any]:
     if not roles:
         raise ValueError("解析结果缺少 roles")
     role_ids = {role["role_id"] for role in roles}
-    assets = [normalize_asset(asset, idx) for idx, asset in enumerate(_as_list(data.get("assets")), start=1)]
+    raw_assets = [asset for asset in _as_list(data.get("assets")) if isinstance(asset, dict)]
+    product_asset_ids = {
+        extract_text(asset.get("asset_id") or asset.get("id")).strip()
+        for asset in raw_assets
+        if raw_asset_is_product_reference(asset)
+    }
+    product_asset_ids = {asset_id for asset_id in product_asset_ids if asset_id}
+    unsupported_object_asset_ids = {
+        extract_text(asset.get("asset_id") or asset.get("id")).strip()
+        for asset in raw_assets
+        if raw_asset_is_unsupported_object(asset)
+    }
+    unsupported_object_asset_ids = {asset_id for asset_id in unsupported_object_asset_ids if asset_id}
+    assets = [
+        normalize_asset(asset, idx)
+        for idx, asset in enumerate(
+            [asset for asset in raw_assets if not raw_asset_is_unsupported_object(asset)],
+            start=1,
+        )
+    ]
     if not assets:
         for role in roles:
             if role["needs_reference_image"]:
@@ -718,6 +783,24 @@ def normalize_plan_payload(payload: Any) -> Dict[str, Any]:
     normalized_keyframes = enforce_keyframe_dependency_chain([by_frame_type[frame_type] for frame_type in KEYFRAME_TYPES])
     for frame in normalized_keyframes:
         refs = frame["reference_requirements"]
+        cleaned_asset_ids = []
+        removed_unsupported_asset = False
+        removed_product_asset = False
+        for asset_id in refs["asset_ids"]:
+            if asset_id in unsupported_object_asset_ids:
+                removed_unsupported_asset = True
+                if asset_id in product_asset_ids or product_reference_asset_id_like(asset_id):
+                    removed_product_asset = True
+                continue
+            if product_reference_asset_id_like(asset_id):
+                removed_unsupported_asset = True
+                removed_product_asset = True
+                continue
+            cleaned_asset_ids.append(asset_id)
+        if removed_unsupported_asset:
+            refs["asset_ids"] = cleaned_asset_ids
+        if removed_product_asset:
+            refs["use_product_reference"] = True
         missing_assets = [asset_id for asset_id in refs["asset_ids"] if asset_id not in asset_ids]
         if missing_assets:
             raise ValueError(f"{frame['keyframe_type']} 引用了不存在的参考资产: {','.join(missing_assets)}")
@@ -1597,6 +1680,9 @@ def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     ensure_active_record(fields)
     if record_type(fields) != ASSET_RECORD_TYPE:
         raise ValueError("只有参考资产记录可以生成参考图")
+    asset_type = extract_text(fields.get("参考类型") or fields.get("资产类型")).strip().lower()
+    if asset_type and asset_type not in {"human", "pet", "environment"}:
+        raise ValueError(f"参考类型不支持自动生成参考图: {asset_type}")
     raw_prompt = extract_text(fields.get("参考提示词")).strip()
     if not raw_prompt:
         raise ValueError("参考提示词为空")

@@ -221,6 +221,26 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(len(normalized["boards"][0]["cells"]), 9)
         self.assertEqual(normalized["boards"][0]["board_index"], 1)
 
+    def test_product_manifest_reference_does_not_create_generated_reference_asset(self):
+        payload = sample_plan_payload()
+        payload["script_analysis"]["characters"] = []
+        payload["script_analysis"]["pets"] = []
+        payload["script_analysis"]["environment"] = ""
+        payload["reference_manifest"]["required_references"] = [
+            {"role": "product", "name": "Pet odor spray", "purpose": "lock product packaging"},
+            {"role": "human", "name": "Owner", "purpose": "lock owner identity"},
+        ]
+
+        records = nine_grid.build_reference_asset_records(
+            {"任务名称": "nine grid", "关联产品记录": [{"record_ids": ["recProduct"]}]},
+            payload,
+            parent_record_id="parent",
+            batch_id="batch1",
+        )
+
+        self.assertEqual([item["fields"]["资产类型"] for item in records], ["human"])
+        self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
+
     def test_build_board_video_prompt_binds_cell_thai_dialogue_to_timeline_beat(self):
         payload = sample_plan_payload()
         board = payload["boards"][0]
@@ -619,7 +639,8 @@ class NineGridVideoTests(unittest.TestCase):
         ]
 
         with patch.object(nine_grid, "get_feishu_token", return_value="token"), \
-             patch.object(nine_grid, "safe_list_records", return_value=records):
+             patch.object(nine_grid, "safe_list_records", return_value=records), \
+             patch("tk_model_config_center.safe_list_records", return_value=records):
             record_id, cfg = nine_grid.get_config_record(
                 nine_grid.IMAGE_STAGE_NAME,
                 default_model="gpt-image-2",

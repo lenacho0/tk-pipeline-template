@@ -579,6 +579,66 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         for item in records:
             self.assertEqual(item["fields"]["使用统一AI路由"], "是")
 
+    def test_normalize_plan_filters_product_asset_and_keeps_product_reference_flag(self):
+        payload = sample_plan(role_count=3)
+        payload["assets"].append({
+            "asset_id": "product_ref",
+            "asset_type": "object",
+            "asset_name": "Pet deodorizer product reference image",
+            "prompt": "Use the uploaded product reference image for the exact spray bottle packaging.",
+            "source_role_ids": [],
+        })
+        payload["keyframes"][1]["reference_requirements"]["asset_ids"].append("product_ref")
+        payload["keyframes"][1]["reference_requirements"]["use_product_reference"] = False
+        payload["keyframes"][1]["reference_requirements"]["reason"] = "The product bottle is visible."
+        payload["keyframes"][2]["reference_requirements"]["asset_ids"].append("product_ref")
+
+        normalized = multi_role.normalize_plan_payload(payload)
+
+        self.assertNotIn("product_ref", {asset["asset_id"] for asset in normalized["assets"]})
+        shared_refs = normalized["keyframes"][1]["reference_requirements"]
+        tail_refs = normalized["keyframes"][2]["reference_requirements"]
+        self.assertTrue(shared_refs["use_product_reference"])
+        self.assertTrue(tail_refs["use_product_reference"])
+        self.assertNotIn("product_ref", shared_refs["asset_ids"])
+        self.assertNotIn("product_ref", tail_refs["asset_ids"])
+
+        records = multi_role.build_child_records("parent", {"任务名称": "Hook", "目标时长秒": 8}, normalized, batch_id="batch1")
+        asset_ids = [
+            item["fields"]["资产ID"]
+            for item in records
+            if item["fields"]["记录类型"] == "参考资产"
+        ]
+        self.assertNotIn("product_ref", asset_ids)
+        shared = next(item["fields"] for item in records if item["fields"].get("关键帧类型") == "S01_TAIL_SHARED_S02_FIRST")
+        self.assertEqual(shared["需要产品参考图"], "是")
+        self.assertNotIn("product_ref", shared["参考资产ID列表"])
+
+    def test_normalize_plan_filters_non_product_object_asset_without_product_reference(self):
+        payload = sample_plan(role_count=3)
+        payload["assets"].append({
+            "asset_id": "white_cloth",
+            "asset_type": "object",
+            "asset_name": "White cleaning cloth prop",
+            "prompt": "A plain white cloth prop used for wiping, isolated on a neutral background.",
+            "source_role_ids": [],
+        })
+        payload["keyframes"][0]["reference_requirements"]["asset_ids"].append("white_cloth")
+        payload["keyframes"][0]["reference_requirements"]["use_product_reference"] = False
+        payload["keyframes"][0]["reference_requirements"]["reason"] = "The white cloth is a simple prop described in the keyframe prompt."
+
+        normalized = multi_role.normalize_plan_payload(payload)
+
+        self.assertNotIn("white_cloth", {asset["asset_id"] for asset in normalized["assets"]})
+        first_refs = normalized["keyframes"][0]["reference_requirements"]
+        self.assertFalse(first_refs["use_product_reference"])
+        self.assertNotIn("white_cloth", first_refs["asset_ids"])
+
+        records = multi_role.build_child_records("parent", {"任务名称": "Hook", "目标时长秒": 8}, normalized, batch_id="batch1")
+        first = next(item["fields"] for item in records if item["fields"].get("关键帧类型") == "S01_FIRST")
+        self.assertEqual(first["需要产品参考图"], "否")
+        self.assertNotIn("white_cloth", first["参考资产ID列表"])
+
     def test_environment_asset_prompt_removes_character_product_and_pet_positives(self):
         payload = sample_plan(role_count=4)
         payload["assets"][-1]["prompt"] = "\n".join([
@@ -773,6 +833,23 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         poll.assert_called_once()
         self.assertEqual(result["task_id"], "task_existing")
         self.assertTrue(any(update.get("参考图生成状态") == "成功" for update in updates))
+
+    def test_reference_image_rejects_object_asset_type(self):
+        fields = {
+            "记录类型": "参考资产",
+            "记录状态": "有效",
+            "参考类型": "object",
+            "参考提示词": "Use the uploaded product reference image for exact packaging.",
+            "参考图版本": 1,
+        }
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "apply_task_default_to_record", return_value=fields), \
+             patch.object(multi_role, "submit_otu_image_task") as submit:
+            with self.assertRaisesRegex(ValueError, "参考类型不支持"):
+                multi_role.render_reference_image("asset_rec")
+        submit.assert_not_called()
 
     def test_keyframe_image_resumes_existing_task_id(self):
         fields = {
