@@ -57,6 +57,8 @@ KNOWN_ATTACHMENT_FIELD_NAMES = {
     '故事板图',
     '分镜视频',
     '九宫格图',
+    '生成图片',
+    '生成视频',
     '源视频',
     '结果视频',
 }
@@ -266,6 +268,66 @@ WATCH_LIST = [
         },
         'claim_clear_fields_by_trigger_value': {
             '待生成': ['视频任务ID'],
+        },
+    },
+    {
+        'name': '008图生视频图片生成',
+        'table': TABLE_PROMPT_IMAGE_VIDEO,
+        'status_field': '图片生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '图片错误信息',
+        'script': 'tk_prompt_image_video.py',
+        'args': ['image'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '生成图片': [],
+                '图片file_token': '',
+                '图片本地路径': '',
+                '图片任务ID': '',
+                '图片原始响应JSON': '',
+                '图片审核状态': '待确认',
+                '图片错误信息': '',
+                '视频生成状态': '不触发',
+                '生成视频': [],
+                '生成视频file_token': '',
+                '视频本地路径': '',
+                '视频任务ID': '',
+                '视频原始响应JSON': '',
+                '视频错误信息': '',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '008图生视频视频生成',
+        'table': TABLE_PROMPT_IMAGE_VIDEO,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '视频错误信息',
+        'script': 'tk_prompt_image_video.py',
+        'args': ['video'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '生成视频': [],
+                '生成视频file_token': '',
+                '视频本地路径': '',
+                '视频任务ID': '',
+                '视频原始响应JSON': '',
+                '视频错误信息': '',
+                '错误信息': '',
+            },
         },
     },
     {
@@ -1044,6 +1106,8 @@ def parse_subprocess_error_payload(stdout_text, stderr_text, stage):
             payload = json.loads(text)
         except Exception:
             continue
+        if isinstance(payload, dict) and isinstance(payload.get('error'), dict):
+            payload = payload['error']
         if not isinstance(payload, dict) or 'message' not in payload:
             continue
         return normalize_dispatcher_error_payload({
@@ -1296,7 +1360,13 @@ def running_state_entry_matches_watch(task_info, watch):
         return False
     stored_args = [str(arg) for arg in (task_info.get('args') or [])]
     watch_args = [str(arg) for arg in (watch.get('args') or [])]
+    trigger_arg_sets = [
+        [str(arg) for arg in (args or [])]
+        for args in (watch.get('args_by_trigger_value') or {}).values()
+    ]
     if stored_args:
+        if trigger_arg_sets:
+            return stored_args in trigger_arg_sets
         return stored_args == watch_args
     return False
 
@@ -1735,7 +1805,9 @@ def check_and_run(token, watch):
 
         script_path = os.path.join(SCRIPTS_DIR, watch['script'])
         try:
-            extra_args = watch.get('args', []) or []
+            extra_args = (watch.get('args_by_trigger_value') or {}).get(status)
+            if extra_args is None:
+                extra_args = watch.get('args', []) or []
             process = subprocess.Popen(
                 [sys.executable, script_path, *extra_args, record_id],
                 stdout=subprocess.PIPE,

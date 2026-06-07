@@ -353,6 +353,23 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(payload["error_code"], "UPSTREAM_POLICY_BLOCKED")
         self.assertFalse(payload["retryable"])
 
+    def test_parse_subprocess_error_payload_accepts_wrapped_error_payload(self):
+        stderr = (
+            'Traceback before structured payload\n'
+            '{"error": {"stage": "tk_prompt_image_video.py image", '
+            '"status": "failed_terminal", "error_code": "PROMPT_BUILD_FAILED", '
+            '"retryable": false, "message": "OTU 图片任务提交失败: HTTP 400, body={\\"error\\":\\"bad size\\"}"}}\n'
+            'Traceback after structured payload\n'
+        )
+
+        payload = dispatcher.parse_subprocess_error_payload("", stderr, "tk_prompt_image_video.py")
+
+        self.assertEqual(payload["stage"], "tk_prompt_image_video.py image")
+        self.assertEqual(payload["error_code"], "PROMPT_BUILD_FAILED")
+        self.assertFalse(payload["retryable"])
+        self.assertIn("HTTP 400", payload["message"])
+        self.assertIn("bad size", payload["message"])
+
     def test_nine_grid_image_claim_clears_stale_task_state_for_waiting_records(self):
         watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多图九宫格图片生成")
         claim_fields = {watch["status_field"]: watch["running_value"]}

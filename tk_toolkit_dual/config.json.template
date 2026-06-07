@@ -9,6 +9,7 @@
       "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
       "nine_grid_video": "多图九宫格视频生成表的 table_id",
+      "prompt_image_video": "008-图生视频生成表的 table_id",
       "first_last_video": "首尾帧视频生成表的 table_id",
       "multi_role_first_last": "多角色首尾帧生成表的 table_id",
       "video_edit": "视频编辑任务表的 table_id",
@@ -78,6 +79,12 @@
         "max_concurrency": 3
       },
       "多图九宫格视频生成": {
+        "max_concurrency": 3
+      },
+      "008图生视频图片生成": {
+        "max_concurrency": 3
+      },
+      "008图生视频视频生成": {
         "max_concurrency": 3
       },
       "首尾帧首帧图生成": {

@@ -27,6 +27,7 @@ TABLE_AUTO_REVIEW_STAGE_NAMES = {
     "first_last_video": "002-首尾帧视频生成表一键审核通过模式",
     "script_doc_shots": "003-脚本文档分镜链路一键审核通过模式",
     "nine_grid_video": "005-多图九宫格视频生成表一键审核通过模式",
+    "prompt_image_video": "008-图生视频生成表一键审核通过模式",
 }
 ENABLED_VALUES = {"启用", "开启", "是", "true", "1", "enabled", "enable", "on"}
 
@@ -104,6 +105,7 @@ def ensure_table_auto_review_switch_records(token: str, *, write: bool = False) 
     for stage_name in missing:
         payload = {
             "fields": {
+                "配置类型": "自动审核",
                 "环节": stage_name,
                 "状态": "停用",
                 "备注": "表级自动审核通过开关；启用后仅自动放行本表新生成成功且有附件 token 的审核闸门。",
@@ -177,6 +179,7 @@ def sync_table_auto_review_switch_records(token: str, *, write: bool = False) ->
         for stage_name in missing:
             payload = {
                 "fields": {
+                    "配置类型": "自动审核",
                     "环节": stage_name,
                     "状态": "停用",
                     "备注": "表级自动审核通过开关；启用后仅自动放行本表新生成成功且有附件 token 的审核闸门。",

@@ -51,11 +51,13 @@ TEXT_STAGES = {
 IMAGE_STAGES = {
     "图片生成-OTU",
     "多图九宫格图片生成",
+    "008图生视频图片生成",
 }
 VIDEO_STAGES = {
     "分镜视频生成-Veo",
     "分镜视频生成-OTU",
     "多图九宫格视频生成",
+    "008图生视频视频生成",
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
@@ -91,6 +93,8 @@ MEDIA_DIMENSION_DEFAULTS = {
     "分镜视频生成-OTU": ("720x1280", "9:16"),
     "多图九宫格图片生成": ("720x1280", "9:16"),
     "多图九宫格视频生成": ("720x1280", "9:16"),
+    "008图生视频图片生成": ("720x1280", "9:16"),
+    "008图生视频视频生成": ("720x1280", "9:16"),
 }
 TASK_DEFAULT_APP_TABLE_FIELD = "应用表格"
 TASK_DEFAULT_APP_TABLE_OPTIONS = [
@@ -101,6 +105,7 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "003-3脚本文档-分镜生产表",
     "005-多图九宫格视频生成表",
     "006-视频编辑任务表",
+    "008-图生视频生成表",
 ]
 TASK_STAGE_BUSINESS_ACTIONS = {
     "多角色解析默认": "文本分析",

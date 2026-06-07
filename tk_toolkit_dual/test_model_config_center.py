@@ -38,6 +38,8 @@ class ModelConfigCenterTests(unittest.TestCase):
         default_keys = {(item["应用表格"], item["任务环节"]) for item in plan.task_default_rows}
         self.assertIn(("002-首尾帧视频生成表", "首帧图生成默认"), default_keys)
         self.assertIn(("002-首尾帧视频生成表", "首尾帧视频生成默认"), default_keys)
+        self.assertIn(("008-图生视频生成表", "图片生成默认"), default_keys)
+        self.assertIn(("008-图生视频生成表", "图生视频生成默认"), default_keys)
         self.assertIn(("006-视频编辑任务表", "视频编辑默认"), default_keys)
         self.assertNotIn(("002-首尾帧视频生成表", "文档拆分默认"), default_keys)
 
@@ -481,6 +483,30 @@ class ModelConfigCenterTests(unittest.TestCase):
     def test_runtime_defaults_keep_script_doc_video_and_video_edit_slots(self):
         specs = {(item.table_key, item.stage): item for item in center.RUNTIME_DEFAULT_SPECS}
         backfill = {(item.table_key, item.stage): item for item in center.RUNTIME_DEFAULT_BACKFILL_SPECS}
+
+        self.assertEqual(center.TASK_TABLES["prompt_image_video"], "008-图生视频生成表")
+        image_default = specs[("prompt_image_video", "图片生成默认")]
+        self.assertEqual(image_default.source_config_stage, "图片生成-OTU")
+        self.assertEqual(image_default.slot_name, "图片")
+        video_default = specs[("prompt_image_video", "图生视频生成默认")]
+        self.assertEqual(video_default.source_config_stage, "分镜视频生成-OTU")
+        self.assertEqual(video_default.slot_name, "视频")
+        image_backfill = backfill[("prompt_image_video", "图片生成默认")]
+        self.assertEqual(image_backfill.status_field, "图片生成状态")
+        self.assertEqual(image_backfill.model_field, "图片AI模型")
+        self.assertEqual(image_backfill.size_field, "图片画面尺寸")
+        self.assertEqual(image_backfill.ratio_field, "图片画面比例")
+        self.assertEqual(image_backfill.params_field, "图片AI参数JSON")
+        video_backfill = backfill[("prompt_image_video", "图生视频生成默认")]
+        self.assertEqual(video_backfill.status_field, "视频生成状态")
+        self.assertEqual(video_backfill.model_field, "视频AI模型")
+        self.assertEqual(video_backfill.size_field, "视频画面尺寸")
+        self.assertEqual(video_backfill.ratio_field, "视频画面比例")
+        self.assertEqual(video_backfill.params_field, "视频AI参数JSON")
+        self.assertIn("", image_backfill.active_statuses)
+        self.assertIn("失败", image_backfill.active_statuses)
+        self.assertIn("", video_backfill.active_statuses)
+        self.assertIn("不触发", video_backfill.active_statuses)
 
         script_video = specs[("script_doc_shots", "分镜视频生成默认")]
         self.assertEqual(script_video.source_config_stage, "分镜视频生成-Veo")

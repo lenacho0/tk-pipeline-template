@@ -17,6 +17,7 @@ from common import (
     TABLE_FIRST_LAST_VIDEO,
     TABLE_MULTI_ROLE_FIRST_LAST,
     TABLE_NINE_GRID_VIDEO,
+    TABLE_PROMPT_IMAGE_VIDEO,
     TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     TABLE_SCRIPT_DOC_SHOTS,
     TABLE_VIDEO_EDIT,
@@ -102,6 +103,7 @@ TASK_TABLES = {
     "script_doc_shots": "003-3脚本文档-分镜生产表",
     "nine_grid_video": "005-多图九宫格视频生成表",
     "video_edit": "006-视频编辑任务表",
+    "prompt_image_video": "008-图生视频生成表",
 }
 
 
@@ -132,6 +134,8 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
     RuntimeDefaultSpec("nine_grid_video", "九宫格视频生成默认", "多图九宫格视频生成", "视频"),
     RuntimeDefaultSpec("video_edit", "视频编辑默认", VIDEO_EDIT_SOURCE_CONFIG_STAGE, "视频编辑"),
+    RuntimeDefaultSpec("prompt_image_video", "图片生成默认", "图片生成-OTU", "图片"),
+    RuntimeDefaultSpec("prompt_image_video", "图生视频生成默认", "分镜视频生成-OTU", "视频"),
 )
 
 
@@ -154,6 +158,7 @@ class RuntimeDefaultBackfillSpec:
     ratio_field: str = ""
     params_field: str = ""
     placeholder_values: Tuple[str, ...] = ()
+    active_statuses: Tuple[str, ...] = ()
 
 
 TABLE_IDS_BY_KEY: Dict[str, str] = {
@@ -163,6 +168,7 @@ TABLE_IDS_BY_KEY: Dict[str, str] = {
     "script_doc_shots": TABLE_SCRIPT_DOC_SHOTS,
     "nine_grid_video": TABLE_NINE_GRID_VIDEO,
     "video_edit": TABLE_VIDEO_EDIT,
+    "prompt_image_video": TABLE_PROMPT_IMAGE_VIDEO,
 }
 
 
@@ -184,6 +190,8 @@ RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
     RuntimeDefaultBackfillSpec("video_edit", TASK_TABLES["video_edit"], "视频编辑默认", "编辑状态", "", "输出分辨率"),
+    RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图生视频生成默认", "视频生成状态", "视频AI模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
 )
 
 
@@ -1016,6 +1024,7 @@ def backfill_runtime_defaults(
         allowed_fields = list_field_names_api(token, table_id)
         schema_missing_fields = set()
         default_fields = load_task_default_fields(token, spec.app_table, spec.stage)
+        active_statuses = set(spec.active_statuses or ACTIVE_BACKFILL_STATUSES)
         for record in safe_list_records(token, table_id):
             fields = record.get("fields") or {}
             stage_result["records"] += 1
@@ -1024,7 +1033,7 @@ def backfill_runtime_defaults(
                 stage_result["skipped_deprecated"] += 1
                 continue
             status = text(fields, spec.status_field)
-            if status not in ACTIVE_BACKFILL_STATUSES:
+            if status not in active_statuses:
                 stage_result["skipped_status"] += 1
                 continue
             stage_result["active"] += 1

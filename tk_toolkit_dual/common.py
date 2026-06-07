@@ -38,6 +38,7 @@ TABLE_SCRIPT_DOC_TASKS = _TABLES.get('script_doc_tasks', _TABLES.get('script_doc
 TABLE_SCRIPT_DOC_REFERENCE_ASSETS = _TABLES.get('script_doc_reference_assets', _TABLES.get('script_doc_shots', '')) # 脚本文档参考资产
 TABLE_SCRIPT_DOC_SHOTS = _TABLES.get('script_doc_shots', '') # 脚本文档分镜生产
 TABLE_NINE_GRID_VIDEO = _TABLES.get('nine_grid_video', '') # 多图九宫格视频生成
+TABLE_PROMPT_IMAGE_VIDEO = _TABLES.get('prompt_image_video', '') # 完整提示词图生视频生成
 TABLE_FIRST_LAST_VIDEO = _TABLES.get('first_last_video', '') # 首尾帧视频生成
 TABLE_MULTI_ROLE_FIRST_LAST = _TABLES.get('multi_role_first_last', '') # 多角色首尾帧生成
 TABLE_VIDEO_EDIT = _TABLES.get('video_edit', '') # 视频编辑任务
