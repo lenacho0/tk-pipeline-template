@@ -152,7 +152,7 @@ def _config_params(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def config_record_matches_provider(fields: Dict[str, Any], provider: str) -> bool:
-    provider_text = _norm(fields.get(AI_PROVIDER_FIELD))
+    provider_text = _norm(fields.get(AI_PROVIDER_FIELD) or fields.get("供应商"))
     if provider_text == provider:
         return True
     marker = PROVIDER_API_BASE_MARKERS.get(provider, "").lower()
@@ -209,6 +209,19 @@ def api_key_for_provider(config_records: Iterable[Dict[str, Any]], provider: str
     return ""
 
 
+def api_base_for_provider(config_records: Iterable[Dict[str, Any]], provider: str) -> str:
+    for rec in config_records or []:
+        fields = rec.get("fields") if isinstance(rec, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        if not config_record_matches_provider(fields, provider):
+            continue
+        api_base = _norm(fields.get("API 代理地址") or fields.get("api_base"))
+        if api_base:
+            return api_base
+    return ""
+
+
 def route_from_record(
     fields: Dict[str, Any],
     config: Optional[Dict[str, str]] = None,
@@ -231,9 +244,14 @@ def route_from_record(
     config_provider = _norm(config.get("provider"))
     api_base = _norm(config.get("api_base"))
     api_key = _norm(config.get("api_key"))
+    provider_config_records = list(config_records or [])
     if explicit_model and config_provider and config_provider != provider:
         api_base = ""
-        api_key = api_key_for_provider(config_records or [], provider)
+        api_key = api_key_for_provider(provider_config_records, provider)
+    elif explicit_model and not api_key:
+        api_key = api_key_for_provider(provider_config_records, provider)
+    if explicit_model and not api_base:
+        api_base = api_base_for_provider(provider_config_records, provider)
     return validate_route(AiRoute(
         provider=provider,
         capability=capability,

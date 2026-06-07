@@ -503,7 +503,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertEqual(route.provider, "Aitgenne")
         self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
-        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_base, "https://api.aitgenne.com")
         self.assertEqual(route.api_key, "sk-aitgenne")
 
     def test_parse_task_reports_gemini_prompt_block_instead_of_empty_text(self):

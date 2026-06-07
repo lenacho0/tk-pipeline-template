@@ -130,7 +130,7 @@ class UnifiedAiRoutingTests(unittest.TestCase):
 
         self.assertEqual(route.provider, "Aitgenne")
         self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
-        self.assertEqual(route.api_base, "")
+        self.assertEqual(route.api_base, "https://api.aitgenne.com")
         self.assertEqual(route.api_key, "sk-aitgenne")
         self.assertEqual(ai_routing.build_dry_run_summary(route, "hello")["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
 
@@ -157,6 +157,35 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(route.api_key, "")
         with self.assertRaisesRegex(ValueError, "缺少 API Key"):
             ai_routing.call_text_model(route, "hello", post=Mock())
+
+    def test_explicit_same_provider_catalog_model_reuses_provider_key(self):
+        route = ai_routing.route_from_record(
+            {
+                "AI能力类型": "视频",
+                "AI任务类型": "首帧图生视频",
+                "AI模型": "OTU / veo_3_1-fast-fl-hd",
+            },
+            {
+                "provider": "OTU",
+                "model": "veo_3_1-fast-fl-hd",
+                "api_key": "",
+                "api_base": "",
+            },
+            config_records=[
+                {"fields": {
+                    "配置类型": "运行环节",
+                    "供应商": "OTU",
+                    "环节": "分镜视频生成-OTU",
+                    "API 代理地址": "https://otuapi.com",
+                    "API Key": "sk-otu",
+                }},
+            ],
+        )
+
+        self.assertEqual(route.provider, "OTU")
+        self.assertEqual(route.model, "OTU / veo_3_1-fast-fl-hd")
+        self.assertEqual(route.api_key, "sk-otu")
+        self.assertEqual(route.api_base, "https://otuapi.com")
 
     def test_route_from_slot_uses_task_model_and_params_over_defaults(self):
         route = ai_routing.route_from_slot(
