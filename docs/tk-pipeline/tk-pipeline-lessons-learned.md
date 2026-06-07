@@ -275,3 +275,7 @@ R2 `pub-*.r2.dev` 下载 mp4 时出现过 SSL EOF、read timeout；OTU `/v1/vide
 - 明确禁止 `no side profile`、遮脸、背影、多视角、角色设定表、contact sheet、turnaround
 - 明确要求 `UGC smartphone photo`、自然光、日常衣着、本地素人感、`natural skin texture`
 - 不在图片 worker 里二次拼接风格；已有旧参考图不会自动重跑，需要重新拆解或重新生成
+
+## 29. Dispatcher 并发配置以飞书表为日常入口
+
+2026-06-05 起，dispatcher 并发控制应优先通过 `初始化-模型与API配置` 管理：运行环节记录用 `环节最大并发` 控制单环节并发，`Dispatcher并发控制` 路由开关记录用 `全局最大并发` 控制总并发。`环节最大并发=0` 表示暂停该环节，空值表示沿用本地默认；不要为了临时调并发再直接改 `tk_dispatcher.py`。

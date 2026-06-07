@@ -34,6 +34,8 @@
     "poll_interval": 30,
     "healthcheck_hour": 8,
     "global_max_concurrency": 0,
+    "concurrency_policy_ttl_seconds": 60,
+    "_concurrency_note": "本地 dispatcher 并发是兜底；初始化-模型与API配置 中的 环节最大并发/全局最大并发 优先。环节最大并发=0 表示暂停该环节，空值表示使用默认。",
     "scan": {
       "table_min_interval_seconds": 20,
       "record_state_cache_ttl_seconds": 300
