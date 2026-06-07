@@ -268,6 +268,60 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["ignored_fields"], [])
         self.assertNotIn("sk-img", str(summary))
 
+    def test_aitgenne_image_request_summary_uses_openai_image_schema(self):
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="图片",
+            task_type="文生图",
+            model="Aitgenne / gpt-image-2",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-img",
+            params={"size": "1024x1536", "aspect_ratio": "9:16", "quality": "high", "format": "webp"},
+        )
+
+        summary = ai_routing.build_media_request_summary(route, "image prompt", reference_count=0)
+
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/images/generations")
+        self.assertEqual(summary["payload"], {
+            "model": "gpt-image-2",
+            "prompt": "image prompt",
+            "n": 1,
+            "size": "1024x1536",
+            "quality": "high",
+            "format": "webp",
+        })
+        self.assertEqual(summary["adapter_payload_summary"]["size"], "payload.size")
+        self.assertEqual(summary["adapter_payload_summary"]["n"], "payload.n")
+        self.assertNotIn("metadata", summary["payload"])
+        self.assertNotIn("input_mode", summary["payload"])
+        self.assertNotIn("sk-img", str(summary))
+
+    def test_aitgenne_image_reference_summary_uses_edits_multipart_schema(self):
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="图片",
+            task_type="图生图/参考图重绘",
+            model="Aitgenne / gpt-image-2",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-img",
+            params={"size": "1024x1536", "aspect_ratio": "9:16"},
+        )
+
+        summary = ai_routing.build_media_request_summary(route, "image prompt", reference_count=2)
+
+        self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/images/edits")
+        self.assertEqual(summary["content_type"], "multipart/form-data")
+        self.assertEqual(summary["payload"], {
+            "model": "gpt-image-2",
+            "prompt": "image prompt",
+            "n": 1,
+            "size": "1024x1536",
+            "image": ["<reference_file>", "<reference_file>"],
+        })
+        self.assertEqual(summary["adapter_payload_summary"]["image"], "multipart field image repeated")
+        self.assertNotIn("metadata", summary["payload"])
+        self.assertNotIn("input_mode", summary["payload"])
+
     def test_aihubmix_video_request_summary_uses_videos_endpoint(self):
         route = ai_routing.AiRoute(
             provider="AIHubMix",

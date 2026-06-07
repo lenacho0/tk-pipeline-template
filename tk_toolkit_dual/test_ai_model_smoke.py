@@ -181,6 +181,35 @@ class AiModelSmokeTests(unittest.TestCase):
         self.assertEqual(1, len(captured["json"]["metadata"]["urls"]))
         self.assertTrue(captured["json"]["metadata"]["urls"][0].startswith("data:image/png;base64,"))
 
+    def test_submit_smoke_task_uses_aitgenne_image_generation_schema(self):
+        entry = ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / gpt-image-2"])[0]
+        reference_paths = ai_model_smoke.ensure_reference_images(Path("/tmp/tk_ai_model_smoke_test_aitgenne_image"))
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            captured["headers"] = kwargs.get("headers")
+            return SimpleNamespace(status_code=200, json=lambda: {"data": [{"url": "https://x.test/out.png"}]})
+
+        result = ai_model_smoke.submit_smoke_task(
+            entry,
+            {"api_key": "sk-test", "api_base": "https://api.aitgenne.com/v1", "model": "gpt-image-2"},
+            reference_paths,
+            post=fake_post,
+        )
+
+        self.assertEqual("", result["task_id"])
+        self.assertEqual("https://x.test/out.png", result["result_url"])
+        self.assertEqual("https://api.aitgenne.com/v1/images/generations", captured["url"])
+        self.assertEqual("application/json", captured["headers"]["Content-Type"])
+        self.assertEqual(captured["json"], {
+            "model": "gpt-image-2",
+            "prompt": ai_model_smoke.IMAGE_PROMPT,
+            "n": 1,
+            "size": "720x1280",
+        })
+
     def test_submit_smoke_task_uses_happyhorse_json_schema(self):
         entry = ai_model_smoke.build_smoke_queue(model_names=["Aitgenne / happyhorse-1.0-r2v"])[0]
         captured = {}

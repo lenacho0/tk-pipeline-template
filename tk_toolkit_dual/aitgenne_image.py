@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -10,7 +9,6 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 
 from common import extract_text
-from media_specs import adapt_image_metadata
 
 
 DEFAULT_AITGENNE_API_BASE = "https://api.aitgenne.com"
@@ -37,6 +35,40 @@ def _aitgenne_v1_base(api_base: str = "") -> str:
 def aitgenne_images_endpoint(api_base: str = "", *, edit: bool = False) -> str:
     suffix = "edits" if edit else "generations"
     return f"{_aitgenne_v1_base(api_base)}/images/{suffix}"
+
+
+def _metadata_value(metadata: Optional[Dict[str, Any]], key: str) -> Any:
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return None
+
+
+def _positive_int(value: Any, default: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _aitgenne_generation_payload(
+    config: Dict[str, str],
+    prompt: str,
+    *,
+    metadata: Optional[Dict[str, Any]] = None,
+    size: str = DEFAULT_AITGENNE_IMAGE_SIZE,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "model": config.get("model") or DEFAULT_AITGENNE_IMAGE_MODEL,
+        "prompt": prompt,
+        "n": _positive_int(_metadata_value(metadata, "n"), 1),
+        "size": size or DEFAULT_AITGENNE_IMAGE_SIZE,
+    }
+    for key in ("quality", "format"):
+        value = _metadata_value(metadata, key)
+        if value not in (None, ""):
+            payload[key] = extract_text(value).strip()
+    return payload
 
 
 def submit_aitgenne_image_generation(
@@ -68,22 +100,7 @@ def submit_aitgenne_image_generation(
         )
 
     url = aitgenne_images_endpoint(config.get("api_base") or DEFAULT_AITGENNE_API_BASE)
-    submit_metadata = adapt_image_metadata(
-        metadata,
-        size=size or DEFAULT_AITGENNE_IMAGE_SIZE,
-        aspect_ratio=aspect_ratio,
-        default_aspect_ratio=DEFAULT_AITGENNE_ASPECT_RATIO,
-    )
-    payload = {
-        "model": config.get("model") or DEFAULT_AITGENNE_IMAGE_MODEL,
-        "prompt": prompt,
-        "size": size or DEFAULT_AITGENNE_IMAGE_SIZE,
-        "metadata": submit_metadata,
-    }
-    if input_mode:
-        payload["input_mode"] = input_mode
-    if image_url:
-        payload["image_url"] = image_url
+    payload = _aitgenne_generation_payload(config, prompt, metadata=metadata, size=size)
     headers = {
         "Authorization": f"Bearer {config['api_key']}",
         "Content-Type": "application/json",
@@ -122,18 +139,12 @@ def _submit_aitgenne_image_edit(
     post: Callable[..., Any] = requests.post,
 ) -> Dict[str, Any]:
     url = aitgenne_images_endpoint(config.get("api_base") or DEFAULT_AITGENNE_API_BASE, edit=True)
-    submit_metadata = adapt_image_metadata(
-        metadata,
-        size=size or DEFAULT_AITGENNE_IMAGE_SIZE,
-        aspect_ratio=aspect_ratio,
-        default_aspect_ratio=DEFAULT_AITGENNE_ASPECT_RATIO,
-    )
     headers = {"Authorization": f"Bearer {config['api_key']}"}
     data = {
         "model": config.get("model") or DEFAULT_AITGENNE_IMAGE_MODEL,
         "prompt": prompt,
+        "n": str(_positive_int(_metadata_value(metadata, "n"), 1)),
         "size": size or DEFAULT_AITGENNE_IMAGE_SIZE,
-        "metadata": json.dumps(submit_metadata, ensure_ascii=False),
     }
     last_error = None
     for attempt in range(1, MAX_SUBMIT_REQUEST_ERRORS + 1):
@@ -143,7 +154,7 @@ def _submit_aitgenne_image_edit(
             for path in image_paths:
                 image_file = open(path, "rb")
                 opened.append(image_file)
-                files.append(("image[]", (os.path.basename(path), image_file, "image/png")))
+                files.append(("image", (os.path.basename(path), image_file, "image/png")))
             resp = post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
             break
         except requests.RequestException as exc:

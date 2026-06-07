@@ -41,8 +41,8 @@
 
 - capability: 图片
 - status: enabled
-- endpoint: `https://api.aitgenne.com/v1/v1/images/generations`
-- payload_keys: `input_mode, metadata, model, prompt, size`
+- endpoint: `https://api.aitgenne.com/v1/images/edits`
+- payload_keys: `image, model, n, prompt, size`
 - size: `720x1280`
 - aspect_ratio: `9:16`
 - seconds: ``

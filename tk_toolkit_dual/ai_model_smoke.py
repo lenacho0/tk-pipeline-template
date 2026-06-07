@@ -228,6 +228,7 @@ def extract_task_id(body: Dict[str, Any]) -> str:
 def extract_result_url(body: Dict[str, Any]) -> str:
     data = body.get("data") if isinstance(body.get("data"), dict) else {}
     result = body.get("result") if isinstance(body.get("result"), dict) else {}
+    data_items = body.get("data") if isinstance(body.get("data"), list) else []
     candidates = [
         body.get("video_url"),
         body.get("result_url"),
@@ -242,6 +243,9 @@ def extract_result_url(body: Dict[str, Any]) -> str:
         result.get("url"),
         result.get("download_url"),
     ]
+    for item in data_items:
+        if isinstance(item, dict):
+            candidates.extend([item.get("url"), item.get("image_url"), item.get("result_url"), item.get("b64_json")])
     for key in ("result_urls", "urls", "videos"):
         value = body.get(key) or data.get(key) or result.get(key)
         if isinstance(value, list) and value:
@@ -310,18 +314,26 @@ def submit_smoke_task(
     profile = smoke_profile_for_entry(entry)
     selected_refs = select_reference_paths(reference_paths, profile)
     if entry.capability == "图片":
-        image_path = selected_refs[0]
-        payload = {
-            "model": entry.model,
-            "prompt": IMAGE_PROMPT,
-            "metadata": {
-                "aspectRatio": profile.aspect_ratio,
-                "aspect_ratio": profile.aspect_ratio,
-                "urls": [image_path_to_data_url(image_path)],
-            },
-            "input_mode": "image-to-image",
-            "size": profile.size,
-        }
+        if entry.provider == "Aitgenne":
+            payload = {
+                "model": entry.model,
+                "prompt": IMAGE_PROMPT,
+                "n": 1,
+                "size": profile.size,
+            }
+        else:
+            image_path = selected_refs[0]
+            payload = {
+                "model": entry.model,
+                "prompt": IMAGE_PROMPT,
+                "metadata": {
+                    "aspectRatio": profile.aspect_ratio,
+                    "aspect_ratio": profile.aspect_ratio,
+                    "urls": [image_path_to_data_url(image_path)],
+                },
+                "input_mode": "image-to-image",
+                "size": profile.size,
+            }
         resp = post(endpoint, headers={"Authorization": f"Bearer {runtime_config['api_key']}", "Content-Type": "application/json"}, json=payload, timeout=180)
         payload_keys = sorted(payload.keys())
     else:

@@ -408,6 +408,17 @@ def _videos_endpoint(api_base: str, default_base: str) -> str:
     return f"{base}/v1/videos"
 
 
+def _images_endpoint(api_base: str, default_base: str, *, edit: bool = False) -> str:
+    base = (api_base or default_base).strip().rstrip("/")
+    suffix = "edits" if edit else "generations"
+    for known_suffix in ("/v1/images/generations", "/v1/images/edits"):
+        if base.endswith(known_suffix):
+            return base[: -len(known_suffix)] + f"/v1/images/{suffix}"
+    if base.endswith("/v1"):
+        return f"{base}/images/{suffix}"
+    return f"{base}/v1/images/{suffix}"
+
+
 def _api_origin(api_base: str, default_base: str) -> str:
     base = (api_base or default_base).strip().rstrip("/")
     if base.endswith("/v1"):
@@ -552,9 +563,8 @@ def media_endpoint(route: AiRoute) -> str:
             if model_name.startswith("happyhorse-1.0-"):
                 return aitgenne_video_synthesis_endpoint(route.api_base)
             return _videos_endpoint(route.api_base, "https://api.aitgenne.com")
-        base = (route.api_base or "https://api.aitgenne.com").strip().rstrip("/")
         if capability == "图片":
-            return f"{base}/v1/images/generations"
+            return _images_endpoint(route.api_base, "https://api.aitgenne.com")
     raise ValueError(f"不支持的媒体路由: provider={provider}, capability={capability}")
 
 
@@ -571,18 +581,39 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
     if route.capability == "图片":
         size = params.get("size") or params.get("画面尺寸") or "1024x1024"
         aspect_ratio = params.get("aspect_ratio") or params.get("画面比例") or "9:16"
-        payload["size"] = size
-        payload["metadata"] = adapt_image_metadata(size=size, aspect_ratio=aspect_ratio)
-        if reference_count:
-            payload["input_mode"] = "image-to-image"
-            if str(route.provider or "").strip().upper() == "OTU":
-                payload["metadata"]["urls"] = ["<reference_url>"] * min(int(reference_count or 0), 5)
+        if route.provider == "Aitgenne":
+            payload["n"] = int(params.get("n") or 1)
+            payload["size"] = size
+            for key in ("quality", "format"):
+                if params.get(key) not in (None, ""):
+                    payload[key] = params.get(key)
+            if reference_count:
+                payload["image"] = ["<reference_file>"] * int(reference_count or 0)
+            endpoint = (
+                _images_endpoint(route.api_base, "https://api.aitgenne.com", edit=True)
+                if reference_count
+                else media_endpoint(route)
+            )
+            adapter_payload_summary = {
+                "size": "payload.size",
+                "n": "payload.n",
+            }
+            if reference_count:
+                adapter_payload_summary["image"] = "multipart field image repeated"
+        else:
+            payload["size"] = size
+            payload["metadata"] = adapt_image_metadata(size=size, aspect_ratio=aspect_ratio)
+            if reference_count:
+                payload["input_mode"] = "image-to-image"
+                if str(route.provider or "").strip().upper() == "OTU":
+                    payload["metadata"]["urls"] = ["<reference_url>"] * min(int(reference_count or 0), 5)
+            endpoint = media_endpoint(route)
+            adapter_payload_summary = {
+                "size": "payload.size",
+                "aspect_ratio": "payload.metadata.aspectRatio",
+                "aspect_ratio_alias": "payload.metadata.aspect_ratio",
+            }
         spec = media_spec_from_values(size=size, aspect_ratio=aspect_ratio, slot_name=route.task_type, capability=route.capability)
-        adapter_payload_summary = {
-            "size": "payload.size",
-            "aspect_ratio": "payload.metadata.aspectRatio",
-            "aspect_ratio_alias": "payload.metadata.aspect_ratio",
-        }
     else:
         size = params.get("size") or params.get("画面尺寸") or "720x1280"
         seconds = str(params.get("seconds") or params.get("视频时长") or "8")
@@ -610,12 +641,14 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
                 "seconds": "payload.seconds",
             }
         )
+        endpoint = media_endpoint(route)
     return redact_secret({
         "provider": route.provider,
         "capability": route.capability,
         "task_type": route.task_type,
-        "endpoint": media_endpoint(route),
+        "endpoint": endpoint,
         "method": "POST",
+        "content_type": "multipart/form-data" if route.provider == "Aitgenne" and route.capability == "图片" and reference_count else "application/json",
         "payload_keys": sorted(payload.keys()),
         "payload": payload,
         "media_spec": spec.summary(),

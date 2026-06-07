@@ -234,7 +234,7 @@ Aitgenne VEO 待确认：
 
 - OTU：复用 `/v1/videos` JSON 图像任务路径；gpt-image-2 图片参考图统一放在 `metadata.urls`，本地图片转完整 Data URL，不再使用顶层 `image_base64`。OTU 视频接口的 multipart 参考图另算。
 - AIHubMix：需要确认 `gpt-image-2` 的实际图片生成端点和参数，不能只凭 `/v1/models` 进入生产。
-- Aitgenne：`gpt-image-2` 元数据支持 `openai编辑图片 / image-generation`，需要确认具体使用 `/v1/images/generations` 还是编辑图片端点。
+- Aitgenne：`gpt-image-2` 文生图使用 JSON `POST /v1/images/generations`；带参考图时使用 multipart `POST /v1/images/edits`，重复字段名为 `image`，不提交内部 `metadata` / `input_mode`。
 
 视频适配：
 
