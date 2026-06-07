@@ -111,6 +111,12 @@ CHILD_RECORD_TYPE = "场景子任务"
 ACTIVE_RECORD_STATES = {"", "有效"}
 STALE_WRITEBACK_MARKER = "停止写回，避免旧任务覆盖新结果"
 MAX_PRODUCT_REFERENCES = 4
+FIRST_LAST_ATTACHMENT_FIELDS = {
+    "首帧图",
+    "尾帧图",
+    "首尾帧视频",
+    "首尾帧文档附件",
+}
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -270,6 +276,15 @@ def first_frame_result_reset_fields(status: str = "不触发") -> Dict[str, Any]
     }
     fields.update(last_frame_result_reset_fields("不触发"))
     return fields
+
+
+def filter_first_last_update_fields(token: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+    filtered = filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, fields)
+    return {
+        name: value
+        for name, value in filtered.items()
+        if not (name in FIRST_LAST_ATTACHMENT_FIELDS and value in ([], ""))
+    }
 
 
 def ensure_current_generation(
@@ -810,7 +825,7 @@ def request_first_frame_regeneration(record_id: str) -> Dict[str, Any]:
         "首帧图操作": "不触发",
         "错误信息": "",
     })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, patch))
+    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, patch))
     return {"record_id": record_id, "status": "triggered", "stage": "first_frame", "version": version}
 
 
@@ -826,7 +841,7 @@ def request_last_frame_regeneration(record_id: str) -> Dict[str, Any]:
         "尾帧图操作": "不触发",
         "错误信息": "",
     })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, patch))
+    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, patch))
     return {"record_id": record_id, "status": "triggered", "stage": "last_frame", "version": version}
 
 
@@ -842,7 +857,7 @@ def request_video_regeneration(record_id: str) -> Dict[str, Any]:
         "视频操作": "不触发",
         "错误信息": "",
     })
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, patch))
+    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, patch))
     return {"record_id": record_id, "status": "triggered", "stage": "video", "version": version}
 
 
@@ -1841,7 +1856,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     field_types = get_table_field_types(token, TABLE_FIRST_LAST_VIDEO)
     native_client: Any = None
     if existing_task_id and not existing_video_task_matches_channel(fields, channel, video_model["display"], existing_task_id):
-        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
             "视频任务ID": "",
             "视频生成原始响应JSON": "",
             "视频错误信息": f"旧视频任务ID不属于当前视频通道/模型，已忽略并重新提交。current={video_task_route_tag(channel, video_model['display'])}; old_task_id={existing_task_id}",
@@ -1850,7 +1865,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
 
     if existing_task_id:
         task_id = existing_task_id
-        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
             "视频通道": channel,
             "视频生成模型": video_model["display"],
             "视频生成状态": "生成中",
@@ -1890,7 +1905,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 else ""
             ),
         })
-        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, start_fields))
+        safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, start_fields))
         if channel == "OTU":
             task_id, submit_body = submit_first_last_video_task(
                 runtime_cfg,
@@ -1901,7 +1916,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 size=size,
                 aspect_ratio=aspect_ratio,
             )
-            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
@@ -1920,7 +1935,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 aspect_ratio=aspect_ratio,
                 reference_urls=reference_urls,
             )
-            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
@@ -1941,7 +1956,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
             task_id = extract_text(getattr(operation, "name", "")).strip()
             if not task_id:
                 raise RuntimeError(f"Veo 首尾帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
-            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {
+            safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}, 10000),
@@ -1988,7 +2003,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
     }
     if video_url:
         success_fields["首尾帧视频URL"] = format_url_field_value(video_url, field_types.get("首尾帧视频URL", 0))
-    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, success_fields))
+    safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, success_fields))
     summary.update({"status": "success", "task_id": task_id, "video_url": video_url, "file_token": file_token})
     return summary
 

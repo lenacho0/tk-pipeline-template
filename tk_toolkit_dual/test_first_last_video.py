@@ -795,11 +795,11 @@ video prompt exactly
         patch_fields = updates[-1]
         self.assertEqual(result["status"], "triggered")
         self.assertEqual(patch_fields["首帧图版本"], 3)
-        self.assertEqual(patch_fields["首帧图"], [])
+        self.assertNotIn("首帧图", patch_fields)
         self.assertEqual(patch_fields["首帧图file_token"], "")
-        self.assertEqual(patch_fields["尾帧图"], [])
+        self.assertNotIn("尾帧图", patch_fields)
         self.assertEqual(patch_fields["尾帧图file_token"], "")
-        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertNotIn("首尾帧视频", patch_fields)
         self.assertIsNone(patch_fields["首尾帧视频URL"])
         self.assertEqual(patch_fields["首尾帧视频file_token"], "")
         self.assertEqual(patch_fields["首帧图生成状态"], "待生成")
@@ -828,9 +828,9 @@ video prompt exactly
         self.assertEqual(result["status"], "triggered")
         self.assertNotIn("首帧图file_token", patch_fields)
         self.assertEqual(patch_fields["尾帧图版本"], 5)
-        self.assertEqual(patch_fields["尾帧图"], [])
+        self.assertNotIn("尾帧图", patch_fields)
         self.assertEqual(patch_fields["尾帧图file_token"], "")
-        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertNotIn("首尾帧视频", patch_fields)
         self.assertIsNone(patch_fields["首尾帧视频URL"])
         self.assertEqual(patch_fields["视频生成状态"], "不触发")
         self.assertEqual(patch_fields["尾帧图生成状态"], "待生成")
@@ -857,7 +857,7 @@ video prompt exactly
         self.assertNotIn("首帧图file_token", patch_fields)
         self.assertNotIn("尾帧图file_token", patch_fields)
         self.assertEqual(patch_fields["视频版本"], 8)
-        self.assertEqual(patch_fields["首尾帧视频"], [])
+        self.assertNotIn("首尾帧视频", patch_fields)
         self.assertIsNone(patch_fields["首尾帧视频URL"])
         self.assertEqual(patch_fields["首尾帧视频file_token"], "")
         self.assertEqual(patch_fields["视频任务ID"], "")
@@ -1354,6 +1354,7 @@ video prompt exactly
         self.assertIn("恢复轮询", updates[0]["视频错误信息"])
         self.assertEqual(updates[-1]["视频生成状态"], "成功")
         self.assertEqual(updates[-1]["首尾帧视频file_token"], "ft_video")
+        self.assertEqual(updates[-1]["首尾帧视频"][0]["file_token"], "ft_video")
 
     def test_render_video_uses_record_video_generation_model_for_new_submit(self):
         updates = []
@@ -1400,6 +1401,7 @@ video prompt exactly
         self.assertEqual([call.args[1] for call in media_downloader.call_args_list], ["ft_first_latest", "ft_last_latest"])
         self.assertEqual(result["model"], "veo_3_1-fl")
         self.assertEqual(result["model_source"], "视频生成模型")
+        self.assertNotIn("首尾帧视频", updates[0])
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
 
     def test_render_video_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
