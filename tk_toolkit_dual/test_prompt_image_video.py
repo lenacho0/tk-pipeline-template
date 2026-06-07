@@ -351,7 +351,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         self.assertIn("product_table:1", captured["prompt"])
         self.assertIn("UootaPet FIPRONIL", captured["prompt"])
 
-    def test_image_generation_fails_product_identity_audit_before_uploading(self):
+    def test_image_generation_does_not_run_product_identity_audit_before_uploading(self):
         updates = []
         fields = {
             "生图提示词": "raw image prompt",
@@ -382,12 +382,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
              patch.object(prompt_video, "collect_image_references", return_value=refs), \
              patch.object(prompt_video, "prepare_product_reference_images", return_value=refs), \
              patch.object(prompt_video, "describe_product_reference_images", return_value="Visible product: UootaPet FIPRONIL package, green top, yellow bottom, cartoon cats."), \
-             patch.object(prompt_video, "verify_generated_product_identity", return_value={
-                 "required": True,
-                 "passed": False,
-                 "reason": "brand changed to RAMICAL",
-                 "missing_or_changed": ["brand/logo", "main title"],
-             }), \
+             patch.object(prompt_video, "verify_generated_product_identity") as audit, \
              patch.object(prompt_video, "apply_prompt_image_default_to_record", side_effect=lambda token, rid, got_fields: got_fields), \
              patch.object(prompt_video, "get_model_config", return_value={"model": "gpt-image-2-2K", "api_key": "key", "api_base": "https://api.test"}), \
              patch.object(prompt_video, "safe_list_records", return_value=[]), \
@@ -396,13 +391,13 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
              patch.object(prompt_video, "upload_image_to_feishu", return_value="ft_image") as upload, \
              patch.object(prompt_video, "maybe_auto_approve_image", return_value={"status": "disabled"}), \
              patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
-            with self.assertRaisesRegex(ValueError, "产品一致性审核失败.*RAMICAL"):
-                prompt_video.run_image("token", "rec008")
+            result = prompt_video.run_image("token", "rec008")
 
-        upload.assert_not_called()
-        self.assertTrue(any(update.get("图片生成状态") == "失败" for update in updates))
-        self.assertTrue(any("brand changed to RAMICAL" in update.get("图片错误信息", "") for update in updates))
-        self.assertFalse(any(update.get("图片生成状态") == "成功" for update in updates))
+        self.assertEqual(result["status"], "success")
+        audit.assert_not_called()
+        upload.assert_called_once()
+        self.assertTrue(any(update.get("图片生成状态") == "成功" for update in updates))
+        self.assertFalse(any(update.get("图片生成状态") == "失败" for update in updates))
 
     def test_image_generation_uses_contact_sheet_for_multiple_otu_references_and_locks_product(self):
         captured = {}
@@ -580,6 +575,43 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         defaults.assert_called_once_with("token", "rec008", fields)
         self.assertIs(route_resolver.call_args.args[0], defaulted_fields)
 
+    def test_video_route_reuses_provider_key_for_catalog_model_without_secret(self):
+        config_records = [
+            {"fields": {
+                "配置类型": "模型目录",
+                "供应商": "OTU",
+                "能力类型": "视频",
+                "模型名称": "veo_3_1-fast-fl-hd",
+                "API 代理地址": "",
+                "API Key": "",
+            }},
+            {"fields": {
+                "配置类型": "运行环节",
+                "环节": "分镜视频生成-OTU",
+                "供应商": "OTU",
+                "能力类型": "视频",
+                "模型名称": "OTU / veo_3_1-fast-fl",
+                "API 代理地址": "https://otuapi.com",
+                "API Key": "sk-otu",
+            }},
+        ]
+
+        with patch.object(prompt_video, "TABLE_CONFIG", "tbl_config"), \
+             patch.object(prompt_video, "safe_list_records", return_value=config_records):
+            route = prompt_video.resolve_video_route({
+                "视频AI模型": "OTU / veo_3_1-fast-fl-hd",
+                "视频画面尺寸": "720x1280",
+                "视频画面比例": "9:16",
+                "视频时长秒": "8",
+            }, token="token")
+
+        self.assertEqual(route.provider, "OTU")
+        self.assertEqual(route.model, "veo_3_1-fast-fl-hd")
+        self.assertEqual(route.api_key, "sk-otu")
+        self.assertEqual(route.api_base, "https://otuapi.com")
+        self.assertEqual(route.params["size"], "720x1280")
+        self.assertEqual(route.params["aspect_ratio"], "9:16")
+
     def test_video_generation_requires_approved_image_and_uses_only_generated_image(self):
         updates = []
         captured = {}
@@ -603,6 +635,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
                 result_body={"url": "https://example.test/video.mp4"},
                 output_path=out_path,
                 request_summary={"reference_count": 1},
+                video_url="https://example.test/video.mp4",
             )
 
         with tempfile.TemporaryDirectory() as tmpdir, \
@@ -614,6 +647,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
              patch.object(prompt_video, "upload_video_to_feishu", return_value="ft_video"), \
              patch.object(prompt_video, "resolve_video_route", return_value=Mock(provider="OTU", model="OTU / veo_3_1-fast-fl")), \
              patch.object(prompt_video, "run_video_generation", side_effect=fake_run_video), \
+             patch.object(prompt_video, "get_table_field_types", return_value={"视频URL": 15}, create=True), \
              patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
             result = prompt_video.run_video("token", "rec008")
 
@@ -621,6 +655,10 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         self.assertEqual(captured["prompt"], "raw video prompt")
         self.assertTrue(str(captured["image_path"]).endswith("generated_image_v1.png"))
         self.assertTrue(any(update.get("生成视频file_token") == "ft_video" for update in updates))
+        self.assertTrue(any(update.get("视频URL") == {
+            "link": "https://example.test/video.mp4",
+            "text": "https://example.test/video.mp4",
+        } for update in updates))
         self.assertTrue(all("视频操作" not in update for update in updates))
 
     def test_video_status_rerun_overwrites_and_increments_existing_video_version(self):

@@ -57,7 +57,9 @@ from tk_shot_video import (  # noqa: E402
     download_video,
     extract_native_generated_video,
     extract_video_url,
+    format_url_field_value,
     get_native_veo_client,
+    get_table_field_types,
     is_native_veo_operation_id,
     native_generated_video_uri,
     normalize_native_veo_resolution,
@@ -833,26 +835,6 @@ def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
             "图片错误信息": f"已提交图片任务，正在轮询。task_id={task_id}",
         })),
     )
-    product_identity_audit = verify_generated_product_identity(token, refs, result.output_path, product_visual_description)
-    if product_identity_audit.get("required") and not product_identity_audit.get("passed"):
-        reason = extract_text(product_identity_audit.get("reason")).strip() or "产品包装身份与参考图不一致"
-        error_message = f"产品一致性审核失败: {reason}"
-        safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, {
-            **image_slot_field_patch("图片", image_params),
-            "图片版本": version,
-            "图片生成状态": "失败",
-            "图片本地路径": result.output_path,
-            "图片任务ID": result.task_id,
-            "图片原始响应JSON": compact_json({
-                "submit": result.submit_body,
-                "result": result.result_body,
-                "request_summary": result.request_summary,
-                "product_identity_audit": product_identity_audit,
-            }),
-            "图片错误信息": error_message,
-            "错误信息": error_message,
-        }))
-        raise ValueError(error_message)
     file_token = upload_image_to_feishu(token, result.output_path, Path(result.output_path).name)
     success_fields = {
         **image_slot_field_patch("图片", image_params),
@@ -866,7 +848,6 @@ def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
             "submit": result.submit_body,
             "result": result.result_body,
             "request_summary": result.request_summary,
-            "product_identity_audit": product_identity_audit,
         }),
         "图片审核状态": "待确认",
         "图片错误信息": "",
@@ -935,7 +916,8 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         "历史生成记录JSON": history_patch(fields, {"stage": "video", "version": version, "file_token": file_token, "task_id": result.task_id, "time": int(time.time() * 1000)}),
     }
     if result.video_url:
-        success_fields["视频URL"] = result.video_url
+        field_types = get_table_field_types(token, TABLE_PROMPT_IMAGE_VIDEO)
+        success_fields["视频URL"] = format_url_field_value(result.video_url, field_types.get("视频URL", 0))
     safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, success_fields))
     summary.update({"status": "success", "file_token": file_token, "task_id": result.task_id, "video_url": result.video_url})
     return summary
