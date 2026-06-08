@@ -160,6 +160,13 @@ def config_record_matches_provider(fields: Dict[str, Any], provider: str) -> boo
     return bool(marker and marker in api_base)
 
 
+def api_base_matches_provider(api_base: str, provider: str) -> bool:
+    marker = PROVIDER_API_BASE_MARKERS.get(provider, "").lower()
+    if not marker:
+        return True
+    return marker in _norm(api_base).lower()
+
+
 def config_record_matches_model(fields: Dict[str, Any], provider: str, display_model: str) -> bool:
     requested = parse_model_display(display_model)
     requested_provider = requested["provider"] or provider
@@ -245,8 +252,13 @@ def route_from_record(
     api_base = _norm(config.get("api_base"))
     api_key = _norm(config.get("api_key"))
     provider_config_records = list(config_records or [])
-    if explicit_model and config_provider and config_provider != provider:
+    if explicit_model and (
+        (config_provider and config_provider != provider)
+        or (api_base and not api_base_matches_provider(api_base, provider))
+    ):
         api_base = ""
+        api_key = ""
+        api_base = api_base_for_provider(provider_config_records, provider)
         api_key = api_key_for_provider(provider_config_records, provider)
     elif explicit_model and not api_key:
         api_key = api_key_for_provider(provider_config_records, provider)

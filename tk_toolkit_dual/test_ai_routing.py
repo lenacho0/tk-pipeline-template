@@ -134,6 +134,32 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(route.api_key, "sk-aitgenne")
         self.assertEqual(ai_routing.build_dry_run_summary(route, "hello")["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
 
+    def test_explicit_model_refreshes_stale_api_base_even_when_config_provider_matches(self):
+        route = ai_routing.route_from_record(
+            {
+                "AI能力类型": "文本",
+                "AI任务类型": "脚本解析拆分",
+                "AI模型": "AIHubMix / gemini-3.1-pro-preview",
+            },
+            {
+                "provider": "AIHubMix",
+                "model": "Aitgenne / gpt-5.5",
+                "call_type": "OpenAI兼容 chat/completions",
+                "api_key": "sk-aitgenne",
+                "api_base": "https://api.aitgenne.com/v1",
+            },
+            config_records=[
+                {"fields": {"供应商": "AIHubMix", "API 代理地址": "https://aihubmix.com/gemini", "API Key": "sk-aihubmix"}},
+                {"fields": {"供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com/v1", "API Key": "sk-aitgenne"}},
+            ],
+        )
+
+        self.assertEqual(route.provider, "AIHubMix")
+        self.assertEqual(route.call_type, "Gemini 原生 SDK")
+        self.assertEqual(route.api_base, "https://aihubmix.com/gemini")
+        self.assertEqual(route.api_key, "sk-aihubmix")
+        self.assertEqual(ai_routing.build_dry_run_summary(route, "hello")["endpoint"], "https://aihubmix.com/gemini")
+
     def test_provider_switch_does_not_reuse_wrong_provider_key(self):
         route = ai_routing.route_from_record(
             {
