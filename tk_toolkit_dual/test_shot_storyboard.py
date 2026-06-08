@@ -107,6 +107,108 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(fields["尾帧图生成状态"], "待生成")
         self.assertEqual(fields["尾帧画面描述"], "clean rug")
 
+    def test_auto_review_triggers_video_after_storyboard_when_no_last_frame_mode(self):
+        updates = []
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = storyboard.maybe_auto_trigger_script_doc_video(
+                "token",
+                "rec1",
+                {
+                    "首尾帧视频模式": "不启用",
+                    "视频提示词": "animate the generated shot",
+                    "分镜图file_token": "ft_shot",
+                },
+                file_token="ft_shot",
+                trigger_source="storyboard",
+            )
+
+        self.assertEqual(result, {"status": "triggered"})
+        self.assertEqual(updates, [{
+            "视频生成状态": "待生成",
+            "视频错误信息": "",
+            "错误信息": "",
+        }])
+
+    def test_auto_review_disabled_does_not_trigger_script_doc_video(self):
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=False), \
+             patch("tk_shot_storyboard.safe_update_record") as updater:
+            result = storyboard.maybe_auto_trigger_script_doc_video(
+                "token",
+                "rec1",
+                {"视频提示词": "animate", "视频生成状态": "不触发", "分镜图file_token": "ft_shot"},
+                file_token="ft_shot",
+                trigger_source="storyboard",
+            )
+
+        self.assertEqual(result, {"status": "disabled"})
+        updater.assert_not_called()
+
+    def test_auto_review_waits_for_last_frame_after_storyboard_when_last_frame_mode_enabled(self):
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True), \
+             patch("tk_shot_storyboard.safe_update_record") as updater:
+            result = storyboard.maybe_auto_trigger_script_doc_video(
+                "token",
+                "rec1",
+                {
+                    "首尾帧视频模式": "启用",
+                    "视频提示词": "animate from first frame to last frame",
+                    "视频生成状态": "不触发",
+                    "分镜图file_token": "ft_shot",
+                    "尾帧图生成状态": "待生成",
+                },
+                file_token="ft_shot",
+                trigger_source="storyboard",
+            )
+
+        self.assertEqual(result, {"status": "waiting_for_last_frame"})
+        updater.assert_not_called()
+
+    def test_auto_review_triggers_video_after_last_frame_success(self):
+        updates = []
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = storyboard.maybe_auto_trigger_script_doc_video(
+                "token",
+                "rec1",
+                {
+                    "首尾帧视频模式": "启用",
+                    "视频提示词": "animate from first frame to last frame",
+                    "视频生成状态": "失败",
+                    "分镜图file_token": "ft_shot",
+                    "尾帧图file_token": "ft_tail",
+                },
+                file_token="ft_tail",
+                trigger_source="last_frame",
+            )
+
+        self.assertEqual(result, {"status": "triggered"})
+        self.assertEqual(updates[0]["视频生成状态"], "待生成")
+
+    def test_auto_review_does_not_overwrite_active_or_successful_video_status(self):
+        for status in ("待生成", "生成中", "成功"):
+            with self.subTest(status=status), \
+                 patch("tk_shot_storyboard.auto_review_enabled", return_value=True), \
+                 patch("tk_shot_storyboard.safe_update_record") as updater:
+                result = storyboard.maybe_auto_trigger_script_doc_video(
+                    "token",
+                    "rec1",
+                    {
+                        "视频提示词": "animate",
+                        "视频生成状态": status,
+                        "分镜图file_token": "ft_shot",
+                    },
+                    file_token="ft_shot",
+                    trigger_source="storyboard",
+                )
+
+            self.assertEqual(result, {"status": "skipped", "reason": "video_status_not_triggerable", "video_status": status})
+            updater.assert_not_called()
+
     def test_single_shot_prompt_uses_only_starting_frame_when_end_frame_enabled(self):
         prompt = storyboard._build_single_shot_prompt(
             "base prompt",
@@ -168,6 +270,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
              patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
              patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
              patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.auto_review_enabled", return_value=False), \
              patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
             image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
             storyboard.render_script_doc_last_frame("t", "rec1")
@@ -231,6 +334,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
              patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
              patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
              patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.auto_review_enabled", return_value=False), \
              patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
             image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
             storyboard.render_script_doc_last_frame("t", "rec1")

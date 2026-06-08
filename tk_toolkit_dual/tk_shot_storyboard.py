@@ -32,10 +32,13 @@ from image_generation import (
 )
 from tk_storyboard_style import format_style_policy_for_prompt, normalize_storyboard_style
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_record
+from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled
 
 
 _TABLE_FIELDS_CACHE = {}
 IMAGE_STAGE_NAME = "图片生成-OTU"
+AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_shots"]
+VIDEO_TRIGGERABLE_STATUSES = {"", "不触发", "失败"}
 
 
 def script_doc_unified_route_state(fields, token):
@@ -104,6 +107,10 @@ def filter_existing_fields(token, table_id, fields):
 
 def get_attachment_token(value):
     return latest_attachment_token(value)
+
+
+def latest_token_from_attachment_or_field(fields, attachment_field, token_field):
+    return get_attachment_token(fields.get(attachment_field)) or extract_text(fields.get(token_field)).strip()
 
 
 def _compact_json(value: Any, max_chars: int = 10000) -> str:
@@ -774,13 +781,50 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         'request_summary': image_result.request_summary,
     })
     safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
+    auto_video_summary = maybe_auto_trigger_script_doc_video(
+        token,
+        record_id,
+        {**shot_fields, **success_fields},
+        file_token=file_token,
+        trigger_source='storyboard',
+    )
     log_event('INFO', 'script doc shot storyboard render success', record_id=record_id, reference_count=len(refs))
+    if auto_video_summary.get('status') == 'triggered':
+        log_event('INFO', 'script doc shot video auto-triggered after storyboard', record_id=record_id)
     print(f'✅ 脚本文档单张分镜图生成完成: {record_id}')
 
 
 def is_end_frame_mode_enabled(fields):
     raw = extract_text(fields.get('首尾帧视频模式')).strip().lower().replace(' ', '')
     return raw in {'启用', '是', 'yes', 'true', '1', 'enabled', 'enable'}
+
+
+def maybe_auto_trigger_script_doc_video(token, record_id, fields, *, file_token, trigger_source):
+    video_status = extract_text(fields.get('视频生成状态')).strip()
+    if video_status not in VIDEO_TRIGGERABLE_STATUSES:
+        return {'status': 'skipped', 'reason': 'video_status_not_triggerable', 'video_status': video_status}
+    if not file_token:
+        return {'status': 'skipped', 'reason': 'missing_file_token'}
+    if not extract_text(fields.get('视频提示词')).strip():
+        return {'status': 'skipped', 'reason': 'missing_video_prompt'}
+    if is_end_frame_mode_enabled(fields):
+        if trigger_source != 'last_frame':
+            return {'status': 'waiting_for_last_frame'}
+        if not latest_token_from_attachment_or_field(fields, '分镜图', '分镜图file_token'):
+            return {'status': 'skipped', 'reason': 'missing_storyboard_file_token'}
+        if not latest_token_from_attachment_or_field(fields, '尾帧图', '尾帧图file_token'):
+            return {'status': 'skipped', 'reason': 'missing_last_frame_file_token'}
+    else:
+        if not latest_token_from_attachment_or_field(fields, '分镜图', '分镜图file_token'):
+            return {'status': 'skipped', 'reason': 'missing_storyboard_file_token'}
+    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
+        return {'status': 'disabled'}
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        '视频生成状态': '待生成',
+        '视频错误信息': '',
+        '错误信息': '',
+    }))
+    return {'status': 'triggered'}
 
 
 def extract_ending_frame_section(text):
@@ -970,7 +1014,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         max_attempts=3,
         label='upload script doc last frame image to feishu'
     )
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+    success_fields = {
         **image_slot_field_patch('尾帧图', image_params),
         '尾帧图': [{'file_token': file_token}],
         '尾帧图file_token': file_token,
@@ -986,8 +1030,18 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         '尾帧图生成时间': int(time.time() * 1000),
         '尾帧图错误信息': '',
         '错误信息': '',
-    }))
+    }
+    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
+    auto_video_summary = maybe_auto_trigger_script_doc_video(
+        token,
+        record_id,
+        {**fields, **success_fields},
+        file_token=file_token,
+        trigger_source='last_frame',
+    )
     log_event('INFO', 'script doc last frame render success', record_id=record_id)
+    if auto_video_summary.get('status') == 'triggered':
+        log_event('INFO', 'script doc shot video auto-triggered after last frame', record_id=record_id)
     print(f'✅ 脚本文档尾帧图生成完成: {record_id}')
 
 
