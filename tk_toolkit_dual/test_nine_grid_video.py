@@ -153,7 +153,7 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "auto_approved")
         enabled.assert_called_once_with("token", stage_name=nine_grid.AUTO_REVIEW_STAGE_NAME)
-        self.assertIn(("asset_ref", {"参考图审核状态": "通过", "参考图操作": "不触发", "错误信息": ""}), updates)
+        self.assertIn(("asset_ref", {"参考图审核状态": "已触发下游", "参考图操作": "不触发", "错误信息": ""}), updates)
         advance.assert_called_once_with("token", "parent")
 
     def test_auto_approve_reference_asset_skips_regeneration_and_missing_token(self):
@@ -468,6 +468,101 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(summary["advanced_boards"], 1)
         self.assertEqual(updates, [("board1", {"图片生成状态": "待生成", "错误信息": ""})])
 
+    def test_reference_approval_treats_handled_assets_as_approved(self):
+        records = [
+            {
+                "record_id": "asset1",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "参考图": [{"file_token": "file1"}],
+                    "参考图审核状态": "已触发下游",
+                },
+            },
+            {
+                "record_id": "asset2",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "参考图": [{"file_token": "file2"}],
+                    "参考图审核状态": "通过",
+                },
+            },
+            {
+                "record_id": "board1",
+                "fields": {
+                    "记录类型": "Board分段",
+                    "父任务记录ID": "recParent",
+                    "图片生成状态": "不触发",
+                },
+            },
+        ]
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "safe_list_records", return_value=records), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))):
+            summary = nine_grid.advance_boards_after_reference_approval("token", "recParent")
+
+        self.assertEqual(summary["status"], "advanced")
+        self.assertEqual(summary["advanced_boards"], 1)
+        self.assertEqual(updates, [("board1", {"图片生成状态": "待生成", "错误信息": ""})])
+
+    def test_reference_approval_worker_marks_asset_handled_after_advancing(self):
+        updates = []
+
+        with patch.object(nine_grid, "ensure_nine_grid_table"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value={"记录类型": "参考资产", "父任务记录ID": "recParent"}), \
+             patch.object(nine_grid, "advance_boards_after_reference_approval", return_value={"status": "advanced", "advanced_boards": 2}), \
+             patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))):
+            summary = nine_grid.advance_boards_for_reference_asset("asset1")
+
+        self.assertEqual(summary["status"], "advanced")
+        self.assertEqual(summary["record_id"], "asset1")
+        self.assertEqual(updates, [("asset1", {"参考图审核状态": "已触发下游", "参考图操作": "不触发", "错误信息": ""})])
+
+    def test_collect_reference_images_accepts_handled_reference_assets(self):
+        records = [
+            {
+                "record_id": "asset_env",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "资产类型": "environment",
+                    "资产ID": "living_room",
+                    "参考图file_token": "ft_env",
+                    "参考图审核状态": "已触发下游",
+                },
+            },
+            {
+                "record_id": "asset_human",
+                "fields": {
+                    "记录类型": "参考资产",
+                    "父任务记录ID": "recParent",
+                    "资产类型": "human",
+                    "资产ID": "owner",
+                    "参考图file_token": "ft_human",
+                    "参考图审核状态": "已触发下游",
+                },
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            refs = nine_grid.collect_nine_grid_reference_images(
+                "token",
+                {"产品图": [{"file_token": "ft_product"}]},
+                "recParent",
+                Path(tmpdir),
+                records=records,
+                download_fn=lambda token, file_token, path: path,
+            )
+
+        self.assertEqual([item["file_token"] for item in refs], ["ft_env", "ft_human"])
+
     def test_table_definition_has_clean_entry_review_generation_views(self):
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "nine_grid_video")
         field_names = [field["name"] for field in create_table.NINE_GRID_VIDEO_FIELDS]
@@ -483,6 +578,8 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(record_types, ["母任务", "参考资产", "Board分段"])
         environment_sources = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["环境图来源"]["options"]]
         self.assertEqual(environment_sources, ["AI自动生成", "手动上传"])
+        review_statuses = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["参考图审核状态"]["options"]]
+        self.assertEqual(review_statuses, ["待确认", "通过", "不通过", "已触发下游"])
         self.assertEqual(
             create_table.TABLE_DEFINITION["views"]["01-任务入口"],
             [

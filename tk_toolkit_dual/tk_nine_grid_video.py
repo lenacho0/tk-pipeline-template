@@ -115,6 +115,8 @@ REFERENCE_SOURCE_AI = "AI自动生成"
 REFERENCE_SOURCE_MANUAL = "手动上传"
 REFERENCE_SOURCE_MODEL_TABLE = "选择模特表"
 ASSET_RECORD_TYPE = "参考资产"
+REFERENCE_REVIEW_PASSED_STATUSES = {"通过", "已触发下游"}
+REFERENCE_REVIEW_HANDLED_STATUS = "已触发下游"
 ENVIRONMENT_EMPTY_SCENE_PREFIX = """
 EMPTY ENVIRONMENT REFERENCE PLATE ONLY.
 Generate one empty but lived-in local home environment reference image for later use as a consistency reference. Show only the room, furniture, surfaces, material texture, natural lighting, camera angle, non-character household props, and any visible problem marks explicitly described in Scene details. If Scene details include visible problem marks, render exactly those marks and their described locations. If no problem mark is described, do not invent any visible problem mark or odor source. The space should feel like a real local UGC phone photo, not a cleaned advertising set: include everyday household clutter, mild mess, wear marks, imperfect surfaces, localized details, small practical objects, cables, bowls, laundry, slippers, bags, tissue boxes, cleaning items, or other plausible daily-life objects when appropriate to the scene. Do not include any people, pets, product bottles, spray packaging, hands, body parts, reflections of people or animals, posters/screens containing people or animals, text, subtitles, logos, or watermarks.
@@ -1265,9 +1267,13 @@ def list_reference_asset_records(token: str, parent_record_id: str) -> List[Dict
 
 
 def _asset_has_approved_reference(token: str, fields: Dict[str, Any]) -> bool:
-    if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+    if not reference_review_passed(fields.get("参考图审核状态")):
         return False
     return bool(_asset_reference_file_token(token, fields))
+
+
+def reference_review_passed(value: Any) -> bool:
+    return extract_text(value).strip() in REFERENCE_REVIEW_PASSED_STATUSES
 
 
 def advance_boards_after_reference_approval(token: str, parent_record_id: str) -> Dict[str, Any]:
@@ -1350,6 +1356,7 @@ def advance_boards_for_reference_asset(record_id: str, *, dry_run: bool = False)
         TABLE_NINE_GRID_VIDEO,
         record_id,
         filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+            "参考图审核状态": REFERENCE_REVIEW_HANDLED_STATUS,
             "参考图操作": "不触发",
             "错误信息": "",
         }),
@@ -1373,7 +1380,7 @@ def maybe_auto_approve_reference_asset(token: str, record_id: str, fields: Dict[
         TABLE_NINE_GRID_VIDEO,
         record_id,
         filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
-            "参考图审核状态": "通过",
+            "参考图审核状态": REFERENCE_REVIEW_HANDLED_STATUS,
             "参考图操作": "不触发",
             "错误信息": "",
         }),
@@ -1682,7 +1689,7 @@ def collect_nine_grid_video_human_reference_items(
             continue
         if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
             continue
-        if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+        if not reference_review_passed(fields.get("参考图审核状态")):
             continue
         if extract_text(fields.get("资产类型")).strip() != "human":
             continue
@@ -1764,7 +1771,7 @@ def collect_nine_grid_reference_images(
             continue
         if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
             continue
-        if extract_text(fields.get("参考图审核状态")).strip() != "通过":
+        if not reference_review_passed(fields.get("参考图审核状态")):
             continue
         asset_type = extract_text(fields.get("资产类型")).strip() or "asset"
         asset_id = extract_text(fields.get("资产ID")).strip() or rec.get("record_id", "asset")
