@@ -43,7 +43,11 @@ from image_generation import (  # noqa: E402
 )
 from otu_image import DEFAULT_OTU_API_BASE, DEFAULT_OTU_IMAGE_MODEL, DEFAULT_OTU_IMAGE_SIZE  # noqa: E402
 from tk_model_config_center import TASK_TABLES, apply_task_default_to_record  # noqa: E402
-from tk_reference_media import build_reference_contact_sheet  # noqa: E402
+from tk_reference_media import (  # noqa: E402
+    build_reference_contact_sheet,
+    poll_omni_video_task,
+    submit_omni_video_task,
+)
 from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  # noqa: E402
 from tk_shot_storyboard import filter_existing_fields, get_tmp_download_url_for_attachment  # noqa: E402
 from tk_shot_video import (  # noqa: E402
@@ -78,6 +82,7 @@ DEFAULT_VIDEO_STAGE_NAME = "分镜视频生成-OTU"
 PRODUCT_VISUAL_ANALYSIS_STAGE_NAME = "多角色首尾帧解析-Gemini"
 BASE_WORK_DIR = Path(WORKSPACE) / "prompt_image_video_work"
 MAX_IMAGE_REFERENCES = 7
+MAX_OMNI_VIDEO_REFERENCES = 7
 POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
 POLL_TIMEOUT = 45
@@ -507,6 +512,14 @@ def selected_config_record_for_model(config_records: Iterable[Dict[str, Any]], m
     return fields
 
 
+def _route_model_name(route: ai_routing.AiRoute) -> str:
+    return ai_routing.parse_model_display(route.model)["model"] or route.model
+
+
+def is_otu_omni_video_route(route: ai_routing.AiRoute) -> bool:
+    return route.provider == "OTU" and _route_model_name(route) == "omni_flash-10s"
+
+
 def config_fields_to_runtime(fields: Mapping[str, Any], *, default_model: str = "") -> Dict[str, str]:
     return {
         "model": extract_text(fields.get("模型名称")).strip() or default_model,
@@ -565,6 +578,31 @@ def resolve_video_route(fields: Dict[str, Any], token: Optional[str] = None) -> 
     return route
 
 
+def collect_omni_video_references(
+    token: str,
+    fields: Dict[str, Any],
+    work_dir: Path,
+    *,
+    generated_image_token: str,
+    generated_image_path: str,
+) -> List[Dict[str, str]]:
+    extra_refs = collect_image_references(token, fields, work_dir)
+    if len(extra_refs) > MAX_OMNI_VIDEO_REFERENCES - 1:
+        raise ValueError(
+            f"Omni 参考图数量超过上限：生成图固定 1 张，附加参考图当前 {len(extra_refs)} 张，最多 {MAX_OMNI_VIDEO_REFERENCES - 1} 张"
+        )
+    prepared_refs = prepare_product_reference_images(extra_refs, work_dir)
+    return [
+        {
+            "role": "generated_image",
+            "file_token": generated_image_token,
+            "name": "008 generated image",
+            "path": generated_image_path,
+        },
+        *prepared_refs,
+    ]
+
+
 def _extract_result_url(data: Mapping[str, Any]) -> str:
     candidates = [
         data.get("video_url"),
@@ -620,12 +658,41 @@ def run_video_generation(
     out_path: str,
     *,
     image_url: str = "",
+    refs: Optional[List[Dict[str, str]]] = None,
 ) -> VideoGenerationResult:
     params = dict(route.params or {})
     size = extract_text(params.get("size")).strip() or DEFAULT_OTU_SIZE
     aspect_ratio = extract_text(params.get("aspect_ratio")).strip() or DEFAULT_ASPECT_RATIO
     seconds = normalize_seconds(params.get("seconds") or params.get("视频时长") or "8")
-    model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
+    model_name = _route_model_name(route)
+    if is_otu_omni_video_route(route):
+        submitted_refs = refs or []
+        if not submitted_refs:
+            raise ValueError("Omni 参考图生视频至少需要 1 张参考图")
+        if len(submitted_refs) > MAX_OMNI_VIDEO_REFERENCES:
+            raise ValueError(f"Omni 参考图数量超过上限：当前 {len(submitted_refs)} 张，最多 {MAX_OMNI_VIDEO_REFERENCES} 张")
+        cfg = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
+        task_id, submit_body = submit_omni_video_task(cfg, prompt, submitted_refs, size=size, aspect_ratio=aspect_ratio)
+        result_body = poll_omni_video_task(cfg, task_id)
+        video_url = extract_video_url(result_body)
+        if not video_url:
+            raise RuntimeError(f"OTU Omni 生成完成但未返回可下载视频 URL: {compact_json(result_body, 1200)}")
+        download_video(video_url, out_path)
+        return VideoGenerationResult(
+            provider=route.provider,
+            task_id=task_id,
+            submit_body=submit_body,
+            result_body=result_body,
+            output_path=out_path,
+            request_summary={
+                "mode": "reference_image_video",
+                "reference_count": len(submitted_refs),
+                "reference_roles": [ref.get("role", "") for ref in submitted_refs],
+                "size": size,
+                "aspect_ratio": aspect_ratio,
+            },
+            video_url=video_url,
+        )
     if route.provider == "OTU":
         cfg = {"api_key": route.api_key, "api_base": route.api_base or DEFAULT_OTU_API_BASE, "model": model_name}
         task_id, submit_body = submit_otu_video_task(cfg, prompt, image_path, seconds, size, aspect_ratio)
@@ -881,6 +948,17 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
     image_path = Path(_downloaded_path(download_feishu_attachment_raw(token, image_token, image_save_path), image_save_path))
     route = resolve_video_route(fields, token)
     image_url = get_tmp_download_url_for_attachment(token, image_token) if route.provider == "Aitgenne" else ""
+    refs = (
+        collect_omni_video_references(
+            token,
+            fields,
+            work_dir,
+            generated_image_token=image_token,
+            generated_image_path=str(image_path),
+        )
+        if is_otu_omni_video_route(route)
+        else None
+    )
     out_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
     summary = {
         "record_id": record_id,
@@ -890,6 +968,9 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         "version": version,
         "model": route.model,
     }
+    if refs is not None:
+        summary["reference_count"] = len(refs)
+        summary["reference_roles"] = [ref.get("role", "") for ref in refs]
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
@@ -899,7 +980,10 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         "视频错误信息": "",
         "错误信息": "",
     }))
-    result = run_video_generation(route, prompt, str(image_path), out_path, image_url=image_url)
+    video_generation_kwargs = {"image_url": image_url}
+    if refs is not None:
+        video_generation_kwargs["refs"] = refs
+    result = run_video_generation(route, prompt, str(image_path), out_path, **video_generation_kwargs)
     file_token = upload_video_to_feishu(token, result.output_path, Path(result.output_path).name)
     success_fields = {
         "视频版本": version,

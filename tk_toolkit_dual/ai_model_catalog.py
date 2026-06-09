@@ -283,6 +283,11 @@ FIRST_LAST_VIDEO_MODEL_NAMES = (
     "Aitgenne / happyhorse-1.0-i2v",
 )
 
+PROMPT_IMAGE_VIDEO_MODEL_NAMES = (
+    *FIRST_LAST_VIDEO_MODEL_NAMES,
+    "OTU / omni_flash-10s",
+)
+
 VIDEO_EDIT_MODEL_NAMES = (
     "Aitgenne / happyhorse-1.0-video-edit",
 )
@@ -337,8 +342,10 @@ IMAGE_MODEL_OPTIONS = select_options_for_capability("图片")
 VIDEO_AI_MODEL_OPTIONS = select_options_for_capability("视频")
 REFERENCE_VIDEO_MODEL_OPTIONS = _options_for_display_names(REFERENCE_VIDEO_MODEL_NAMES)
 FIRST_LAST_VIDEO_MODEL_OPTIONS = _options_for_display_names(FIRST_LAST_VIDEO_MODEL_NAMES)
+PROMPT_IMAGE_VIDEO_MODEL_OPTIONS = _options_for_display_names(PROMPT_IMAGE_VIDEO_MODEL_NAMES)
 VIDEO_EDIT_MODEL_OPTIONS = _options_for_display_names(VIDEO_EDIT_MODEL_NAMES, "视频编辑")
 VOICE_MODEL_OPTIONS = select_options_for_capability("语音")
 VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), *VIDEO_AI_MODEL_OPTIONS]
 REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *REFERENCE_VIDEO_MODEL_OPTIONS]
 FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *FIRST_LAST_VIDEO_MODEL_OPTIONS]
+PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *PROMPT_IMAGE_VIDEO_MODEL_OPTIONS]

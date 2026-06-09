@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tk_create_first_last_video_table as first_last_table
 import tk_create_multi_role_first_last_table as multi_role_table
 import tk_create_nine_grid_video_table as nine_grid_table
+import tk_create_prompt_image_video_table as prompt_image_video_table
 import tk_create_script_doc_shots_table as script_doc_tables
 
 
@@ -43,6 +44,15 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
         self.assertIn("OTU / gpt-image-2-4K", image_options)
         self.assertIn("Aitgenne / gpt-image-2", image_options)
         self.assertNotIn("AIHubMix / gpt-image-2", image_options)
+
+    def test_prompt_image_video_model_options_include_omni_without_changing_first_last(self):
+        prompt_options = field_options(prompt_image_video_table.PROMPT_IMAGE_VIDEO_FIELDS, "视频AI模型")
+        first_last_options = field_options(first_last_table.FIRST_LAST_VIDEO_FIELDS, "视频AI模型")
+
+        self.assertIn("OTU / omni_flash-10s", prompt_options)
+        self.assertIn("OTU / veo_3_1-fast-fl-hd", prompt_options)
+        self.assertIn("Aitgenne / happyhorse-1.0-i2v", prompt_options)
+        self.assertNotIn("OTU / omni_flash-10s", first_last_options)
 
     def test_multi_role_ai_and_video_model_options_come_from_catalog(self):
         ai_options = field_options(multi_role_table.MULTI_ROLE_FIRST_LAST_FIELDS, "AI模型")

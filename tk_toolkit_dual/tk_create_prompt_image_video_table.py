@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from ai_model_catalog import FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS, IMAGE_MODEL_OPTIONS
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS
 from tk_create_script_doc_shots_table import (
     create_missing_fields,
     create_table,
@@ -105,7 +105,7 @@ PROMPT_IMAGE_VIDEO_FIELDS = [
     select("图片审核状态", REVIEW_STATUS_OPTIONS),
     text("图片错误信息"),
     datetime_field("图片生成时间"),
-    select("视频AI模型", FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+    select("视频AI模型", PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
     text("视频AI参数JSON"),
     number("视频时长秒"),
     select("视频画面尺寸", VIDEO_SIZE_OPTIONS),

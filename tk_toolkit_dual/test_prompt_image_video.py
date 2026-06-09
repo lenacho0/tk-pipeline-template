@@ -22,7 +22,8 @@ class PromptImageVideoTableTests(unittest.TestCase):
         self.assertEqual(fields["选择模特"]["type"], "link")
         self.assertEqual(fields["上传参考图"]["type"], "attachment")
         self.assertEqual(fields["图片AI模型"]["options"], ai_model_catalog.IMAGE_MODEL_OPTIONS)
-        self.assertEqual(fields["视频AI模型"]["options"], ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS)
+        self.assertEqual(fields["视频AI模型"]["options"], ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS)
+        self.assertIn("OTU / omni_flash-10s", [item["name"] for item in fields["视频AI模型"]["options"]])
         self.assertNotIn("图片操作", fields)
         self.assertNotIn("视频操作", fields)
 
@@ -660,6 +661,140 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "text": "https://example.test/video.mp4",
         } for update in updates))
         self.assertTrue(all("视频操作" not in update for update in updates))
+
+    def test_video_generation_uses_omni_reference_images_in_order(self):
+        updates = []
+        captured = {}
+        fields = {
+            "图生视频提示词": "raw video prompt",
+            "图片审核状态": "通过",
+            "生成图片": [{"file_token": "ft_image"}],
+            "图片版本": 2,
+            "视频AI模型": "OTU / omni_flash-10s",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+            "上传产品图": [{"file_token": "ft_product_upload"}],
+            "上传参考图": [{"file_token": "ft_uploaded_ref"}],
+        }
+        source_refs = [
+            {"role": "product_table:1", "file_token": "ft_product", "name": "product", "path": "/tmp/product.png"},
+            {"role": "uploaded_product:1", "file_token": "ft_product_upload", "name": "", "path": "/tmp/uploaded_product.png"},
+            {"role": "model_table:1", "file_token": "ft_model", "name": "model", "path": "/tmp/model.png"},
+            {"role": "uploaded_reference:1", "file_token": "ft_uploaded_ref", "name": "", "path": "/tmp/ref.png"},
+        ]
+
+        def fake_run_video(route, prompt, image_path, out_path, *, refs=None, **kwargs):
+            captured["prompt"] = prompt
+            captured["image_path"] = image_path
+            captured["refs"] = refs
+            Path(out_path).write_bytes(b"video")
+            return prompt_video.VideoGenerationResult(
+                provider="OTU",
+                task_id="task_omni",
+                submit_body={"id": "task_omni"},
+                result_body={"url": "https://example.test/omni.mp4"},
+                output_path=out_path,
+                request_summary={
+                    "mode": "reference_image_video",
+                    "reference_count": len(refs or []),
+                    "reference_roles": [ref["role"] for ref in refs or []],
+                },
+                video_url="https://example.test/omni.mp4",
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "TABLE_PROMPT_IMAGE_VIDEO", "tbl_008"), \
+             patch.object(prompt_video, "safe_get_record", return_value=fields), \
+             patch.object(prompt_video, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(prompt_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
+             patch.object(prompt_video, "download_feishu_attachment_raw", side_effect=lambda token, file_token, save_path: Path(save_path).write_bytes(b"image") or save_path), \
+             patch.object(prompt_video, "collect_image_references", return_value=source_refs), \
+             patch.object(prompt_video, "prepare_product_reference_images", side_effect=lambda refs, work_dir: refs), \
+             patch.object(prompt_video, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(prompt_video, "resolve_video_route", return_value=Mock(provider="OTU", model="OTU / omni_flash-10s", params={})), \
+             patch.object(prompt_video, "run_video_generation", side_effect=fake_run_video), \
+             patch.object(prompt_video, "get_table_field_types", return_value={"视频URL": 15}, create=True), \
+             patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
+            result = prompt_video.run_video("token", "rec008")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(captured["prompt"], "raw video prompt")
+        self.assertEqual([ref["role"] for ref in captured["refs"]], [
+            "generated_image",
+            "product_table:1",
+            "uploaded_product:1",
+            "model_table:1",
+            "uploaded_reference:1",
+        ])
+        self.assertEqual(captured["refs"][0]["file_token"], "ft_image")
+        self.assertTrue(str(captured["refs"][0]["path"]).endswith("generated_image_v2.png"))
+        success_update = next(update for update in updates if update.get("视频生成状态") == "成功")
+        response_json = json.loads(success_update["视频原始响应JSON"])
+        self.assertEqual(response_json["request_summary"]["mode"], "reference_image_video")
+        self.assertEqual(response_json["request_summary"]["reference_count"], 5)
+        self.assertEqual(response_json["request_summary"]["reference_roles"][0], "generated_image")
+
+    def test_video_generation_keeps_regular_otu_veo_on_single_first_frame_path(self):
+        fields = {
+            "图生视频提示词": "raw video prompt",
+            "图片审核状态": "通过",
+            "生成图片": [{"file_token": "ft_image"}],
+            "视频AI模型": "OTU / veo_3_1-fast-fl",
+        }
+
+        def fake_run_video(route, prompt, image_path, out_path, **kwargs):
+            self.assertNotIn("refs", kwargs)
+            Path(out_path).write_bytes(b"video")
+            return prompt_video.VideoGenerationResult(
+                provider="OTU",
+                task_id="task_video",
+                submit_body={"id": "task_video"},
+                result_body={"url": "https://example.test/video.mp4"},
+                output_path=out_path,
+                request_summary={"reference_count": 1},
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "TABLE_PROMPT_IMAGE_VIDEO", "tbl_008"), \
+             patch.object(prompt_video, "safe_get_record", return_value=fields), \
+             patch.object(prompt_video, "safe_update_record"), \
+             patch.object(prompt_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
+             patch.object(prompt_video, "download_feishu_attachment_raw", side_effect=lambda token, file_token, save_path: Path(save_path).write_bytes(b"image") or save_path), \
+             patch.object(prompt_video, "collect_image_references") as collect_refs, \
+             patch.object(prompt_video, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(prompt_video, "resolve_video_route", return_value=Mock(provider="OTU", model="OTU / veo_3_1-fast-fl", params={})), \
+             patch.object(prompt_video, "run_video_generation", side_effect=fake_run_video), \
+             patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
+            result = prompt_video.run_video("token", "rec008")
+
+        self.assertEqual(result["status"], "success")
+        collect_refs.assert_not_called()
+
+    def test_video_generation_rejects_more_than_six_extra_omni_references(self):
+        fields = {
+            "图生视频提示词": "raw video prompt",
+            "图片审核状态": "通过",
+            "生成图片": [{"file_token": "ft_image"}],
+            "视频AI模型": "OTU / omni_flash-10s",
+        }
+        refs = [
+            {"role": f"uploaded_reference:{idx}", "file_token": f"ft_{idx}", "name": "", "path": f"/tmp/ref_{idx}.png"}
+            for idx in range(1, 8)
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "TABLE_PROMPT_IMAGE_VIDEO", "tbl_008"), \
+             patch.object(prompt_video, "safe_get_record", return_value=fields), \
+             patch.object(prompt_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
+             patch.object(prompt_video, "download_feishu_attachment_raw", side_effect=lambda token, file_token, save_path: Path(save_path).write_bytes(b"image") or save_path), \
+             patch.object(prompt_video, "collect_image_references", return_value=refs), \
+             patch.object(prompt_video, "resolve_video_route", return_value=Mock(provider="OTU", model="OTU / omni_flash-10s", params={})), \
+             patch.object(prompt_video, "run_video_generation") as run_generation, \
+             patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
+            with self.assertRaisesRegex(ValueError, "Omni 参考图数量超过上限"):
+                prompt_video.run_video("token", "rec008")
+
+        run_generation.assert_not_called()
 
     def test_video_status_rerun_overwrites_and_increments_existing_video_version(self):
         updates = []
