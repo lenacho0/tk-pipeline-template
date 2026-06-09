@@ -85,6 +85,8 @@ PLAN_STAGE_NAME = "多图九宫格方案生成"
 IMAGE_STAGE_NAME = "多图九宫格图片生成"
 VIDEO_STAGE_NAME = "多图九宫格视频生成"
 REFERENCE_STAGE_NAME = "多图九宫格图片生成"
+INPUT_MODE_DIRECT_DOC = "文档直拆"
+INPUT_MODE_LEGACY_AI_PLAN = "AI方案生成（旧）"
 DEFAULT_TEXT_PROVIDER = "AIHubMix"
 DEFAULT_TEXT_MODEL = "AIHubMix / gemini-3.1-pro-preview"
 DEFAULT_IMAGE_PROVIDER = "OTU"
@@ -107,6 +109,12 @@ TIME_RANGE_RE = re.compile(
     r"(?P<start>\d+(?:\.\d+)?)\s*[-–—]\s*(?P<end>\d+(?:\.\d+)?)\s*s?",
     re.IGNORECASE,
 )
+DIRECT_DOC_TIME_RANGE_RE = re.compile(
+    r"(?P<start>\d+(?:\.\d+)?)\s*[-–—]\s*(?P<end>\d+(?:\.\d+)?)\s*s\b",
+    re.IGNORECASE,
+)
+MARKDOWN_HEADING_RE = re.compile(r"^(?P<marks>#{2,3})\s+(?P<title>.+?)\s*$", re.MULTILINE)
+FENCED_CODE_RE = re.compile(r"```[^\n]*\n(?P<body>.*?)\n```", re.DOTALL)
 NINE_GRID_VIDEO_TRANSLATION_INSTRUCTION = (
     "Faithfully translate any Chinese visual/action directions into English while preserving all Thai dialogue exactly. "
     "Do not rewrite, soften, add, remove, or sanitize story details."
@@ -213,6 +221,170 @@ def _strip_markdown_code_block(text: str) -> str:
         lines = stripped.splitlines()
         return "\n".join(lines[1:-1]).strip()
     return stripped
+
+
+def _markdown_sections(markdown: str) -> List[Dict[str, Any]]:
+    matches = list(MARKDOWN_HEADING_RE.finditer(markdown))
+    sections: List[Dict[str, Any]] = []
+    for idx, match in enumerate(matches):
+        level = len(match.group("marks"))
+        next_start = len(markdown)
+        for later in matches[idx + 1:]:
+            if len(later.group("marks")) <= level:
+                next_start = later.start()
+                break
+        sections.append({
+            "level": level,
+            "title": match.group("title").strip(),
+            "body": markdown[match.end():next_start].strip(),
+        })
+    return sections
+
+
+def _first_fenced_code(body: str, title: str) -> str:
+    match = FENCED_CODE_RE.search(body)
+    if not match:
+        raise ValueError(f"{title} 缺少 fenced code block")
+    prompt = match.group("body").strip()
+    if not prompt:
+        raise ValueError(f"{title} fenced code block 为空")
+    return prompt
+
+
+def _reference_asset_kind(title: str) -> str:
+    if "人物" in title or "human" in title.lower():
+        return "human"
+    if "宠物" in title or "pet" in title.lower():
+        return "pet"
+    if "环境" in title or "environment" in title.lower():
+        return "environment"
+    if "产品" in title or "product" in title.lower():
+        return "product"
+    return ""
+
+
+def _reference_title_name(title: str, asset_type: str, index: int) -> str:
+    for marker in ("｜", "|", "：", ":"):
+        if marker in title:
+            name = title.split(marker, 1)[1].strip()
+            if name:
+                return name
+    defaults = {"human": "人物", "pet": "宠物", "environment": "环境"}
+    return f"{defaults.get(asset_type, asset_type)}{index}"
+
+
+def _extract_board_index(title: str, suffix: str) -> Optional[int]:
+    if suffix not in title:
+        return None
+    match = re.search(r"\bBoard\s*0*(\d+)\b", title, re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _derive_time_range_from_video_prompt(prompt: str) -> str:
+    matches = list(DIRECT_DOC_TIME_RANGE_RE.finditer(prompt))
+    if not matches:
+        return ""
+    starts = [float(match.group("start")) for match in matches]
+    ends = [float(match.group("end")) for match in matches]
+    start = min(starts)
+    end = max(ends)
+    return f"{start:.1f}-{end:.1f}s"
+
+
+def _extract_cells_from_image_prompt(prompt: str) -> List[Dict[str, Any]]:
+    matches = list(re.finditer(r"^Cell\s+(\d+)\s*:\s*(.*?)(?=^Cell\s+\d+\s*:|\Z)", prompt, re.MULTILINE | re.DOTALL))
+    cells: List[Dict[str, Any]] = []
+    for match in matches:
+        try:
+            cell_index = int(match.group(1))
+        except ValueError:
+            continue
+        summary = " ".join(match.group(2).strip().split())
+        if not summary:
+            continue
+        cells.append({
+            "cell_index": cell_index,
+            "visual_node": summary,
+            "character_action": "",
+            "product_state": "",
+            "environment_anchor": "",
+            "emotion": "",
+            "camera": "",
+            "dialogue_or_voiceover": "",
+        })
+    return sorted(cells, key=lambda item: item["cell_index"]) if len(cells) == 9 else []
+
+
+def parse_direct_markdown_document(markdown: str) -> Dict[str, Any]:
+    text = extract_text(markdown).strip()
+    if not text:
+        raise ValueError("脚本内容为空")
+    sections = _markdown_sections(text)
+    reference_items: List[Dict[str, Any]] = []
+    product_reference_prompt = ""
+    type_counts: Dict[str, int] = {}
+    image_prompts: Dict[int, str] = {}
+    video_prompts: Dict[int, str] = {}
+    for section in sections:
+        title = section["title"]
+        if section["level"] == 3 and "参考图提示词" in title:
+            asset_type = _reference_asset_kind(title)
+            prompt = _first_fenced_code(section["body"], title)
+            if asset_type == "product":
+                product_reference_prompt = prompt
+                continue
+            if asset_type not in {"human", "pet", "environment"}:
+                raise ValueError(f"未知参考图类型: {title}")
+            type_counts[asset_type] = type_counts.get(asset_type, 0) + 1
+            reference_items.append({
+                "role": asset_type,
+                "name": _reference_title_name(title, asset_type, type_counts[asset_type]),
+                "purpose": prompt,
+                "prompt": prompt,
+                "direct_prompt": True,
+            })
+            continue
+        image_index = _extract_board_index(title, "九宫格分镜图提示词")
+        if image_index is not None:
+            image_prompts[image_index] = _first_fenced_code(section["body"], title)
+            continue
+        video_index = _extract_board_index(title, "图生视频提示词")
+        if video_index is not None:
+            video_prompts[video_index] = _first_fenced_code(section["body"], title)
+
+    if not image_prompts:
+        raise ValueError("文档缺少 Board 九宫格分镜图提示词")
+    boards: List[Dict[str, Any]] = []
+    for board_index in sorted(image_prompts):
+        if board_index not in video_prompts:
+            raise ValueError(f"Board {board_index} 缺少图生视频提示词")
+        image_prompt = image_prompts[board_index]
+        video_prompt = video_prompts[board_index]
+        boards.append({
+            "board_index": board_index,
+            "time_range": _derive_time_range_from_video_prompt(video_prompt),
+            "narrative_task": "",
+            "start_frame": "",
+            "end_frame": "",
+            "handoff_anchor": "",
+            "cells": _extract_cells_from_image_prompt(image_prompt),
+            "image_prompt": image_prompt,
+            "video_prompt": video_prompt,
+            "direct_prompt": True,
+        })
+    extra_video_boards = sorted(set(video_prompts) - set(image_prompts))
+    if extra_video_boards:
+        raise ValueError(f"Board {extra_video_boards[0]} 缺少九宫格分镜图提示词")
+    return {
+        "task_type": "MULTI_IMAGE_NINE_GRID_DIRECT_DOC",
+        "script_analysis": {},
+        "reference_manifest": {"required_references": reference_items},
+        "product_reference_prompt": product_reference_prompt,
+        "boards": boards,
+        "continuity_check": {},
+    }
 
 
 def normalize_nine_grid_plan_payload(payload: Any) -> Dict[str, Any]:
@@ -1047,6 +1219,30 @@ def build_plan_review_markdown(payload: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
+def build_direct_markdown_review(payload: Dict[str, Any]) -> str:
+    lines = ["# 多图九宫格文档直拆审核稿"]
+    product_prompt = extract_text(payload.get("product_reference_prompt")).strip()
+    if product_prompt:
+        lines.append("")
+        lines.append("## 产品参考图提示词")
+        lines.append(product_prompt)
+    refs = _as_list((payload.get("reference_manifest") or {}).get("required_references"))
+    if refs:
+        lines.append("")
+        lines.append("## 参考资产")
+        for item in refs:
+            lines.append(f"- {extract_text(item.get('role')).strip()}｜{extract_text(item.get('name')).strip()}")
+    for board in payload.get("boards") or []:
+        lines.append("")
+        lines.append(f"## Board {int(board.get('board_index') or 0):02d}｜{extract_text(board.get('time_range')).strip()}")
+        lines.append(f"- 九宫格图片提示词 chars：{len(extract_text(board.get('image_prompt')))}")
+        lines.append(f"- 图生视频提示词 chars：{len(extract_text(board.get('video_prompt')))}")
+        cells = _as_list(board.get("cells"))
+        if cells:
+            lines.append(f"- Cell 摘要数：{len(cells)}")
+    return "\n".join(lines).strip()
+
+
 def _reference_manifest_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     manifest = payload.get("reference_manifest") if isinstance(payload, dict) else {}
     items = _as_list((manifest or {}).get("required_references")) if isinstance(manifest, dict) else []
@@ -1117,11 +1313,15 @@ def build_reference_asset_records(
             "资产类型": asset_type,
             "资产名称": name,
             "资产角色说明": extract_text(raw.get("purpose")).strip(),
-            "参考提示词": build_reference_asset_prompt({
-                "asset_type": asset_type,
-                "asset_name": name,
-                "purpose": extract_text(raw.get("purpose")).strip(),
-            }),
+            "参考提示词": (
+                extract_text(raw.get("prompt")).strip()
+                if raw.get("direct_prompt")
+                else build_reference_asset_prompt({
+                    "asset_type": asset_type,
+                    "asset_name": name,
+                    "purpose": extract_text(raw.get("purpose")).strip(),
+                })
+            ),
             "参考图来源": source,
             "参考图AI供应商": _field_with_default(parent_fields, "参考图AI供应商", DEFAULT_IMAGE_PROVIDER),
             "参考图AI模型": _field_with_default(parent_fields, "参考图AI模型", DEFAULT_IMAGE_MODEL),
@@ -1151,6 +1351,11 @@ def build_child_board_records(
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"九宫格任务-{parent_record_id[-6:]}"
     for board in boards:
         no = int(board.get("board_index") or len(records) + 1)
+        video_prompt = (
+            extract_text(board.get("video_prompt")).strip()
+            if board.get("direct_prompt")
+            else build_board_video_prompt_for_record(parent_fields, board)
+        )
         fields = {
             "记录类型": "Board分段",
             "任务名称": f"{task_name}-Board{no:02d}",
@@ -1174,7 +1379,7 @@ def build_child_board_records(
             "图片画面尺寸": DEFAULT_IMAGE_SIZE,
             "图片画面比例": DEFAULT_ASPECT_RATIO,
             "图片生成状态": "不触发" if await_reference_assets else "待生成",
-            "视频提示词": build_board_video_prompt_for_record(parent_fields, board),
+            "视频提示词": video_prompt,
             "视频AI供应商": _field_with_default(parent_fields, "视频AI供应商", DEFAULT_VIDEO_PROVIDER),
             "视频AI模型": _field_with_default(parent_fields, "视频AI模型", DEFAULT_VIDEO_MODEL),
             "视频生成模型": (
@@ -1515,6 +1720,72 @@ def _route_for_prefixed_fields(
     return route
 
 
+def _input_mode(fields: Dict[str, Any]) -> str:
+    raw = extract_text(fields.get("输入模式")).strip()
+    if raw == INPUT_MODE_LEGACY_AI_PLAN:
+        return INPUT_MODE_LEGACY_AI_PLAN
+    return INPUT_MODE_DIRECT_DOC
+
+
+def split_nine_grid_direct_markdown(
+    token: str,
+    record_id: str,
+    fields: Dict[str, Any],
+    *,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    script = extract_text(fields.get("脚本内容")).strip()
+    payload = parse_direct_markdown_document(script)
+    batch_id = f"NINEGRID-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
+    asset_records = apply_nine_grid_reference_default_models(
+        token,
+        build_reference_asset_records(fields, payload, parent_record_id=record_id, batch_id=batch_id),
+    )
+    child_records = apply_nine_grid_board_default_models(
+        token,
+        build_child_board_records(
+            fields,
+            payload,
+            parent_record_id=record_id,
+            batch_id=batch_id,
+            await_reference_assets=bool(asset_records),
+        ),
+    )
+    summary = {
+        "record_id": record_id,
+        "dry_run": dry_run,
+        "status": "dry_run_ready" if dry_run else "success",
+        "input_mode": INPUT_MODE_DIRECT_DOC,
+        "batch_id": batch_id,
+        "reference_asset_count": len(asset_records),
+        "board_count": len(child_records),
+    }
+    if dry_run:
+        return summary
+
+    asset_upsert = upsert_reference_asset_records(token, record_id, asset_records)
+    deleted = cleanup_child_boards(token, record_id)
+    create_records(token, TABLE_NINE_GRID_VIDEO, [
+        {"fields": filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, item["fields"])}
+        for item in child_records
+    ])
+    safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
+        "记录类型": "母任务",
+        "输入模式": INPUT_MODE_DIRECT_DOC,
+        "方案生成状态": "成功",
+        "方案JSON": compact_json(payload, 20000),
+        "方案Markdown": build_direct_markdown_review(payload)[:20000],
+        "总Board数": len(child_records),
+        "批次ID": batch_id,
+        "错误信息": "",
+    }))
+    summary.update({
+        "reference_assets": asset_upsert,
+        "deleted_children": deleted,
+    })
+    return summary
+
+
 def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_output: Any = None) -> Dict[str, Any]:
     ensure_nine_grid_table()
     token = get_feishu_token()
@@ -1522,6 +1793,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
     script = extract_text(fields.get("脚本内容")).strip()
     if not script:
         raise ValueError("脚本内容为空")
+    if _input_mode(fields) == INPUT_MODE_DIRECT_DOC:
+        return split_nine_grid_direct_markdown(token, record_id, fields, dry_run=dry_run)
     _, cfg = get_config_record(PLAN_STAGE_NAME, default_model="gemini-3.1-pro-preview", default_api_base="https://aihubmix.com/gemini")
     prompt = build_plan_generation_request(fields, system_prompt=cfg.get("prompt") or NINE_GRID_PLAN_SYSTEM_PROMPT)
     config_records = _stage_config_records(token)

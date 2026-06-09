@@ -129,6 +129,67 @@ Young Thai male, shocked / proud
 """.strip()
 
 
+def sample_direct_markdown_document():
+    return """
+# 方向1_沙发虫群爆发_九宫格脚本提示词文档
+
+## 参考图生成提示词
+
+### 人物参考图提示词｜女主
+
+```text
+PERSON_PROMPT_RAW_OWNER
+```
+
+### 人物参考图提示词｜朋友
+
+```text
+PERSON_PROMPT_RAW_FRIEND
+```
+
+### 宠物参考图提示词
+
+```text
+PET_PROMPT_RAW_CAT
+```
+
+### 产品参考图提示词
+
+```text
+PRODUCT_CONTEXT_PROMPT_SHOULD_NOT_CREATE_ASSET
+```
+
+### 环境参考图提示词
+
+```text
+ENV_PROMPT_RAW_LIVING_ROOM
+```
+
+## Board 01 九宫格分镜图提示词
+
+```text
+Create one vertical 9:16 Thai TikTok UGC nine-grid storyboard image.
+Cell 1: Immediate hook. Beige fabric sofa close-up.
+Cell 2: Problem evidence. Parasites crawl in the sofa seam.
+Cell 3: Human reaction. The owner points at the sofa seam.
+Cell 4: Source logic. The owner checks the cat nape.
+Cell 5: Product rescue enters. Product appears on the coffee table.
+Cell 6: Correct application setup. Owner parts nape fur.
+Cell 7: Application. One transparent drop is applied.
+Cell 8: Result evidence. Parasites are gone.
+Cell 9: Emotional reversal. Cat relaxes and owner is relieved.
+```
+
+## Board 01 图生视频提示词
+
+```text
+Use the uploaded Board 01 nine-grid storyboard only as the narrative order and action path reference.
+0.0-1.2s: Start on the beige sofa.
+8.6-10.0s: Return to the same sofa and cat nape positions. The owner says exactly: "หายเกลี้ยงเลย น้องไม่เกาแล้ว"
+```
+""".strip()
+
+
 class NineGridVideoTests(unittest.TestCase):
     def setUp(self):
         self._auto_review_patcher = patch.object(nine_grid, "auto_review_enabled", return_value=False)
@@ -240,6 +301,86 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual([item["fields"]["资产类型"] for item in records], ["human"])
         self.assertEqual(records[0]["fields"]["关联产品记录"], ["recProduct"])
+
+    def test_parse_direct_markdown_document_extracts_raw_prompts_and_cells(self):
+        payload = nine_grid.parse_direct_markdown_document(sample_direct_markdown_document())
+
+        refs = payload["reference_manifest"]["required_references"]
+        self.assertEqual(
+            [(item["role"], item["name"], item["prompt"]) for item in refs],
+            [
+                ("human", "女主", "PERSON_PROMPT_RAW_OWNER"),
+                ("human", "朋友", "PERSON_PROMPT_RAW_FRIEND"),
+                ("pet", "宠物1", "PET_PROMPT_RAW_CAT"),
+                ("environment", "环境1", "ENV_PROMPT_RAW_LIVING_ROOM"),
+            ],
+        )
+        self.assertEqual(payload["product_reference_prompt"], "PRODUCT_CONTEXT_PROMPT_SHOULD_NOT_CREATE_ASSET")
+        self.assertEqual(len(payload["boards"]), 1)
+        board = payload["boards"][0]
+        self.assertEqual(board["board_index"], 1)
+        self.assertEqual(board["time_range"], "0.0-10.0s")
+        self.assertIn("Create one vertical 9:16", board["image_prompt"])
+        self.assertIn("Use the uploaded Board 01", board["video_prompt"])
+        self.assertEqual(len(board["cells"]), 9)
+        self.assertEqual(board["cells"][0]["visual_node"], "Immediate hook. Beige fabric sofa close-up.")
+        self.assertTrue(board["direct_prompt"])
+
+    def test_parse_direct_markdown_document_requires_board_video_pair(self):
+        markdown = sample_direct_markdown_document().replace("## Board 01 图生视频提示词", "## Board 02 图生视频提示词")
+
+        with self.assertRaisesRegex(ValueError, "Board 1 缺少图生视频提示词"):
+            nine_grid.parse_direct_markdown_document(markdown)
+
+    def test_parse_direct_markdown_document_requires_fenced_code_block(self):
+        markdown = sample_direct_markdown_document().replace("```text\nPERSON_PROMPT_RAW_OWNER\n```", "PERSON_PROMPT_RAW_OWNER")
+
+        with self.assertRaisesRegex(ValueError, "人物参考图提示词｜女主 缺少 fenced code block"):
+            nine_grid.parse_direct_markdown_document(markdown)
+
+    def test_parse_direct_markdown_document_time_range_ignores_age_ranges(self):
+        markdown = sample_direct_markdown_document().replace(
+            "The owner says exactly:",
+            "Voice identity: Thai female owner, 25-30 years old. The owner says exactly:",
+        )
+
+        payload = nine_grid.parse_direct_markdown_document(markdown)
+
+        self.assertEqual(payload["boards"][0]["time_range"], "0.0-10.0s")
+
+    def test_direct_markdown_records_keep_prompts_verbatim_and_skip_product_asset(self):
+        payload = nine_grid.parse_direct_markdown_document(sample_direct_markdown_document())
+        parent_fields = {
+            "任务名称": "direct doc task",
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+        }
+
+        asset_records = nine_grid.build_reference_asset_records(
+            parent_fields,
+            payload,
+            parent_record_id="recParent",
+            batch_id="NINEGRID-1",
+        )
+        board_records = nine_grid.build_child_board_records(
+            parent_fields,
+            payload,
+            parent_record_id="recParent",
+            batch_id="NINEGRID-1",
+            await_reference_assets=bool(asset_records),
+        )
+
+        self.assertEqual([item["fields"]["资产类型"] for item in asset_records], ["human", "human", "pet", "environment"])
+        self.assertEqual([item["fields"]["资产名称"] for item in asset_records], ["女主", "朋友", "宠物1", "环境1"])
+        self.assertEqual(asset_records[0]["fields"]["参考提示词"], "PERSON_PROMPT_RAW_OWNER")
+        self.assertEqual(asset_records[1]["fields"]["参考提示词"], "PERSON_PROMPT_RAW_FRIEND")
+        self.assertEqual(asset_records[2]["fields"]["参考提示词"], "PET_PROMPT_RAW_CAT")
+        self.assertEqual(asset_records[3]["fields"]["参考提示词"], "ENV_PROMPT_RAW_LIVING_ROOM")
+        self.assertEqual(len(board_records), 1)
+        fields = board_records[0]["fields"]
+        self.assertEqual(fields["图片生成状态"], "不触发")
+        self.assertIn("Create one vertical 9:16", fields["九宫格图片提示词"])
+        self.assertIn("Use the uploaded Board 01", fields["视频提示词"])
+        self.assertNotIn("Generate one continuous", fields["视频提示词"])
 
     def test_build_board_video_prompt_binds_cell_thai_dialogue_to_timeline_beat(self):
         payload = sample_plan_payload()
@@ -567,13 +708,15 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "nine_grid_video")
         field_names = [field["name"] for field in create_table.NINE_GRID_VIDEO_FIELDS]
         for name in [
-            "方案生成状态", "方案JSON", "审核状态", "九宫格图片提示词", "视频提示词",
+            "输入模式", "方案生成状态", "方案JSON", "审核状态", "九宫格图片提示词", "视频提示词",
             "方案AI供应商", "方案AI模型", "图片AI供应商", "图片AI模型", "视频AI供应商", "视频AI模型",
             "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源", "参考图",
             "参考图生成状态", "参考图审核状态", "参考图操作",
             "参考图画面尺寸", "参考图画面比例",
         ]:
             self.assertIn(name, field_names)
+        input_modes = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["输入模式"]["options"]]
+        self.assertEqual(input_modes, ["文档直拆", "AI方案生成（旧）"])
         record_types = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["记录类型"]["options"]]
         self.assertEqual(record_types, ["母任务", "参考资产", "Board分段"])
         environment_sources = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["环境图来源"]["options"]]
@@ -583,8 +726,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(
             create_table.TABLE_DEFINITION["views"]["01-任务入口"],
             [
-                "任务名称", "脚本内容", "关联产品记录", "人物/宠物默认来源", "环境图来源",
-                "方案AI模型", "方案AI参数JSON", "方案生成状态", "错误信息",
+                "任务名称", "输入模式", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
             ],
         )
         self.assertIn("02-参考资产确认", create_table.TABLE_DEFINITION["views"])
@@ -599,7 +741,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertNotIn("视频AI模型", video_view)
         self.assertNotIn("视频AI参数JSON", video_view)
         advanced_view = create_table.TABLE_DEFINITION["views"]["高级AI参数"]
-        for name in ["方案AI供应商", "参考图AI供应商", "图片AI供应商"]:
+        for name in ["输入模式", "方案AI供应商", "参考图AI供应商", "图片AI供应商"]:
             self.assertIn(name, advanced_view)
         self.assertIn("视频生成模型", advanced_view)
         self.assertNotIn("视频AI供应商", advanced_view)
@@ -1375,6 +1517,7 @@ class NineGridVideoTests(unittest.TestCase):
     def test_plan_dry_run_infers_provider_from_prefixed_model(self):
         parent_fields = {
             "记录类型": "母任务",
+            "输入模式": "AI方案生成（旧）",
             "脚本内容": "A short nine-grid script.",
             "方案AI模型": "Aitgenne / gpt-5.5",
         }
@@ -1399,6 +1542,42 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(result["route"]["model"], "gpt-5.5")
         self.assertEqual(result["route"]["call_type"], "OpenAI兼容 chat/completions")
         self.assertEqual(result["route"]["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_split_nine_grid_plan_direct_markdown_creates_assets_and_boards_without_ai(self):
+        parent_fields = {
+            "记录类型": "母任务",
+            "输入模式": "文档直拆",
+            "任务名称": "direct doc task",
+            "脚本内容": sample_direct_markdown_document(),
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+        }
+        created_batches = []
+        updates = []
+
+        with patch.object(nine_grid, "TABLE_NINE_GRID_VIDEO", "tbl_nine"), \
+             patch.object(nine_grid, "get_feishu_token", return_value="token"), \
+             patch.object(nine_grid, "safe_get_record", return_value=parent_fields), \
+             patch.object(nine_grid, "upsert_reference_asset_records", return_value={"created": 4, "updated": 0}) as upsert_assets, \
+             patch.object(nine_grid, "cleanup_child_boards", return_value=0), \
+             patch.object(nine_grid, "create_records", side_effect=lambda token, table, records: created_batches.append(records) or len(records)), \
+             patch.object(nine_grid, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch.object(nine_grid, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(nine_grid, "apply_nine_grid_reference_default_models", side_effect=lambda token, records: records), \
+             patch.object(nine_grid, "apply_nine_grid_board_default_models", side_effect=lambda token, records: records), \
+             patch.object(nine_grid.ai_routing, "call_text_model") as text_model:
+            result = nine_grid.split_nine_grid_plan("recParent")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["reference_asset_count"], 4)
+        self.assertEqual(result["board_count"], 1)
+        text_model.assert_not_called()
+        upsert_assets.assert_called_once()
+        self.assertEqual(len(created_batches), 1)
+        board_fields = created_batches[0][0]["fields"]
+        self.assertEqual(board_fields["九宫格图片提示词"].splitlines()[0], "Create one vertical 9:16 Thai TikTok UGC nine-grid storyboard image.")
+        self.assertIn("Use the uploaded Board 01", board_fields["视频提示词"])
+        self.assertEqual(updates[-1]["输入模式"], "文档直拆")
+        self.assertIn("PRODUCT_CONTEXT_PROMPT_SHOULD_NOT_CREATE_ASSET", updates[-1]["方案Markdown"])
 
     def test_dispatcher_parses_json_error_after_warning_lines(self):
         warning_path = "/Users/" + "ryanlynn/Library/Python/3.9/lib/python/site-packages/google/auth/__init__.py"

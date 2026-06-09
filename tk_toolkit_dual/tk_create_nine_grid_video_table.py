@@ -39,6 +39,7 @@ TABLE_NAME = "多图九宫格视频生成表"
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 PLAN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("参考资产", "Purple"), opt("Board分段", "Green")]
+INPUT_MODE_OPTIONS = [opt("文档直拆", "Green"), opt("AI方案生成（旧）", "Gray")]
 REVIEW_STATUS_OPTIONS = [opt("待确认", "Orange"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发下游", "Blue")]
 REFERENCE_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue"), opt("选择模特表", "Purple")]
 ENVIRONMENT_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue")]
@@ -62,6 +63,7 @@ def prefixed_field_group(prefix: str, model_options):
 NINE_GRID_VIDEO_FIELDS = [
     text("任务名称"),
     select("记录类型", RECORD_TYPE_OPTIONS),
+    select("输入模式", INPUT_MODE_OPTIONS),
     text("父任务记录ID"),
     text("批次ID"),
     text("脚本内容"),
@@ -133,8 +135,7 @@ TABLE_DEFINITION = {
     "fields": NINE_GRID_VIDEO_FIELDS,
     "views": {
         "01-任务入口": [
-            "任务名称", "脚本内容", "关联产品记录", "人物/宠物默认来源", "环境图来源",
-            "方案AI模型", "方案AI参数JSON", "方案生成状态", "错误信息",
+            "任务名称", "输入模式", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
         ],
         "02-参考资产确认": [
             "记录类型", "任务名称", "父任务记录ID", "资产ID", "资产类型", "资产名称",
@@ -158,7 +159,7 @@ TABLE_DEFINITION = {
             "视频画面尺寸", "视频画面比例", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息",
         ],
         "高级AI参数": [
-            "记录类型", "任务名称", "父任务记录ID", "Board编号",
+            "记录类型", "任务名称", "父任务记录ID", "Board编号", "输入模式",
             "参考图AI供应商", "参考图AI模型", "参考图AI参数JSON",
             "参考图画面尺寸", "参考图画面比例",
             "方案AI供应商", "方案AI模型", "方案AI参数JSON",
@@ -168,7 +169,7 @@ TABLE_DEFINITION = {
             "视频画面尺寸", "视频画面比例",
         ],
         "99-排错": [
-            "记录类型", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
+            "记录类型", "输入模式", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
             "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源",
             "参考图生成状态", "参考图审核状态", "参考图任务ID", "参考图file_token",
             "参考图本地路径", "参考图错误信息", "参考图生成时间",
