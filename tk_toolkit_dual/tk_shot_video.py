@@ -33,6 +33,7 @@ from common import (  # noqa: E402
     APP_TOKEN,
     TABLE_CONFIG,
     TABLE_SCRIPT_DOC_SHOTS,
+    TABLE_SCRIPT_DOC_UNIFIED,
     WORKSPACE,
     build_error_payload,
     extract_text,
@@ -102,7 +103,17 @@ def resolve_video_table(table: str = "script_doc") -> str:
         if not TABLE_SCRIPT_DOC_SHOTS:
             raise ValueError("config.json 尚未配置 script_doc_shots 表 ID")
         return TABLE_SCRIPT_DOC_SHOTS
-    raise ValueError("不再支持旧 shot_storyboard 表，请使用 script_doc")
+    if table in ("script_doc_unified", TABLE_SCRIPT_DOC_UNIFIED):
+        if not TABLE_SCRIPT_DOC_UNIFIED:
+            raise ValueError("config.json 尚未配置 script_doc_unified 表 ID")
+        return TABLE_SCRIPT_DOC_UNIFIED
+    raise ValueError("不再支持旧 shot_storyboard 表，请使用 script_doc 或 script_doc_unified")
+
+
+def video_app_table(table: str = "script_doc") -> str:
+    if table == "script_doc_unified" or table == TABLE_SCRIPT_DOC_UNIFIED:
+        return TASK_TABLES.get("script_doc_unified", "003-脚本文档生产表")
+    return TASK_TABLES["script_doc_shots"]
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -399,14 +410,17 @@ def build_model_prompt(fields: Dict[str, Any]) -> str:
 
 
 def _parse_shot_meta(fields: Dict[str, Any]) -> Dict[str, Any]:
-    raw = extract_text(fields.get("文本")).strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    for field_name in ("文本", "结构化分镜JSON"):
+        raw = extract_text(fields.get(field_name)).strip()
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
 
 
 def rebuild_model_prompt_for_provider(fields: Dict[str, Any], provider: str) -> str:
@@ -419,8 +433,8 @@ def rebuild_model_prompt_for_provider(fields: Dict[str, Any], provider: str) -> 
         "emotion": extract_text(meta.get("emotion")).strip(),
         "speaker": extract_text(meta.get("speaker")).strip(),
         "speaker_visible": bool(meta.get("speaker_visible")),
-        "continuity_notes": extract_text(fields.get("连续性要求")).strip(),
-        "product_visibility": extract_text(fields.get("产品焦点")).strip(),
+        "continuity_notes": extract_text(fields.get("连续性要求") or meta.get("continuity_notes")).strip(),
+        "product_visibility": extract_text(fields.get("产品焦点") or meta.get("product_visibility")).strip(),
         "must_show": meta.get("must_show") if isinstance(meta.get("must_show"), list) else [],
         "forbidden": meta.get("forbidden") if isinstance(meta.get("forbidden"), list) else [],
     }
@@ -428,8 +442,8 @@ def rebuild_model_prompt_for_provider(fields: Dict[str, Any], provider: str) -> 
         shot,
         idx=1,
         total_shots=1,
-        product_name=extract_text(fields.get("产品名")).strip(),
-        voiceover_text=extract_text(fields.get("口播文本")).strip(),
+        product_name=extract_text(fields.get("产品名") or fields.get("关联产品记录")).strip(),
+        voiceover_text=extract_text(fields.get("口播文本") or meta.get("voiceover_text")).strip(),
         voice_id=extract_text(fields.get("口播音色ID")).strip(),
         video_model=provider,
         screen_text=extract_text(meta.get("screen_text")).strip(),
@@ -1177,14 +1191,15 @@ def run_shot_video_generation(
     table_id = resolve_video_table(table)
     token = token or get_feishu_token()
     fields = get_record_fn(token, table_id, record_id)
-    if table == "script_doc" and get_record_fn is safe_get_record and update_record_fn is safe_update_record:
+    if table in {"script_doc", "script_doc_unified"} and get_record_fn is safe_get_record and update_record_fn is safe_update_record:
         fields = apply_task_default_to_record(
             token,
             table_id,
             record_id,
             fields,
-            app_table=TASK_TABLES["script_doc_shots"],
+            app_table=video_app_table(table),
             stage="分镜视频生成默认",
+            channel_field="视频通道",
             model_field="视频生成模型",
             size_field="视频画面尺寸",
             ratio_field="视频画面比例",
@@ -1203,10 +1218,15 @@ def run_shot_video_generation(
     model_source = "视频生成模型" if model_choice == legacy_model_choice and model_choice else (
         "视频AI模型" if model_choice == route_model_choice and model_choice else "配置表"
     )
-    model_bits_for_validation = ai_routing.parse_model_display(model_choice)
-    if model_bits_for_validation["provider"] and not ai_model_catalog.is_first_last_video_model(model_choice):
-        raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {model_choice}")
     choice_channel, _ = split_prefixed_model_choice(model_choice)
+    _, raw_model_choice = split_prefixed_model_choice(model_choice)
+    model_bits_for_validation = ai_routing.parse_model_display(model_choice)
+    if (
+        model_bits_for_validation["provider"]
+        and not is_default_model_choice(raw_model_choice)
+        and not ai_model_catalog.is_first_last_video_model(model_choice)
+    ):
+        raise ValueError(f"首尾帧视频模型不支持参考图视频模型: {model_choice}")
     explicit_channel = extract_text(fields.get("视频通道")).strip()
     if route_enabled:
         channel = normalize_video_channel(choice_channel or explicit_channel)
@@ -1412,7 +1432,7 @@ def run_shot_video_generation(
 def main() -> int:
     parser = argparse.ArgumentParser(description="003-3 单镜头 AIHubMix/Veo 分镜视频生成")
     parser.add_argument("record_id", help="003-3 script_doc_shots record_id")
-    parser.add_argument("--table", default="script_doc", choices=["script_doc"], help="选择来源表")
+    parser.add_argument("--table", default="script_doc", choices=["script_doc", "script_doc_unified"], help="选择来源表")
     parser.add_argument("--dry-run", action="store_true", help="只验证输入和配置，不提交视频任务")
     parser.add_argument("--output-file", help="保存运行摘要 JSON")
     args = parser.parse_args()

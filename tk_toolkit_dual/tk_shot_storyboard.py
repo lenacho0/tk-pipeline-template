@@ -38,7 +38,30 @@ from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled
 _TABLE_FIELDS_CACHE = {}
 IMAGE_STAGE_NAME = "图片生成-OTU"
 AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_shots"]
+UNIFIED_AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_unified"]
 VIDEO_TRIGGERABLE_STATUSES = {"", "不触发", "失败"}
+
+
+def script_doc_table_context(table='script_doc'):
+    if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
+        if not TABLE_SCRIPT_DOC_TASKS or not TABLE_SCRIPT_DOC_REFERENCE_ASSETS or not TABLE_SCRIPT_DOC_SHOTS:
+            raise Exception('config.json 尚未配置脚本文档拆分表 ID')
+        return {
+            'tasks': TABLE_SCRIPT_DOC_TASKS,
+            'assets': TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+            'shots': TABLE_SCRIPT_DOC_SHOTS,
+            'app_table': TASK_TABLES['script_doc_shots'],
+        }
+    if table in ('script_doc_unified', TABLE_SCRIPT_DOC_UNIFIED):
+        if not TABLE_SCRIPT_DOC_UNIFIED:
+            raise Exception('config.json 尚未配置 script_doc_unified 表 ID')
+        return {
+            'tasks': TABLE_SCRIPT_DOC_UNIFIED,
+            'assets': TABLE_SCRIPT_DOC_UNIFIED,
+            'shots': TABLE_SCRIPT_DOC_UNIFIED,
+            'app_table': TASK_TABLES.get('script_doc_unified', '003-脚本文档生产表'),
+        }
+    raise Exception('不再支持旧 shot_storyboard 表，请使用 script_doc 或 script_doc_unified')
 
 
 def script_doc_unified_route_state(fields, token):
@@ -442,20 +465,9 @@ def image_prompt_for_first_frame(fields):
 
 def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
     narration = extract_text(shot_fields.get('分镜文案', ''))
-    voiceover = extract_text(shot_fields.get('口播文本', ''))
-    visual = extract_text(shot_fields.get('画面描述', '')) or extract_text(shot_fields.get('分镜说明', ''))
-    character = extract_text(shot_fields.get('人物描述', ''))
-    scene = extract_text(shot_fields.get('场景描述', ''))
-    product_focus = extract_text(shot_fields.get('产品焦点', ''))
-    continuity = extract_text(shot_fields.get('连续性要求', ''))
-    character_id = extract_text(shot_fields.get('角色ID', ''))
-    pet_id = extract_text(shot_fields.get('宠物ID', ''))
-    environment_id = extract_text(shot_fields.get('环境ID', ''))
-    target_duration = extract_text(shot_fields.get('目标时长秒', ''))
-    image_prompt = image_prompt_for_first_frame(shot_fields)
-    shot_no = extract_text(shot_fields.get('分镜序号', ''))
-    total_shots = extract_text(shot_fields.get('总分镜数', ''))
     raw_meta = extract_text(shot_fields.get('文本', '')).strip()
+    if not raw_meta:
+        raw_meta = extract_text(shot_fields.get('结构化分镜JSON', '')).strip()
     meta = {}
     if raw_meta:
         try:
@@ -463,6 +475,19 @@ def _build_single_shot_prompt(base_prompt, shot_fields, style, visual_bible=''):
             meta = parsed if isinstance(parsed, dict) else {}
         except Exception:
             meta = {}
+    voiceover = extract_text(shot_fields.get('口播文本') or meta.get('voiceover_text', ''))
+    visual = extract_text(shot_fields.get('画面描述', '')) or extract_text(shot_fields.get('分镜说明', ''))
+    character = extract_text(shot_fields.get('人物描述') or ','.join(meta.get('character_ids') or []))
+    scene = extract_text(shot_fields.get('场景描述') or meta.get('environment_id', ''))
+    product_focus = extract_text(shot_fields.get('产品焦点') or meta.get('product_visibility', ''))
+    continuity = extract_text(shot_fields.get('连续性要求') or meta.get('continuity_notes', ''))
+    character_id = extract_text(shot_fields.get('角色ID', ''))
+    pet_id = extract_text(shot_fields.get('宠物ID', ''))
+    environment_id = extract_text(shot_fields.get('环境ID', ''))
+    target_duration = extract_text(shot_fields.get('目标时长秒', ''))
+    image_prompt = image_prompt_for_first_frame(shot_fields)
+    shot_no = extract_text(shot_fields.get('分镜序号', ''))
+    total_shots = extract_text(shot_fields.get('总分镜数', ''))
     screen_text = extract_text(meta.get('screen_text', '')).strip()
     screen_text_zh = extract_text(meta.get('screen_text_zh', '')).strip()
     source_beat = extract_text(meta.get('source_beat', '')).strip()
@@ -629,22 +654,21 @@ def _upload_reference_image_parts(client, refs):
     return parts
 
 
-def render_script_doc_shot(token, record_id, *, dry_run=False):
-    if not TABLE_SCRIPT_DOC_TASKS or not TABLE_SCRIPT_DOC_REFERENCE_ASSETS or not TABLE_SCRIPT_DOC_SHOTS:
-        raise Exception('config.json 尚未配置脚本文档拆分表 ID')
+def render_script_doc_shot(token, record_id, *, dry_run=False, table='script_doc'):
+    tables = script_doc_table_context(table)
 
     from tk_script_doc_shots import (
         build_reference_prompt_note,
         collect_reference_images_for_shot,
     )
 
-    shot_fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    shot_fields = safe_get_record(token, tables['shots'], record_id)
     shot_fields = apply_task_default_to_record(
         token,
-        TABLE_SCRIPT_DOC_SHOTS,
+        tables['shots'],
         record_id,
         shot_fields,
-        app_table=TASK_TABLES["script_doc_shots"],
+        app_table=tables['app_table'],
         stage="分镜图生成默认",
         model_field="分镜图AI模型",
         size_field="分镜图画面尺寸",
@@ -656,7 +680,7 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     if not parent_record_id:
         raise Exception('缺少父文档记录ID')
 
-    parent_fields = safe_get_record(token, TABLE_SCRIPT_DOC_TASKS, parent_record_id)
+    parent_fields = safe_get_record(token, tables['tasks'], parent_record_id)
     style = extract_text(parent_fields.get('分镜风格', '混合（产品写实+角色动画）'))
     visual_bible = extract_text(parent_fields.get('解析结果JSON', ''))
 
@@ -714,14 +738,14 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     }
     if not existing_task_id:
         start_fields['分镜图原始响应JSON'] = ''
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, start_fields))
+    safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], start_fields))
 
     task_dir = ensure_task_dir(record_id)
     refs = collect_reference_images_for_shot(
         token,
         shot_fields,
         parent_fields,
-        safe_list_records(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS),
+        safe_list_records(token, tables['assets']),
         Path(task_dir),
     )
 
@@ -735,7 +759,7 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
     reference_urls = build_reference_urls(token, refs)
 
     def on_shot_task_submitted(task_id):
-        safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], {
             '分镜图任务ID': task_id,
             '分镜图原始响应JSON': _compact_json({'submit': {'id': task_id}}),
             '分镜图错误信息': f'已提交 OTU 分镜图任务，正在轮询。task_id={task_id}',
@@ -748,6 +772,8 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         out_path,
         input_mode='image-to-image' if ref_paths else 'text-to-image',
         image_path=ref_paths[0] if ref_paths else '',
+        reference_image_paths=ref_paths if ref_paths else None,
+        reference_count_override=len(refs),
         metadata={'urls': reference_urls, 'reference_roles': [ref.get('role', 'reference') for ref in refs], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
         size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
         aspect_ratio=image_params.get('aspect_ratio') or '9:16',
@@ -780,13 +806,14 @@ def render_script_doc_shot(token, record_id, *, dry_run=False):
         'result': result,
         'request_summary': image_result.request_summary,
     })
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
+    safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], success_fields))
     auto_video_summary = maybe_auto_trigger_script_doc_video(
         token,
         record_id,
         {**shot_fields, **success_fields},
         file_token=file_token,
         trigger_source='storyboard',
+        table_id=tables['shots'],
     )
     log_event('INFO', 'script doc shot storyboard render success', record_id=record_id, reference_count=len(refs))
     if auto_video_summary.get('status') == 'triggered':
@@ -799,7 +826,7 @@ def is_end_frame_mode_enabled(fields):
     return raw in {'启用', '是', 'yes', 'true', '1', 'enabled', 'enable'}
 
 
-def maybe_auto_trigger_script_doc_video(token, record_id, fields, *, file_token, trigger_source):
+def maybe_auto_trigger_script_doc_video(token, record_id, fields, *, file_token, trigger_source, table_id=TABLE_SCRIPT_DOC_SHOTS):
     video_status = extract_text(fields.get('视频生成状态')).strip()
     if video_status not in VIDEO_TRIGGERABLE_STATUSES:
         return {'status': 'skipped', 'reason': 'video_status_not_triggerable', 'video_status': video_status}
@@ -817,9 +844,10 @@ def maybe_auto_trigger_script_doc_video(token, record_id, fields, *, file_token,
     else:
         if not latest_token_from_attachment_or_field(fields, '分镜图', '分镜图file_token'):
             return {'status': 'skipped', 'reason': 'missing_storyboard_file_token'}
-    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
+    stage_name = UNIFIED_AUTO_REVIEW_STAGE_NAME if table_id == TABLE_SCRIPT_DOC_UNIFIED else AUTO_REVIEW_STAGE_NAME
+    if not auto_review_enabled(token, stage_name=stage_name):
         return {'status': 'disabled'}
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, {
         '视频生成状态': '待生成',
         '视频错误信息': '',
         '错误信息': '',
@@ -897,17 +925,16 @@ def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
     return "\n".join(parts)
 
 
-def render_script_doc_last_frame(token, record_id, *, dry_run=False):
-    if not TABLE_SCRIPT_DOC_SHOTS:
-        raise Exception('config.json 尚未配置 script_doc_shots 表 ID')
+def render_script_doc_last_frame(token, record_id, *, dry_run=False, table='script_doc'):
+    tables = script_doc_table_context(table)
 
-    fields = safe_get_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+    fields = safe_get_record(token, tables['shots'], record_id)
     fields = apply_task_default_to_record(
         token,
-        TABLE_SCRIPT_DOC_SHOTS,
+        tables['shots'],
         record_id,
         fields,
-        app_table=TASK_TABLES["script_doc_shots"],
+        app_table=tables['app_table'],
         stage="尾帧图生成默认",
         model_field="尾帧图AI模型",
         size_field="尾帧图画面尺寸",
@@ -971,7 +998,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     }
     if not existing_task_id:
         start_fields['尾帧图原始响应JSON'] = ''
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, start_fields))
+    safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], start_fields))
 
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
@@ -983,7 +1010,7 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
     out_path = os.path.join(task_dir, f'{record_id}_last_frame.png')
 
     def on_tail_task_submitted(task_id):
-        safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+        safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], {
             '尾帧图任务ID': task_id,
             '尾帧图原始响应JSON': _compact_json({'submit': {'id': task_id}}),
             '尾帧图错误信息': f'已提交 OTU 尾帧图任务，正在轮询。task_id={task_id}',
@@ -1031,13 +1058,14 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
         '尾帧图错误信息': '',
         '错误信息': '',
     }
-    safe_update_record(token, TABLE_SCRIPT_DOC_SHOTS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, success_fields))
+    safe_update_record(token, tables['shots'], record_id, filter_existing_fields(token, tables['shots'], success_fields))
     auto_video_summary = maybe_auto_trigger_script_doc_video(
         token,
         record_id,
         {**fields, **success_fields},
         file_token=file_token,
         trigger_source='last_frame',
+        table_id=tables['shots'],
     )
     log_event('INFO', 'script doc last frame render success', record_id=record_id)
     if auto_video_summary.get('status') == 'triggered':
@@ -1046,10 +1074,8 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False):
 
 
 def render_shot(token, record_id, table='script_doc', *, dry_run=False):
-    if table in ('script_doc', 'script_doc_shots', TABLE_SCRIPT_DOC_SHOTS):
-        return render_script_doc_shot(token, record_id, dry_run=dry_run)
-
-    raise Exception('不再支持旧 shot_storyboard 表，请使用 script_doc')
+    script_doc_table_context(table)
+    return render_script_doc_shot(token, record_id, dry_run=dry_run, table=table)
 
 
 def main():
@@ -1057,7 +1083,7 @@ def main():
     parser = argparse.ArgumentParser(description='逐镜头分镜图生成')
     parser.add_argument('action', choices=['render', 'last-frame'])
     parser.add_argument('record_id')
-    parser.add_argument('--table', default='script_doc', choices=['script_doc'])
+    parser.add_argument('--table', default='script_doc', choices=['script_doc', 'script_doc_unified'])
     parser.add_argument('--dry-run', action='store_true', help='只验证输入和配置，不提交图片任务')
     args = parser.parse_args()
     action = args.action
@@ -1068,9 +1094,7 @@ def main():
         if action == 'render':
             result = render_shot(token, record_id, table=args.table, dry_run=args.dry_run)
         elif action == 'last-frame':
-            if args.table != 'script_doc':
-                raise Exception('last-frame 仅支持 --table script_doc')
-            result = render_script_doc_last_frame(token, record_id, dry_run=args.dry_run)
+            result = render_script_doc_last_frame(token, record_id, dry_run=args.dry_run, table=args.table)
         else:
             raise Exception(f'未知 action: {action}')
         if isinstance(result, dict):
@@ -1082,6 +1106,7 @@ def main():
         if args.dry_run:
             pass
         elif action == 'last-frame':
+            table_id = script_doc_table_context(args.table)['shots']
             fail_fields = {
                 '尾帧图生成状态': '失败',
                 '尾帧图错误信息': err,
@@ -1090,13 +1115,14 @@ def main():
             try:
                 safe_update_record(
                     token,
-                    TABLE_SCRIPT_DOC_SHOTS,
+                    table_id,
                     record_id,
-                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
+                    filter_existing_fields(token, table_id, fail_fields)
                 )
             except Exception:
                 pass
-        elif action == 'render' and args.table == 'script_doc':
+        elif action == 'render':
+            table_id = script_doc_table_context(args.table)['shots']
             fail_fields = {
                 '分镜图生成状态': '失败',
                 '分镜图错误信息': err,
@@ -1105,24 +1131,9 @@ def main():
             try:
                 safe_update_record(
                     token,
-                    TABLE_SCRIPT_DOC_SHOTS,
+                    table_id,
                     record_id,
-                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
-                )
-            except Exception:
-                pass
-        elif action == 'render':
-            fail_fields = {
-                '分镜图生成状态': '失败',
-                '分镜图错误信息': err,
-                '失败分类': classify_render_error(e),
-            }
-            try:
-                safe_update_record(
-                    token,
-                    TABLE_SCRIPT_DOC_SHOTS,
-                    record_id,
-                    filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, fail_fields)
+                    filter_existing_fields(token, table_id, fail_fields)
                 )
             except Exception:
                 pass

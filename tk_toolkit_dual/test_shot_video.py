@@ -712,6 +712,35 @@ class ShotVideoTest(unittest.TestCase):
         self.assertEqual(updates[-1]["视频通道"], "OTU")
         self.assertEqual(updates[-1]["视频生成模型"], "OTU / veo_3_1-fast-fl")
 
+    def test_prefixed_default_otu_model_uses_otu_stage_when_channel_blank(self):
+        fields = sample_fields()
+        fields["视频通道"] = ""
+        fields["视频生成模型"] = "OTU / 默认（配置表）"
+
+        with patch("tk_shot_video.get_model_config") as cfg, \
+             patch("tk_shot_video.ensure_work_dir") as work, \
+             patch("tk_shot_video.resolve_reference_image") as ref:
+            cfg.return_value = ("cfg_otu", {
+                "model": "veo_3_1-fast-fl",
+                "api_key": "sk",
+                "api_base": "https://otuapi.com",
+                "size": "720x1280",
+                "aspect_ratio": "9:16",
+            })
+            work.return_value = Path("/tmp")
+            ref.return_value = Path("/tmp/ref.png")
+
+            result = video.run_shot_video_generation(
+                "rec1",
+                dry_run=True,
+                token="t",
+                get_record_fn=lambda token, table, rid: fields,
+            )
+
+        cfg.assert_called_once_with(video.OTU_STAGE_NAME)
+        self.assertEqual(result["video_channel"], "OTU")
+        self.assertEqual(result["model"], "veo_3_1-fast-fl")
+
     def test_run_aihubmix_channel_rejects_otu_model_prefix(self):
         fields = sample_fields()
         fields["视频通道"] = "AIHubMix"

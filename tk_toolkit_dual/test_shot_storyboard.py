@@ -109,7 +109,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
 
     def test_auto_review_triggers_video_after_storyboard_when_no_last_frame_mode(self):
         updates = []
-        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True), \
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True) as enabled, \
              patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
              patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
              patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields):
@@ -126,11 +126,39 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
             )
 
         self.assertEqual(result, {"status": "triggered"})
+        enabled.assert_called_once_with("token", stage_name=storyboard.AUTO_REVIEW_STAGE_NAME)
         self.assertEqual(updates, [{
             "视频生成状态": "待生成",
             "视频错误信息": "",
             "错误信息": "",
         }])
+
+    def test_unified_auto_review_triggers_video_uses_unified_switch(self):
+        updates = []
+        with patch("tk_shot_storyboard.auto_review_enabled", return_value=True) as enabled, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_UNIFIED", "tbl_unified"), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((table, fields))), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = storyboard.maybe_auto_trigger_script_doc_video(
+                "token",
+                "rec1",
+                {
+                    "首尾帧视频模式": "不启用",
+                    "视频提示词": "animate the generated shot",
+                    "分镜图file_token": "ft_shot",
+                },
+                file_token="ft_shot",
+                trigger_source="storyboard",
+                table_id="tbl_unified",
+            )
+
+        self.assertEqual(result, {"status": "triggered"})
+        enabled.assert_called_once_with("token", stage_name=storyboard.UNIFIED_AUTO_REVIEW_STAGE_NAME)
+        self.assertEqual(updates, [("tbl_unified", {
+            "视频生成状态": "待生成",
+            "视频错误信息": "",
+            "错误信息": "",
+        })])
 
     def test_auto_review_disabled_does_not_trigger_script_doc_video(self):
         with patch("tk_shot_storyboard.auto_review_enabled", return_value=False), \
@@ -484,6 +512,55 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertIn("分镜图原始响应JSON", updates[1])
         self.assertEqual(updates[-1]["分镜图任务ID"], "img_task_1")
         self.assertIn("分镜图原始响应JSON", updates[-1])
+
+    def test_render_script_doc_shot_passes_all_reference_paths_and_count(self):
+        shot_fields = {
+            "父文档记录ID": "parent1",
+            "图片提示词": "show exact product packaging beside the cat",
+            "画面描述": "product hero shot",
+            "需要产品参考图": "是",
+        }
+        parent_fields = {"分镜风格": "写实", "解析结果JSON": ""}
+        refs = [
+            {"role": "product:1", "path": "/tmp/product_front.png", "file_token": "ft_product_front"},
+            {"role": "product:2", "path": "/tmp/product_box.png", "file_token": "ft_product_box"},
+            {"role": "pet:cat", "path": "/tmp/cat.png", "file_token": "ft_cat"},
+        ]
+        image_result = Mock()
+        image_result.task_id = "img_task_refs"
+        image_result.submit_body = {"id": "img_task_refs"}
+        image_result.result_body = {"status": "completed", "result_url": "https://x.test/shot.png"}
+        image_result.request_summary = {
+            "reference_count": 3,
+            "submitted_reference_count": 3,
+        }
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch("tk_shot_storyboard.safe_get_record", side_effect=[shot_fields, parent_fields]), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[]), \
+             patch("tk_script_doc_shots.collect_reference_images_for_shot", return_value=refs), \
+             patch("tk_shot_storyboard.build_reference_urls", return_value=[
+                 "https://x.test/product-front.png",
+                 "https://x.test/product-box.png",
+                 "https://x.test/cat.png",
+             ]), \
+             patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+             patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
+             patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": "base prompt"}), \
+             patch("tk_shot_storyboard.run_image_generation", return_value=image_result) as runner, \
+             patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_shot"):
+            storyboard.render_script_doc_shot("t", "rec1")
+
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], "/tmp/product_front.png")
+        self.assertEqual(kwargs["reference_image_paths"], [ref["path"] for ref in refs])
+        self.assertEqual(kwargs["reference_count_override"], len(refs))
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["product:1", "product:2", "pet:cat"])
 
     def test_render_script_doc_shot_resumes_existing_task_without_resubmitting(self):
         shot_fields = {

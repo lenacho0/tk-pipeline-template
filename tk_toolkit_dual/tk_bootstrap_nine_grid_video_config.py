@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""补齐多图九宫格视频生成的模型配置记录。"""
+"""补齐多图宫格视频生成的模型配置记录。"""
 from __future__ import annotations
 
 import json
@@ -40,7 +40,7 @@ def build_wanted_config_records() -> List[Dict[str, Any]]:
             "调用方式": "Gemini 原生 SDK",
             "状态": "测试中",
             "提示词": NINE_GRID_PLAN_SYSTEM_PROMPT,
-            "备注": "多图九宫格方案生成提示词真源；API Key 复用正式文本模型配置或由记录字段路由选择。",
+            "备注": "多图宫格方案生成提示词真源；API Key 复用正式文本模型配置或由记录字段路由选择。",
         },
         {
             "环节": IMAGE_STAGE_NAME,
@@ -57,7 +57,7 @@ def build_wanted_config_records() -> List[Dict[str, Any]]:
             "调用方式": "专用 API",
             "状态": "测试中",
             "提示词": NINE_GRID_IMAGE_SYSTEM_PROMPT,
-            "备注": "多图九宫格图片生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
+            "备注": "多图宫格图片生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
         },
         {
             "环节": VIDEO_STAGE_NAME,
@@ -74,7 +74,7 @@ def build_wanted_config_records() -> List[Dict[str, Any]]:
             "调用方式": "专用 API",
             "状态": "测试中",
             "提示词": NINE_GRID_VIDEO_SYSTEM_PROMPT,
-            "备注": "多图九宫格视频生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
+            "备注": "多图宫格视频生成通用提示词；供应商和模型以记录字段或统一 AI 路由为准。",
         },
     ]
 

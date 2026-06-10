@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-多图九宫格方案、九宫格图片、整板视频生成。
+多图宫格方案、宫格图片、整板视频生成。
 
 用法:
   python3 tk_nine_grid_video.py plan <parent_record_id>
@@ -81,10 +81,10 @@ from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  #
 
 
 AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["nine_grid_video"]
-PLAN_STAGE_NAME = "多图九宫格方案生成"
-IMAGE_STAGE_NAME = "多图九宫格图片生成"
-VIDEO_STAGE_NAME = "多图九宫格视频生成"
-REFERENCE_STAGE_NAME = "多图九宫格图片生成"
+PLAN_STAGE_NAME = "多图宫格方案生成"
+IMAGE_STAGE_NAME = "多图宫格图片生成"
+VIDEO_STAGE_NAME = "多图宫格视频生成"
+REFERENCE_STAGE_NAME = "多图宫格图片生成"
 INPUT_MODE_DIRECT_DOC = "文档直拆"
 INPUT_MODE_LEGACY_AI_PLAN = "AI方案生成（旧）"
 DEFAULT_TEXT_PROVIDER = "AIHubMix"
@@ -97,6 +97,14 @@ DEFAULT_IMAGE_SIZE = "720x1280"
 DEFAULT_VIDEO_SIZE = "720x1280"
 DEFAULT_ASPECT_RATIO = "9:16"
 BASE_WORK_DIR = Path(WORKSPACE) / "nine_grid_video_work"
+SUPPORTED_GRID_LAYOUTS = {
+    4: "2x2",
+    6: "3x2",
+    8: "4x2",
+    9: "3x3",
+}
+SUPPORTED_GRID_COUNTS_TEXT = "4/6/8/9"
+DEFAULT_AI_PLAN_GRID_COUNT = 4
 MAX_REFERENCE_IMAGES = 7
 REFERENCE_VIDEO_MAX_IMAGES = 9
 OTU_NINE_GRID_VIDEO_MAX_POLL_SECONDS = 2400
@@ -179,6 +187,11 @@ SECRET_FALLBACK_STAGES = {
     IMAGE_STAGE_NAME: ("图片生成-OTU",),
     VIDEO_STAGE_NAME: ("分镜视频生成-OTU",),
 }
+STAGE_NAME_ALIASES = {
+    "多图宫格方案生成": ("多图九宫格方案生成",),
+    "多图宫格图片生成": ("多图九宫格图片生成",),
+    "多图宫格视频生成": ("多图九宫格视频生成",),
+}
 
 
 def ensure_nine_grid_table() -> None:
@@ -241,13 +254,11 @@ def _markdown_sections(markdown: str) -> List[Dict[str, Any]]:
     return sections
 
 
-def _first_fenced_code(body: str, title: str) -> str:
+def _prompt_body_from_section(body: str, title: str) -> str:
     match = FENCED_CODE_RE.search(body)
-    if not match:
-        raise ValueError(f"{title} 缺少 fenced code block")
-    prompt = match.group("body").strip()
+    prompt = (match.group("body") if match else body).strip()
     if not prompt:
-        raise ValueError(f"{title} fenced code block 为空")
+        raise ValueError(f"{title} 提示词为空")
     return prompt
 
 
@@ -282,6 +293,59 @@ def _extract_board_index(title: str, suffix: str) -> Optional[int]:
     return int(match.group(1))
 
 
+def _extract_board_index_any(title: str, suffixes: Iterable[str]) -> Optional[int]:
+    for suffix in suffixes:
+        board_index = _extract_board_index(title, suffix)
+        if board_index is not None:
+            return board_index
+    return None
+
+
+def grid_layout_for_count(grid_count: int) -> str:
+    layout = SUPPORTED_GRID_LAYOUTS.get(grid_count)
+    if not layout:
+        raise ValueError(f"宫格数量仅支持 {SUPPORTED_GRID_COUNTS_TEXT} 宫格")
+    return layout
+
+
+def grid_count_label(grid_count: int) -> str:
+    return f"{grid_count}宫格"
+
+
+def _parse_grid_count(value: Any, *, default: int = 0) -> int:
+    text = extract_text(value).strip()
+    if not text:
+        return default
+    match = re.search(r"\d+", text)
+    if not match:
+        return default
+    grid_count = int(match.group(0))
+    grid_layout_for_count(grid_count)
+    return grid_count
+
+
+def _selected_grid_count(fields: Dict[str, Any], *, default: int = 0) -> int:
+    return _parse_grid_count(fields.get("宫格数量"), default=default)
+
+
+def _field_value(fields: Dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in fields and fields.get(name) not in (None, ""):
+            return fields.get(name)
+    return ""
+
+
+def _cell_count_for_board(board: Dict[str, Any]) -> int:
+    return len(_as_list(board.get("cells")))
+
+
+def _validate_grid_count(grid_count: int, *, requested_grid_count: int = 0) -> int:
+    grid_layout_for_count(grid_count)
+    if requested_grid_count and grid_count != requested_grid_count:
+        raise ValueError(f"宫格数量不一致：用户选择 {requested_grid_count} 宫格，但文档/方案包含 {grid_count} 个 Cell")
+    return grid_count
+
+
 def _derive_time_range_from_video_prompt(prompt: str) -> str:
     matches = list(DIRECT_DOC_TIME_RANGE_RE.finditer(prompt))
     if not matches:
@@ -314,10 +378,14 @@ def _extract_cells_from_image_prompt(prompt: str) -> List[Dict[str, Any]]:
             "camera": "",
             "dialogue_or_voiceover": "",
         })
-    return sorted(cells, key=lambda item: item["cell_index"]) if len(cells) == 9 else []
+    cells = sorted(cells, key=lambda item: item["cell_index"])
+    if not cells:
+        return []
+    _validate_grid_count(len(cells))
+    return cells
 
 
-def parse_direct_markdown_document(markdown: str) -> Dict[str, Any]:
+def parse_direct_markdown_document(markdown: str, *, requested_grid_count: int = 0) -> Dict[str, Any]:
     text = extract_text(markdown).strip()
     if not text:
         raise ValueError("脚本内容为空")
@@ -331,7 +399,7 @@ def parse_direct_markdown_document(markdown: str) -> Dict[str, Any]:
         title = section["title"]
         if section["level"] == 3 and "参考图提示词" in title:
             asset_type = _reference_asset_kind(title)
-            prompt = _first_fenced_code(section["body"], title)
+            prompt = _prompt_body_from_section(section["body"], title)
             if asset_type == "product":
                 product_reference_prompt = prompt
                 continue
@@ -346,39 +414,51 @@ def parse_direct_markdown_document(markdown: str) -> Dict[str, Any]:
                 "direct_prompt": True,
             })
             continue
-        image_index = _extract_board_index(title, "九宫格分镜图提示词")
+        image_index = _extract_board_index_any(title, ("宫格分镜图提示词", "九宫格分镜图提示词"))
         if image_index is not None:
-            image_prompts[image_index] = _first_fenced_code(section["body"], title)
+            image_prompts[image_index] = _prompt_body_from_section(section["body"], title)
             continue
         video_index = _extract_board_index(title, "图生视频提示词")
         if video_index is not None:
-            video_prompts[video_index] = _first_fenced_code(section["body"], title)
+            video_prompts[video_index] = _prompt_body_from_section(section["body"], title)
 
     if not image_prompts:
-        raise ValueError("文档缺少 Board 九宫格分镜图提示词")
+        raise ValueError("文档缺少 Board 宫格分镜图提示词")
     boards: List[Dict[str, Any]] = []
+    inferred_grid_count = 0
     for board_index in sorted(image_prompts):
         if board_index not in video_prompts:
             raise ValueError(f"Board {board_index} 缺少图生视频提示词")
         image_prompt = image_prompts[board_index]
         video_prompt = video_prompts[board_index]
+        cells = _extract_cells_from_image_prompt(image_prompt)
+        if not cells:
+            raise ValueError("文档宫格分镜图提示词缺少 Cell 列表")
+        board_grid_count = _validate_grid_count(len(cells), requested_grid_count=requested_grid_count)
+        if inferred_grid_count and board_grid_count != inferred_grid_count:
+            raise ValueError(f"宫格数量不一致：同一母任务下 Board 宫格数量必须一致，已发现 {inferred_grid_count} 和 {board_grid_count}")
+        inferred_grid_count = board_grid_count
         boards.append({
             "board_index": board_index,
+            "grid_count": board_grid_count,
+            "grid_layout": grid_layout_for_count(board_grid_count),
             "time_range": _derive_time_range_from_video_prompt(video_prompt),
             "narrative_task": "",
             "start_frame": "",
             "end_frame": "",
             "handoff_anchor": "",
-            "cells": _extract_cells_from_image_prompt(image_prompt),
+            "cells": cells,
             "image_prompt": image_prompt,
             "video_prompt": video_prompt,
             "direct_prompt": True,
         })
     extra_video_boards = sorted(set(video_prompts) - set(image_prompts))
     if extra_video_boards:
-        raise ValueError(f"Board {extra_video_boards[0]} 缺少九宫格分镜图提示词")
+        raise ValueError(f"Board {extra_video_boards[0]} 缺少宫格分镜图提示词")
     return {
         "task_type": "MULTI_IMAGE_NINE_GRID_DIRECT_DOC",
+        "grid_count": inferred_grid_count,
+        "grid_layout": grid_layout_for_count(inferred_grid_count),
         "script_analysis": {},
         "reference_manifest": {"required_references": reference_items},
         "product_reference_prompt": product_reference_prompt,
@@ -387,7 +467,7 @@ def parse_direct_markdown_document(markdown: str) -> Dict[str, Any]:
     }
 
 
-def normalize_nine_grid_plan_payload(payload: Any) -> Dict[str, Any]:
+def normalize_nine_grid_plan_payload(payload: Any, *, requested_grid_count: int = DEFAULT_AI_PLAN_GRID_COUNT) -> Dict[str, Any]:
     data = payload
     if isinstance(payload, str):
         stripped = _strip_markdown_code_block(payload)
@@ -396,19 +476,20 @@ def normalize_nine_grid_plan_payload(payload: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             data = extract_json_object(stripped)
     if not isinstance(data, dict):
-        raise ValueError("九宫格方案结果必须是 JSON 对象")
+        raise ValueError("宫格方案结果必须是 JSON 对象")
     if extract_text(data.get("task_type")).strip() != "MULTI_IMAGE_NINE_GRID_PLAN":
-        raise ValueError("九宫格方案 task_type 必须是 MULTI_IMAGE_NINE_GRID_PLAN")
+        raise ValueError("宫格方案 task_type 必须是 MULTI_IMAGE_NINE_GRID_PLAN")
     boards = _as_list(data.get("boards"))
     if not boards:
-        raise ValueError("九宫格方案缺少 boards")
+        raise ValueError("宫格方案缺少 boards")
     normalized_boards = []
+    expected_grid_count = _parse_grid_count(data.get("grid_count") or data.get("宫格数量"), default=requested_grid_count)
+    expected_grid_count = _validate_grid_count(expected_grid_count or DEFAULT_AI_PLAN_GRID_COUNT)
     for idx, board in enumerate(boards, start=1):
         if not isinstance(board, dict):
             raise ValueError(f"boards[{idx}] 必须是对象")
         cells = _as_list(board.get("cells"))
-        if len(cells) != 9:
-            raise ValueError(f"Board {idx} cells 必须正好 9 个")
+        board_grid_count = _validate_grid_count(len(cells), requested_grid_count=expected_grid_count)
         normalized_cells = []
         for cell_idx, cell in enumerate(cells, start=1):
             if not isinstance(cell, dict):
@@ -425,25 +506,31 @@ def normalize_nine_grid_plan_payload(payload: Any) -> Dict[str, Any]:
             })
         normalized_board = dict(board)
         normalized_board["board_index"] = int(board.get("board_index") or idx)
+        normalized_board["grid_count"] = board_grid_count
+        normalized_board["grid_layout"] = grid_layout_for_count(board_grid_count)
         normalized_board["cells"] = normalized_cells
         normalized_board["image_prompt"] = extract_text(board.get("image_prompt")).strip() or build_board_image_prompt(normalized_board)
         normalized_board["video_prompt"] = extract_text(board.get("video_prompt")).strip() or build_board_video_prompt(normalized_board)
         normalized_boards.append(normalized_board)
     normalized = dict(data)
+    normalized["grid_count"] = expected_grid_count
+    normalized["grid_layout"] = grid_layout_for_count(expected_grid_count)
     normalized["boards"] = normalized_boards
     return normalized
 
 
 def build_board_image_prompt(board: Dict[str, Any]) -> str:
+    grid_count = _cell_count_for_board(board) or int(board.get("grid_count") or DEFAULT_AI_PLAN_GRID_COUNT)
+    layout = grid_layout_for_count(grid_count)
     lines = [
-        "Create one vertical 9:16 image containing exactly 9 panels arranged in a 3x3 grid.",
+        f"Create one vertical 9:16 image containing exactly {grid_count} panels arranged in a {layout} storyboard grid.",
         "Each panel is a vertical 9:16 smartphone UGC video still.",
         "Read panels left to right, top to bottom.",
         "Use the uploaded character, pet, product, and environment reference images as strict identity anchors.",
         "Do not place reference-sheet images inside the timeline panels.",
         "No subtitles, no stickers, no watermarks, no UI, no poster text, no panel numbers.",
         "Avoid visible borders, thick black grid lines, comic panel outlines, gutters, or table-like layout.",
-        "Keep the same person/pet/product/environment across all nine panels.",
+        "Keep the same person/pet/product/environment across all panels.",
     ]
     for cell in _as_list(board.get("cells")):
         lines.append(
@@ -644,9 +731,10 @@ def build_timed_board_video_prompt_for_record(parent_fields: Dict[str, Any], boa
     prompt_intro = extract_text(board.get("video_prompt")).strip()
     board_time = extract_text(board.get("time_range")).strip()
     narrative_task = extract_text(board.get("narrative_task")).strip()
+    grid_count = _cell_count_for_board(board) or int(board.get("grid_count") or DEFAULT_AI_PLAN_GRID_COUNT)
     lines = [
-        f"Generate one continuous {board_time or '8-12s'} vertical 9:16 TikTok UGC smartphone video from the current Board nine-grid storyboard.",
-        "Use the nine-grid image as a narrative order reference only; do not render a split-screen, grid, panel borders, UI, or captions.",
+        f"Generate one continuous {board_time or '8-12s'} vertical 9:16 TikTok UGC smartphone video from the current Board {grid_count}-panel storyboard.",
+        "Use the multi-panel storyboard image as a narrative order reference only; do not render a split-screen, grid, panel borders, UI, or captions.",
         "Follow the cells left to right, top to bottom, while keeping one continuous scene and natural action flow.",
         "Reference / consistency guard:",
         "- Keep the same person, pet, product, room, furniture, lighting, problem location, and product package from the uploaded references.",
@@ -710,7 +798,7 @@ def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
                 if has_product_ref else ""
             )
             lines.append(
-                f"Reference image {idx} = current Board nine-grid storyboard. "
+                f"Reference image {idx} = current Board multi-panel storyboard. "
                 "Use it as the narrative, action-sequence, composition, and character-position reference; "
                 "do not render it as a split-screen grid, panel layout, border, or UI."
                 f"{product_guard}"
@@ -725,7 +813,7 @@ def build_nine_grid_video_reference_note(refs: List[Dict[str, str]]) -> str:
         elif role.startswith("human:"):
             lines.append(
                 f"Reference image {idx} = human character reference{name_note}. "
-                "Use this image to lock the character identity, face, hairstyle, body type, outfit, and visual style when that character appears in the nine-grid sequence."
+                "Use this image to lock the character identity, face, hairstyle, body type, outfit, and visual style when that character appears in the multi-panel sequence."
             )
     lines.append("Do not reinterpret later reference images as storyboard panels; use them only for identity and product consistency.")
     return "\n".join(lines)
@@ -949,7 +1037,7 @@ def poll_otu_nine_grid_video_task(
     while True:
         now = now_fn()
         if now - start >= max_poll_seconds:
-            raise TimeoutError(f"OTU 九宫格视频任务超时: task_id={task_id}, last={compact_json(last_body, 1200)}")
+            raise TimeoutError(f"OTU 宫格视频任务超时: task_id={task_id}, last={compact_json(last_body, 1200)}")
         resp = requests.get(url, headers=headers, timeout=poll_timeout)
         try:
             body = resp.json()
@@ -957,7 +1045,7 @@ def poll_otu_nine_grid_video_task(
             body = {"raw_text": resp.text[:1000]}
         last_body = body if isinstance(body, dict) else {"raw": body}
         if resp.status_code >= 400:
-            raise RuntimeError(f"OTU 九宫格视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
+            raise RuntimeError(f"OTU 宫格视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
 
         nested = last_body.get("data") if isinstance(last_body.get("data"), dict) else {}
         status = extract_text(last_body.get("status") or nested.get("status")).lower()
@@ -965,20 +1053,20 @@ def poll_otu_nine_grid_video_task(
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
         if status in {"failed", "error", "cancelled", "canceled"}:
-            raise RuntimeError(f"OTU 九宫格视频生成失败: {str(last_body)[:1500]}")
+            raise RuntimeError(f"OTU 宫格视频生成失败: {str(last_body)[:1500]}")
 
         if status == "queued" and progress == 0:
             created_at = _progress_number(last_body.get("created_at", nested.get("created_at")))
             if created_at is not None and now >= created_at and now - created_at >= queued_zero_progress_timeout_seconds:
                 raise TimeoutError(
-                    f"OTU 九宫格视频 queued progress=0 timeout，自 created_at 已超过 "
+                    f"OTU 宫格视频 queued progress=0 timeout，自 created_at 已超过 "
                     f"{queued_zero_progress_timeout_seconds}s: task_id={task_id}, last={compact_json(last_body, 1200)}"
                 )
             if queued_zero_started_at is None:
                 queued_zero_started_at = now
             elif now - queued_zero_started_at >= queued_zero_progress_timeout_seconds:
                 raise TimeoutError(
-                    f"OTU 九宫格视频 queued progress=0 timeout，超过 {queued_zero_progress_timeout_seconds}s: "
+                    f"OTU 宫格视频 queued progress=0 timeout，超过 {queued_zero_progress_timeout_seconds}s: "
                     f"task_id={task_id}, last={compact_json(last_body, 1200)}"
                 )
         else:
@@ -1190,6 +1278,8 @@ def build_plan_generation_request(fields: Dict[str, Any], *, system_prompt: str 
     script = extract_text(fields.get("脚本内容")).strip()
     product_links = _extract_link_ids(fields.get("关联产品记录"))
     model_links = _extract_link_ids(fields.get("选择模特"))
+    grid_count = _selected_grid_count(fields, default=DEFAULT_AI_PLAN_GRID_COUNT)
+    grid_layout = grid_layout_for_count(grid_count)
     rules = extract_text(system_prompt).strip() or NINE_GRID_PLAN_SYSTEM_PROMPT
     return f"""
 {rules}
@@ -1198,6 +1288,8 @@ def build_plan_generation_request(fields: Dict[str, Any], *, system_prompt: str 
 - Product record ids: {", ".join(product_links) or "none"}
 - Character / pet model record ids: {", ".join(model_links) or "none"}
 - Environment image count: {len(_as_list(fields.get("环境图")))}
+- Grid count: {grid_count}
+- Grid layout: {grid_layout}
 
 【完整脚本内容】
 {script}
@@ -1205,7 +1297,7 @@ def build_plan_generation_request(fields: Dict[str, Any], *, system_prompt: str 
 
 
 def build_plan_review_markdown(payload: Dict[str, Any]) -> str:
-    lines = ["# 多图九宫格方案审核稿"]
+    lines = ["# 多图宫格方案审核稿"]
     analysis = payload.get("script_analysis") or {}
     lines.append(f"- 脚本类型：{extract_text(analysis.get('script_type')).strip()}")
     lines.append(f"- 核心冲突：{extract_text(analysis.get('core_conflict')).strip()}")
@@ -1220,7 +1312,7 @@ def build_plan_review_markdown(payload: Dict[str, Any]) -> str:
 
 
 def build_direct_markdown_review(payload: Dict[str, Any]) -> str:
-    lines = ["# 多图九宫格文档直拆审核稿"]
+    lines = ["# 多图宫格文档直拆审核稿"]
     product_prompt = extract_text(payload.get("product_reference_prompt")).strip()
     if product_prompt:
         lines.append("")
@@ -1235,7 +1327,7 @@ def build_direct_markdown_review(payload: Dict[str, Any]) -> str:
     for board in payload.get("boards") or []:
         lines.append("")
         lines.append(f"## Board {int(board.get('board_index') or 0):02d}｜{extract_text(board.get('time_range')).strip()}")
-        lines.append(f"- 九宫格图片提示词 chars：{len(extract_text(board.get('image_prompt')))}")
+        lines.append(f"- 宫格图片提示词 chars：{len(extract_text(board.get('image_prompt')))}")
         lines.append(f"- 图生视频提示词 chars：{len(extract_text(board.get('video_prompt')))}")
         cells = _as_list(board.get("cells"))
         if cells:
@@ -1285,7 +1377,7 @@ def build_reference_asset_records(
 ) -> List[Dict[str, Dict[str, Any]]]:
     records = []
     seen: Dict[str, int] = {}
-    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"九宫格任务-{parent_record_id[-6:]}"
+    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"宫格任务-{parent_record_id[-6:]}"
     default_people_source = _field_with_default(parent_fields, "人物/宠物默认来源", REFERENCE_SOURCE_AI)
     environment_source = _field_with_default(parent_fields, "环境图来源", REFERENCE_SOURCE_AI)
     for raw in _reference_manifest_items(payload):
@@ -1348,9 +1440,11 @@ def build_child_board_records(
     records = []
     boards = payload.get("boards") or []
     total = len(boards)
-    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"九宫格任务-{parent_record_id[-6:]}"
+    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"宫格任务-{parent_record_id[-6:]}"
     for board in boards:
         no = int(board.get("board_index") or len(records) + 1)
+        grid_count = int(board.get("grid_count") or payload.get("grid_count") or _cell_count_for_board(board) or DEFAULT_AI_PLAN_GRID_COUNT)
+        grid_layout = extract_text(board.get("grid_layout") or payload.get("grid_layout")).strip() or grid_layout_for_count(grid_count)
         video_prompt = (
             extract_text(board.get("video_prompt")).strip()
             if board.get("direct_prompt")
@@ -1365,13 +1459,17 @@ def build_child_board_records(
             "选择模特": _extract_link_ids(parent_fields.get("选择模特")),
             "总Board数": total,
             "Board编号": no,
+            "宫格数量": grid_count_label(grid_count),
+            "宫格布局": grid_layout,
             "Time Range": extract_text(board.get("time_range")).strip(),
             "叙事任务": extract_text(board.get("narrative_task")).strip(),
             "起始画面": extract_text(board.get("start_frame")).strip(),
             "结束画面": extract_text(board.get("end_frame")).strip(),
             "衔接锚点": extract_text(board.get("handoff_anchor")).strip(),
+            "宫格摘要JSON": compact_json(board.get("cells") or [], 10000),
             "九格摘要JSON": compact_json(board.get("cells") or [], 10000),
             "审核状态": "待确认",
+            "宫格图片提示词": extract_text(board.get("image_prompt")).strip(),
             "九宫格图片提示词": extract_text(board.get("image_prompt")).strip(),
             "图片AI供应商": _field_with_default(parent_fields, "图片AI供应商", DEFAULT_IMAGE_PROVIDER),
             "图片AI模型": _field_with_default(parent_fields, "图片AI模型", DEFAULT_IMAGE_MODEL),
@@ -1420,7 +1518,7 @@ def apply_nine_grid_board_default_models(token: str, records: List[Dict[str, Dic
             token,
             fields,
             app_table=TASK_TABLES["nine_grid_video"],
-            stage="九宫格图片生成默认",
+            stage="宫格图片生成默认",
             model_field="图片AI模型",
             size_field="图片画面尺寸",
             ratio_field="图片画面比例",
@@ -1431,7 +1529,7 @@ def apply_nine_grid_board_default_models(token: str, records: List[Dict[str, Dic
             token,
             fields,
             app_table=TASK_TABLES["nine_grid_video"],
-            stage="九宫格视频生成默认",
+            stage="宫格视频生成默认",
             model_field="视频生成模型",
             size_field="视频画面尺寸",
             ratio_field="视频画面比例",
@@ -1549,7 +1647,7 @@ def advance_boards_for_reference_asset(record_id: str, *, dry_run: bool = False)
     token = get_feishu_token()
     fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, record_id)
     if extract_text(fields.get("记录类型")).strip() != ASSET_RECORD_TYPE:
-        raise ValueError("只有参考资产记录可以推进九宫格图片生成")
+        raise ValueError("只有参考资产记录可以推进宫格图片生成")
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
         raise ValueError("参考资产缺少父任务记录ID")
@@ -1651,15 +1749,20 @@ def _stage_config_records(token: str) -> List[Dict[str, Any]]:
 def get_config_record(stage_name: str, *, default_model: str, default_api_base: str, default_size: str = "") -> Tuple[str, Dict[str, str]]:
     token = get_feishu_token()
     records = safe_list_records(token, TABLE_CONFIG)
-    record_id, cfg = load_stage_config_fields(
-        token,
-        stage_name,
-        default_model=default_model,
-        default_api_base=default_api_base,
-        default_size=default_size,
-        default_aspect_ratio=DEFAULT_ASPECT_RATIO,
-        require_api_key=False,
-    )
+    record_id = ""
+    cfg: Dict[str, str] = {}
+    for candidate_stage in (stage_name, *STAGE_NAME_ALIASES.get(stage_name, ())):
+        record_id, cfg = load_stage_config_fields(
+            token,
+            candidate_stage,
+            default_model=default_model,
+            default_api_base=default_api_base,
+            default_size=default_size,
+            default_aspect_ratio=DEFAULT_ASPECT_RATIO,
+            require_api_key=False,
+        )
+        if record_id:
+            break
     if record_id:
         if not cfg["api_key"]:
             for fallback_stage in SECRET_FALLBACK_STAGES.get(stage_name, ()):
@@ -1735,7 +1838,8 @@ def split_nine_grid_direct_markdown(
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     script = extract_text(fields.get("脚本内容")).strip()
-    payload = parse_direct_markdown_document(script)
+    requested_grid_count = _selected_grid_count(fields, default=0)
+    payload = parse_direct_markdown_document(script, requested_grid_count=requested_grid_count)
     batch_id = f"NINEGRID-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
     asset_records = apply_nine_grid_reference_default_models(
         token,
@@ -1757,6 +1861,8 @@ def split_nine_grid_direct_markdown(
         "status": "dry_run_ready" if dry_run else "success",
         "input_mode": INPUT_MODE_DIRECT_DOC,
         "batch_id": batch_id,
+        "grid_count": payload.get("grid_count"),
+        "grid_layout": payload.get("grid_layout"),
         "reference_asset_count": len(asset_records),
         "board_count": len(child_records),
     }
@@ -1772,6 +1878,8 @@ def split_nine_grid_direct_markdown(
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         "记录类型": "母任务",
         "输入模式": INPUT_MODE_DIRECT_DOC,
+        "宫格数量": grid_count_label(int(payload.get("grid_count") or DEFAULT_AI_PLAN_GRID_COUNT)),
+        "宫格布局": extract_text(payload.get("grid_layout")).strip(),
         "方案生成状态": "成功",
         "方案JSON": compact_json(payload, 20000),
         "方案Markdown": build_direct_markdown_review(payload)[:20000],
@@ -1803,7 +1911,7 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         "方案",
         cfg,
         capability="文本",
-        task_type="多图九宫格方案生成",
+        task_type="多图宫格方案生成",
         default_provider=DEFAULT_TEXT_PROVIDER,
         default_model=DEFAULT_TEXT_MODEL,
         config_records=config_records,
@@ -1829,7 +1937,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
     if raw_model_output is None:
         result = with_retry(lambda: ai_routing.call_text_model(route, prompt), max_attempts=3, label="nine grid plan generation")
         raw_model_output = result.text
-    payload = normalize_nine_grid_plan_payload(raw_model_output)
+    requested_grid_count = _selected_grid_count(fields, default=DEFAULT_AI_PLAN_GRID_COUNT)
+    payload = normalize_nine_grid_plan_payload(raw_model_output, requested_grid_count=requested_grid_count)
     batch_id = f"NINEGRID-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
     asset_records = apply_nine_grid_reference_default_models(
         token,
@@ -1853,6 +1962,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
     ])
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         "记录类型": "母任务",
+        "宫格数量": grid_count_label(int(payload.get("grid_count") or requested_grid_count)),
+        "宫格布局": extract_text(payload.get("grid_layout")).strip(),
         "方案生成状态": "成功",
         "方案JSON": compact_json(payload, 20000),
         "方案Markdown": build_plan_review_markdown(payload)[:20000],
@@ -1864,6 +1975,8 @@ def split_nine_grid_plan(record_id: str, *, dry_run: bool = False, raw_model_out
         "status": "success",
         "batch_id": batch_id,
         "reference_assets": asset_upsert,
+        "grid_count": payload.get("grid_count"),
+        "grid_layout": payload.get("grid_layout"),
         "reference_asset_count": len(asset_records),
         "deleted_children": deleted,
         "board_count": len(child_records),
@@ -1915,7 +2028,7 @@ def first_product_reference_item(
 ) -> Dict[str, str]:
     product_ids = _extract_link_ids(parent_fields.get("关联产品记录"))
     if not product_ids:
-        raise ValueError("九宫格视频生成缺少关联产品记录")
+        raise ValueError("宫格视频生成缺少关联产品记录")
     get_record = get_record_fn or safe_get_record
     product_fields = get_record(token, TABLE_PRODUCT, product_ids[0])
     product_tokens = _attachment_tokens(product_fields.get("产品图片"))
@@ -2250,7 +2363,7 @@ def render_reference_asset(record_id: str, *, dry_run: bool = False) -> Dict[str
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f"{record_id}_reference.png"),
         max_attempts=3,
-        label="upload nine grid reference image",
+        label="upload grid reference image",
     )
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         **_image_param_fields("参考图", params),
@@ -2281,7 +2394,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
         record_id,
         fields,
         app_table=TASK_TABLES["nine_grid_video"],
-        stage="九宫格图片生成默认",
+        stage="宫格图片生成默认",
         model_field="图片AI模型",
         size_field="图片画面尺寸",
         ratio_field="图片画面比例",
@@ -2292,9 +2405,9 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if not parent_record_id:
         raise ValueError("Board分段缺少父任务记录ID")
     parent_fields = safe_get_record(token, TABLE_NINE_GRID_VIDEO, parent_record_id)
-    prompt = extract_text(fields.get("九宫格图片提示词")).strip()
+    prompt = extract_text(_field_value(fields, "宫格图片提示词", "九宫格图片提示词")).strip()
     if not prompt:
-        raise ValueError("九宫格图片提示词为空")
+        raise ValueError("宫格图片提示词为空")
     current_status = extract_text(fields.get("图片生成状态")).strip()
     raw_existing_task_id = extract_text(fields.get("图片任务ID")).strip() if current_status == "生成中" else ""
     _, cfg = get_config_record(IMAGE_STAGE_NAME, default_model="gpt-image-2", default_api_base="https://otuapi.com", default_size=DEFAULT_IMAGE_SIZE)
@@ -2366,12 +2479,13 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
             **_image_param_fields("图片", params),
             "图片任务ID": existing_task_id,
             "图片生成状态": "生成中",
-            "图片错误信息": f"恢复轮询已有 OTU 九宫格图片任务。task_id={existing_task_id}",
+            "图片错误信息": f"恢复轮询已有 OTU 宫格图片任务。task_id={existing_task_id}",
             "错误信息": "",
         }))
     else:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             **_image_param_fields("图片", params),
+            "宫格图": [],
             "九宫格图": [],
             "图片任务ID": "",
             "图片错误信息": "",
@@ -2410,7 +2524,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
             record_id,
             filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
                 "图片任务ID": task_id,
-                "图片错误信息": f"已提交 {route.provider} 九宫格图片任务，正在轮询。task_id={task_id}",
+                "图片错误信息": f"已提交 {route.provider} 宫格图片任务，正在轮询。task_id={task_id}",
             }),
         ),
     )
@@ -2419,16 +2533,17 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if task_id:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "图片任务ID": task_id,
-            "图片错误信息": f"已提交 {route.provider} 九宫格图片任务，正在轮询。task_id={task_id}",
+            "图片错误信息": f"已提交 {route.provider} 宫格图片任务，正在轮询。task_id={task_id}",
         }))
     result = image_result.result_body
     file_token = with_retry(
         lambda: upload_image_to_feishu(token, out_path, f"{record_id}_nine_grid.png"),
         max_attempts=3,
-        label="upload nine grid image",
+        label="upload grid image",
     )
     safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
         **_image_param_fields("图片", params),
+        "宫格图": [{"file_token": file_token}],
         "九宫格图": [{"file_token": file_token}],
         "图片AI供应商": route.provider,
         "图片AI模型": route.model,
@@ -2459,7 +2574,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         record_id,
         fields,
         app_table=TASK_TABLES["nine_grid_video"],
-        stage="九宫格视频生成默认",
+        stage="宫格视频生成默认",
         model_field="视频生成模型",
         size_field="视频画面尺寸",
         ratio_field="视频画面比例",
@@ -2467,8 +2582,8 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         field_filter=filter_existing_fields,
     )
     prompt = extract_text(fields.get("视频提示词")).strip()
-    if not _attachment_token(fields.get("九宫格图")):
-        raise ValueError("Board分段缺少九宫格图附件")
+    if not _attachment_token(_field_value(fields, "宫格图", "九宫格图")):
+        raise ValueError("Board分段缺少宫格图附件")
     existing_task_id = extract_text(fields.get("视频任务ID")).strip()
     parent_record_id = extract_text(fields.get("父任务记录ID")).strip()
     if not parent_record_id:
@@ -2494,7 +2609,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     )
     route.params.update(params)
     if not ai_model_catalog.is_reference_video_model(route.model, route.provider):
-        raise ValueError(f"九宫格视频只支持参考图生视频模型: {route.model}")
+        raise ValueError(f"宫格视频只支持参考图生视频模型: {route.model}")
     if existing_task_id and not existing_video_task_matches_route(fields, route, existing_task_id):
         existing_task_id = ""
     model_name = ai_routing.parse_model_display(route.model)["model"] or route.model
@@ -2506,7 +2621,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         human_items = collect_nine_grid_video_human_reference_items(token, parent_record_id)
         prompt_refs = [{
             "role": "nine_grid",
-            "name": "current Board nine-grid",
+            "name": "current Board multi-panel",
             "type": "nine_grid",
         }, {
             **product_item,
@@ -2539,11 +2654,11 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频生成状态": "生成中",
             "视频任务ID": task_id,
-            "视频错误信息": f"恢复轮询已有九宫格视频任务。{task_detail}",
+            "视频错误信息": f"恢复轮询已有宫格视频任务。{task_detail}",
             "错误信息": "",
         }))
     else:
-        grid_token = _attachment_token(fields.get("九宫格图"))
+        grid_token = _attachment_token(_field_value(fields, "宫格图", "九宫格图"))
         grid_path = str(work_dir / "reference_nine_grid.png")
         safe_download_attachment(token, grid_token, grid_path)
         product_ref = collect_nine_grid_video_product_reference(
@@ -2557,7 +2672,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             "role": "nine_grid",
             "path": grid_path,
             "file_token": grid_token,
-            "name": "current Board nine-grid",
+            "name": "current Board multi-panel",
         }, product_ref]
         omni_refs.extend(collect_nine_grid_video_human_references(
             token,
@@ -2604,7 +2719,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {
             "视频任务ID": task_id,
             "视频错误信息": (
-                f"已提交九宫格视频任务，正在轮询。{task_detail}"
+                f"已提交宫格视频任务，正在轮询。{task_detail}"
             ),
         }))
     if route.provider == "OTU":
@@ -2613,7 +2728,7 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
         result = poll_reference_video_task(route, task_id)
     video_url = extract_video_url(result)
     if not video_url:
-        raise RuntimeError(f"九宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
+        raise RuntimeError(f"宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
     download_video(video_url, output_path)
     repair_fields = {
         "视频生成状态": "生成中",
@@ -2658,7 +2773,7 @@ def _failure_update_for_action(action: str, message: str) -> Dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="多图九宫格视频生成")
+    parser = argparse.ArgumentParser(description="多图宫格视频生成")
     parser.add_argument("action", choices=["plan", "reference", "reference-approval", "image", "video"])
     parser.add_argument("record_id")
     parser.add_argument("--dry-run", action="store_true")

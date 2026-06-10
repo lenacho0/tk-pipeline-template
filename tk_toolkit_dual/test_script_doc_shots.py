@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tk_script_doc_shots as doc_shots
 import tk_create_script_doc_shots_table as create_tables
 import tk_dispatcher as dispatcher
+import tk_model_config_center as model_config_center
 
 
 class ScriptDocShotsTests(unittest.TestCase):
@@ -58,7 +59,27 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(result["status"], "auto_approved")
         enabled.assert_called_once_with("token", stage_name=doc_shots.AUTO_REVIEW_STAGE_NAME)
         self.assertIn(("tbl_assets", "asset_pet", {"参考图审核状态": "通过", "错误信息": ""}), updates)
-        advance.assert_called_once_with("token", "parent")
+        advance.assert_called_once_with("token", "parent", unified=False)
+
+    def test_unified_auto_approve_reference_image_uses_unified_switch(self):
+        updates = []
+        with patch.object(doc_shots, "TABLE_SCRIPT_DOC_UNIFIED", "tbl_unified"), \
+             patch.object(doc_shots, "auto_review_enabled", return_value=True) as enabled, \
+             patch.object(doc_shots, "advance_shots_after_reference_approval", return_value={"advanced_shots": 2}) as advance, \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((table, rid, fields))), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = doc_shots.maybe_auto_approve_reference_image(
+                "token",
+                "asset_pet",
+                {"父文档记录ID": "parent"},
+                file_token="ft_pet",
+                unified=True,
+            )
+
+        self.assertEqual(result["status"], "auto_approved")
+        enabled.assert_called_once_with("token", stage_name=doc_shots.UNIFIED_AUTO_REVIEW_STAGE_NAME)
+        self.assertIn(("tbl_unified", "asset_pet", {"参考图审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("token", "parent", unified=True)
 
     def test_auto_approve_reference_image_requires_switch_and_token(self):
         with patch.object(doc_shots, "auto_review_enabled", return_value=False), \
@@ -276,8 +297,16 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(len(shot_records), 2)
         self.assertEqual(shot_records[0]["fields"]["父文档记录ID"], "recParent")
         self.assertEqual(shot_records[0]["fields"]["参考资产ID列表"], "pet_hero,owner_a,home_bg")
-        self.assertEqual(shot_records[0]["fields"]["视频通道"], "AIHubMix")
-        self.assertEqual(shot_records[0]["fields"]["视频生成模型"], "AIHubMix / 默认（配置表）")
+        self.assertEqual(shot_records[0]["fields"]["视频通道"], "OTU")
+        self.assertEqual(shot_records[0]["fields"]["视频生成模型"], "OTU / 默认（配置表）")
+        with patch.object(model_config_center, "load_task_default_fields", return_value={
+            "默认供应商": "OTU",
+            "默认模型显示名称": "OTU / veo_3_1-fast-fl",
+            "画面尺寸": "720x1280",
+            "画面比例": "9:16",
+        }):
+            defaulted_shots = doc_shots.apply_shot_default_models("real-token", shot_records)
+        self.assertEqual(defaulted_shots[0]["fields"]["视频生成模型"], "OTU / veo_3_1-fast-fl")
         self.assertEqual(shot_records[0]["fields"]["使用统一AI路由"], "是")
         self.assertEqual(shot_records[1]["fields"]["需要产品参考图"], "是")
         self.assertEqual(shot_records[1]["fields"]["使用统一AI路由"], "是")
@@ -346,7 +375,7 @@ class ScriptDocShotsTests(unittest.TestCase):
     def test_shot_table_field_specs_and_daily_views_match_production_cleanup(self):
         fields = {item["name"]: item for item in create_tables.SHOT_FIELDS}
         self.assertEqual(fields["视频通道"]["type"], "select")
-        self.assertEqual([item["name"] for item in fields["视频通道"]["options"]], ["AIHubMix", "OTU"])
+        self.assertEqual([item["name"] for item in fields["视频通道"]["options"]], ["OTU", "AIHubMix"])
         self.assertEqual(fields["视频生成模型"]["type"], "select")
         video_model_options = [item["name"] for item in fields["视频生成模型"]["options"]]
         self.assertEqual(video_model_options[0], "默认（配置表）")
@@ -466,6 +495,149 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertEqual(shot_records[0]["fields"]["父文档记录ID"], "recParent")
         self.assertEqual(shot_records[0]["fields"]["关联产品记录"], ["recProduct"])
 
+    def test_unified_table_fields_omit_voiceover_audio_and_use_record_type_views(self):
+        field_names = [item["name"] for item in create_tables.UNIFIED_SCRIPT_DOC_FIELDS]
+
+        self.assertEqual(field_names[:2], ["任务名称", "记录类型"])
+        self.assertIn("记录类型", field_names)
+        self.assertIn("脚本文档", field_names)
+        self.assertIn("脚本文档附件", field_names)
+        for forbidden in [
+            "记录状态",
+            "旧表来源",
+            "旧记录ID",
+            "脚本文档标题",
+            "脚本文档正文",
+            "脚本文档链接",
+            "产品名",
+            "关联产品",
+            "选择产品",
+            "口播音色ID",
+            "口播文本",
+            "AI供应商",
+            "AI能力类型",
+            "AI任务类型",
+            "AI模型",
+            "AI参数JSON",
+            "视频AI模型",
+            "解析结果JSON",
+            "解析后逐镜头脚本",
+            "参考图file_token",
+            "参考图本地路径",
+            "参考图原始响应JSON",
+            "分镜原文",
+            "人物描述",
+            "场景描述",
+            "产品焦点",
+            "连续性要求",
+            "文本",
+            "提示词",
+            "参考图选择原因",
+            "分镜图本地路径",
+            "分镜图file_token",
+            "分镜图原始响应JSON",
+            "分镜图生成时间",
+            "尾帧图提示词",
+            "尾帧图本地路径",
+            "尾帧图file_token",
+            "尾帧图原始响应JSON",
+            "尾帧图生成时间",
+            "本地视频路径",
+            "分镜视频file_token",
+            "视频生成原始响应JSON",
+            "视频生成时间",
+            "生成时间",
+            "发布平台",
+            "口播音频状态",
+            "口播音频",
+            "口播音频时长秒",
+            "口播音频路径",
+            "口播音频下载链接",
+            "口播音频FileToken",
+            "口播音频错误信息",
+        ]:
+            self.assertNotIn(forbidden, field_names)
+
+        self.assertEqual(create_tables.UNIFIED_TABLE_DEFINITION["key"], "script_doc_unified")
+        views = create_tables.UNIFIED_TABLE_DEFINITION["views"]
+        self.assertEqual(views["01-文档入口"]["filter"]["conditions"], [["记录类型", "is", ["文档任务"]]])
+        self.assertEqual(views["01-文档入口"]["visible_fields"][:3], ["任务名称", "脚本文档", "脚本文档附件"])
+        self.assertNotIn("分镜风格", views["01-文档入口"]["visible_fields"])
+        for view_name in ["01-文档入口", "02-参考图确认", "03-分镜图生成", "04-分镜视频", "05-发布素材"]:
+            self.assertEqual(views[view_name]["visible_fields"][0], "任务名称")
+            self.assertNotIn("记录类型", views[view_name]["visible_fields"])
+        self.assertEqual(views["02-参考图确认"]["filter"]["conditions"], [["记录类型", "is", ["参考资产"]]])
+        for view_name in ["03-分镜图生成", "04-分镜视频", "05-发布素材"]:
+            self.assertEqual(views[view_name]["filter"]["conditions"], [["记录类型", "is", ["分镜"]]])
+        self.assertNotIn("04-口播音频", views)
+
+    def test_parse_parent_record_unified_writes_only_new_unified_table(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档": "0-4s: hook",
+            "视频时长": "8s",
+            "使用统一AI路由": "是",
+            "解析AI模型": "AIHubMix / gemini-3.1-pro-preview",
+        }
+        created_batches = []
+        updates = []
+
+        with patch.object(doc_shots, "TABLE_SCRIPT_DOC_UNIFIED", "tbl_unified"), \
+             patch.object(doc_shots, "TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch.object(doc_shots, "TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
+             patch.object(doc_shots, "TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
+             patch.object(doc_shots, "ensure_script_doc_tables"), \
+             patch.object(doc_shots, "get_feishu_token", return_value="token"), \
+             patch.object(doc_shots, "safe_get_record", return_value=parent_fields) as getter, \
+             patch.object(doc_shots, "safe_list_records", return_value=[
+                 {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
+                 {"fields": {"供应商": "AIHubMix", "API 代理地址": "https://aihubmix.com/gemini", "API Key": "sk-aihubmix"}},
+             ]), \
+             patch.object(doc_shots, "get_model_config", return_value={
+                 "provider": "AIHubMix",
+                 "model": "gemini-3.1-pro-preview",
+                 "api_key": "sk-aihubmix",
+                 "api_base": "https://aihubmix.com/gemini",
+                 "call_type": "Gemini 原生 SDK",
+                 "prompt": "CONFIGURED SCRIPT DOC PROMPT",
+             }), \
+             patch.object(doc_shots.ai_routing, "call_text_model", return_value=Mock(text=json.dumps(self.sample_payload()))), \
+             patch.object(doc_shots, "cleanup_children", return_value=0) as cleanup, \
+             patch.object(doc_shots, "create_records", side_effect=lambda token, table, records: created_batches.append((table, records)) or len(records)), \
+             patch.object(doc_shots, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((table, rid, fields))), \
+             patch.object(doc_shots, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = doc_shots.parse_parent_record("recParent", unified=True)
+
+        self.assertEqual(result["status"], "success")
+        getter.assert_called_once_with("token", "tbl_unified", "recParent")
+        cleanup.assert_any_call("token", "tbl_unified", "recParent", record_type="参考资产")
+        cleanup.assert_any_call("token", "tbl_unified", "recParent", record_type="分镜")
+        self.assertTrue(created_batches)
+        self.assertEqual({table for table, _records in created_batches}, {"tbl_unified"})
+        created_fields = [record["fields"] for _table, records in created_batches for record in records]
+        self.assertIn("参考资产", {fields["记录类型"] for fields in created_fields})
+        self.assertIn("分镜", {fields["记录类型"] for fields in created_fields})
+        for fields in created_fields:
+            self.assertNotIn("口播音频状态", fields)
+            self.assertNotIn("记录状态", fields)
+            self.assertEqual(fields["任务名称"], "doc task")
+            self.assertNotIn("口播文本", fields)
+        self.assertEqual(updates[-1][0], "tbl_unified")
+        self.assertNotIn("解析结果JSON", updates[-1][2])
+        self.assertNotIn("解析后逐镜头脚本", updates[-1][2])
+
+    def test_unified_parse_can_read_script_doc_attachment(self):
+        parent_fields = {
+            "任务名称": "doc task",
+            "脚本文档附件": [{"file_token": "ft_doc"}],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(doc_shots, "WORKSPACE", tmpdir), \
+             patch.object(doc_shots, "safe_download_attachment", side_effect=lambda token, file_token, save_path: Path(save_path).write_text("0-4s: hook from attachment", encoding="utf-8") or True):
+            text = doc_shots.read_script_document_text("token", "recParent", parent_fields, unified=True)
+
+        self.assertEqual(text, "0-4s: hook from attachment")
+
     def test_parse_parent_record_uses_script_doc_text_split_config(self):
         parent_fields = {
             "任务名称": "doc task",
@@ -487,6 +659,57 @@ class ScriptDocShotsTests(unittest.TestCase):
         getter.assert_called_once_with("token", "stage:脚本文档结构化拆分-Gemini")
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertEqual(result["record_id"], "recParent")
+
+    def test_new_unified_dispatcher_watches_are_parallel_and_have_no_voiceover(self):
+        watches = {watch["name"]: watch for watch in dispatcher.RAW_WATCH_LIST}
+        old_watch = watches["脚本文档解析拆分"]
+        self.assertEqual(old_watch["table"], dispatcher.TABLE_SCRIPT_DOC_TASKS)
+
+        expected = {
+            "003新表脚本文档解析拆分": ("解析状态", ["文档任务"], ["parse", "--unified"]),
+            "003新表脚本文档参考底图生成": ("参考图生成状态", ["参考资产"], ["reference-image", "--unified"]),
+            "003新表脚本文档分镜图生成": ("分镜图生成状态", ["分镜"], ["render", "--table", "script_doc_unified"]),
+            "003新表脚本文档尾帧图生成": ("尾帧图生成状态", ["分镜"], ["last-frame", "--table", "script_doc_unified"]),
+            "003新表脚本文档分镜视频生成": ("视频生成状态", ["分镜"], ["--table", "script_doc_unified"]),
+        }
+        for name, (status_field, record_types, args_prefix) in expected.items():
+            self.assertIn(name, watches)
+            watch = watches[name]
+            self.assertEqual(watch["table"], dispatcher.TABLE_SCRIPT_DOC_UNIFIED)
+            self.assertEqual(watch["status_field"], status_field)
+            self.assertEqual(watch["required_field_values"], {"记录类型": record_types})
+            self.assertEqual(watch["args"][:len(args_prefix)], args_prefix)
+            self.assertTrue(watch["keep_when_table_missing"])
+            clear_fields = set(watch.get("claim_clear_fields") or [])
+            for clear_values in (watch.get("claim_clear_values_by_trigger_value") or {}).values():
+                clear_fields.update(clear_values)
+            for removed in create_tables.UNIFIED_REMOVED_FIELDS:
+                self.assertNotIn(removed, clear_fields)
+        self.assertNotIn("003新表脚本文档口播音频生成", watches)
+
+    def test_model_config_center_adds_unified_script_doc_defaults_without_voiceover(self):
+        defaults = {
+            (spec.table_key, spec.stage, spec.source_config_stage, spec.dispatch_stage_name)
+            for spec in model_config_center.RUNTIME_DEFAULT_SPECS
+        }
+
+        self.assertIn(("script_doc_unified", "脚本文档结构化拆分默认", "脚本文档结构化拆分-Gemini", "003新表脚本文档解析拆分"), defaults)
+        self.assertIn(("script_doc_unified", "参考底图生成默认", "图片生成-OTU", "003新表脚本文档参考底图生成"), defaults)
+        self.assertIn(("script_doc_unified", "分镜图生成默认", "图片生成-OTU", "003新表脚本文档分镜图生成"), defaults)
+        self.assertIn(("script_doc_unified", "尾帧图生成默认", "图片生成-OTU", "003新表脚本文档尾帧图生成"), defaults)
+        self.assertIn(("script_doc_unified", "分镜视频生成默认", "分镜视频生成-OTU", "003新表脚本文档分镜视频生成"), defaults)
+        self.assertNotIn(("script_doc_unified", "口播音频生成默认", "语音合成-MiniMax", ""), defaults)
+        self.assertEqual(model_config_center.TASK_TABLES["script_doc_unified"], "003-脚本文档生产表")
+        unified_limits = {
+            spec.dispatch_stage_name: spec.max_concurrency
+            for spec in model_config_center.RUNTIME_DEFAULT_SPECS
+            if spec.table_key == "script_doc_unified"
+        }
+        self.assertEqual(unified_limits["003新表脚本文档解析拆分"], "1")
+        self.assertEqual(unified_limits["003新表脚本文档参考底图生成"], "3")
+        self.assertEqual(unified_limits["003新表脚本文档分镜图生成"], "3")
+        self.assertEqual(unified_limits["003新表脚本文档尾帧图生成"], "3")
+        self.assertEqual(unified_limits["003新表脚本文档分镜视频生成"], "3")
 
     def test_generate_reference_image_routes_by_reference_model_field(self):
         fields = {

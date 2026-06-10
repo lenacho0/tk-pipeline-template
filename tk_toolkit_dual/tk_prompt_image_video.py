@@ -21,6 +21,7 @@ from common import (  # noqa: E402
     TABLE_MODEL,
     TABLE_PRODUCT,
     TABLE_PROMPT_IMAGE_VIDEO,
+    TABLE_STORYBOARD_VIDEO,
     WORKSPACE,
     build_error_payload,
     extract_attachment_tokens,
@@ -81,6 +82,9 @@ IMAGE_STAGE_NAME = "图片生成-OTU"
 DEFAULT_VIDEO_STAGE_NAME = "分镜视频生成-OTU"
 PRODUCT_VISUAL_ANALYSIS_STAGE_NAME = "多角色首尾帧解析-Gemini"
 BASE_WORK_DIR = Path(WORKSPACE) / "prompt_image_video_work"
+STORYBOARD_BASE_WORK_DIR = Path(WORKSPACE) / "storyboard_video_work"
+DEFAULT_TABLE_KEY = "prompt_image_video"
+STORYBOARD_TABLE_KEY = "storyboard_video"
 MAX_IMAGE_REFERENCES = 7
 MAX_OMNI_VIDEO_REFERENCES = 7
 POLL_INTERVAL = 15
@@ -98,6 +102,26 @@ class VideoGenerationResult:
     output_path: str
     request_summary: Dict[str, Any] = field(default_factory=dict)
     video_url: str = ""
+
+
+def table_id_for_key(table_key: str = DEFAULT_TABLE_KEY) -> str:
+    if table_key == STORYBOARD_TABLE_KEY:
+        return TABLE_STORYBOARD_VIDEO
+    return TABLE_PROMPT_IMAGE_VIDEO
+
+
+def base_work_dir_for_key(table_key: str = DEFAULT_TABLE_KEY) -> Path:
+    if table_key == STORYBOARD_TABLE_KEY:
+        return STORYBOARD_BASE_WORK_DIR
+    return BASE_WORK_DIR
+
+
+def app_table_for_key(table_key: str = DEFAULT_TABLE_KEY) -> str:
+    return TASK_TABLES[table_key]
+
+
+def auto_review_stage_for_key(table_key: str = DEFAULT_TABLE_KEY) -> str:
+    return TABLE_AUTO_REVIEW_STAGE_NAMES[table_key]
 
 
 def compact_json(value: Any, max_chars: int = 20000) -> str:
@@ -134,13 +158,13 @@ def current_version(fields: Dict[str, Any], field_name: str) -> int:
     return max(1, normalize_int(fields.get(field_name), 1))
 
 
-def ensure_table() -> None:
-    if not TABLE_PROMPT_IMAGE_VIDEO:
-        raise RuntimeError("config.json 尚未配置 prompt_image_video 表 ID")
+def ensure_table(table_key: str = DEFAULT_TABLE_KEY) -> None:
+    if not table_id_for_key(table_key):
+        raise RuntimeError(f"config.json 尚未配置 {table_key} 表 ID")
 
 
-def ensure_work_dir(record_id: str, stage: str, version: int) -> Path:
-    work_dir = BASE_WORK_DIR / record_id / f"{stage}_v{version}"
+def ensure_work_dir(record_id: str, stage: str, version: int, table_key: str = DEFAULT_TABLE_KEY) -> Path:
+    work_dir = base_work_dir_for_key(table_key) / record_id / f"{stage}_v{version}"
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
 
@@ -782,8 +806,16 @@ def history_patch(fields: Dict[str, Any], item: Dict[str, Any]) -> str:
     return compact_json(history[-50:])
 
 
-def maybe_auto_approve_image(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
-    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
+def maybe_auto_approve_image(
+    token: str,
+    record_id: str,
+    fields: Dict[str, Any],
+    *,
+    file_token: str,
+    table_key: str = DEFAULT_TABLE_KEY,
+) -> Dict[str, Any]:
+    table_id = table_id_for_key(table_key)
+    if not auto_review_enabled(token, stage_name=auto_review_stage_for_key(table_key)):
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}
@@ -793,17 +825,24 @@ def maybe_auto_approve_image(token: str, record_id: str, fields: Dict[str, Any],
     }
     if extract_text(fields.get("图生视频提示词")).strip():
         patch["视频生成状态"] = "待生成"
-    safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, patch))
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, patch))
     return {"status": "auto_approved", "triggered_video": patch.get("视频生成状态") == "待生成"}
 
 
-def apply_prompt_image_default_to_record(token: str, record_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+def apply_prompt_image_default_to_record(
+    token: str,
+    record_id: str,
+    fields: Dict[str, Any],
+    *,
+    table_key: str = DEFAULT_TABLE_KEY,
+) -> Dict[str, Any]:
+    table_id = table_id_for_key(table_key)
     return apply_task_default_to_record(
         token,
-        TABLE_PROMPT_IMAGE_VIDEO,
+        table_id,
         record_id,
         fields,
-        app_table=TASK_TABLES["prompt_image_video"],
+        app_table=app_table_for_key(table_key),
         stage="图片生成默认",
         model_field="图片AI模型",
         size_field="图片画面尺寸",
@@ -813,13 +852,20 @@ def apply_prompt_image_default_to_record(token: str, record_id: str, fields: Dic
     )
 
 
-def apply_prompt_video_default_to_record(token: str, record_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+def apply_prompt_video_default_to_record(
+    token: str,
+    record_id: str,
+    fields: Dict[str, Any],
+    *,
+    table_key: str = DEFAULT_TABLE_KEY,
+) -> Dict[str, Any]:
+    table_id = table_id_for_key(table_key)
     return apply_task_default_to_record(
         token,
-        TABLE_PROMPT_IMAGE_VIDEO,
+        table_id,
         record_id,
         fields,
-        app_table=TASK_TABLES["prompt_image_video"],
+        app_table=app_table_for_key(table_key),
         stage="图生视频生成默认",
         model_field="视频AI模型",
         size_field="视频画面尺寸",
@@ -829,16 +875,27 @@ def apply_prompt_video_default_to_record(token: str, record_id: str, fields: Dic
     )
 
 
-def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: bool = False) -> Dict[str, Any]:
-    ensure_table()
-    fields = safe_get_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id)
-    fields = apply_prompt_image_default_to_record(token, record_id, fields)
+def run_image(
+    token: str,
+    record_id: str,
+    *,
+    regenerate: bool = False,
+    dry_run: bool = False,
+    table_key: str = DEFAULT_TABLE_KEY,
+) -> Dict[str, Any]:
+    ensure_table(table_key)
+    table_id = table_id_for_key(table_key)
+    fields = safe_get_record(token, table_id, record_id)
+    if table_key == DEFAULT_TABLE_KEY:
+        fields = apply_prompt_image_default_to_record(token, record_id, fields)
+    else:
+        fields = apply_prompt_image_default_to_record(token, record_id, fields, table_key=table_key)
     prompt = extract_text(fields.get("生图提示词")).strip()
     if not prompt:
         raise ValueError("生图提示词为空")
     has_existing_image = bool(latest_media_token(fields, "生成图片", "图片file_token"))
     version = current_version(fields, "图片版本") + (1 if (regenerate or has_existing_image) else 0)
-    work_dir = ensure_work_dir(record_id, "image", version)
+    work_dir = ensure_work_dir(record_id, "image", version, table_key=table_key)
     refs = collect_image_references(token, fields, work_dir)
     refs = prepare_product_reference_images(refs, work_dir)
     image_params = parse_json_object(fields.get("图片AI参数JSON"), field_name="图片AI参数JSON")
@@ -865,7 +922,7 @@ def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, {
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, {
         "图片版本": version,
         **image_slot_field_patch("图片", image_params),
         "图片生成状态": "生成中",
@@ -897,7 +954,7 @@ def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         metadata=image_params,
         size=str(image_params.get("size") or size),
         aspect_ratio=str(image_params.get("aspect_ratio") or aspect_ratio),
-        on_task_submitted=lambda task_id: safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, {
+        on_task_submitted=lambda task_id: safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, {
             "图片任务ID": task_id,
             "图片错误信息": f"已提交图片任务，正在轮询。task_id={task_id}",
         })),
@@ -923,16 +980,27 @@ def run_image(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         "生成时间": int(time.time() * 1000),
         "历史生成记录JSON": history_patch(fields, {"stage": "image", "version": version, "file_token": file_token, "task_id": result.task_id, "time": int(time.time() * 1000)}),
     }
-    safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, success_fields))
-    auto_review_summary = maybe_auto_approve_image(token, record_id, {**fields, **success_fields}, file_token=file_token)
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
+    auto_review_summary = maybe_auto_approve_image(token, record_id, {**fields, **success_fields}, file_token=file_token, table_key=table_key)
     summary.update({"status": "success", "file_token": file_token, "task_id": result.task_id, "auto_review": auto_review_summary})
     return summary
 
 
-def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: bool = False) -> Dict[str, Any]:
-    ensure_table()
-    fields = safe_get_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id)
-    fields = apply_prompt_video_default_to_record(token, record_id, fields)
+def run_video(
+    token: str,
+    record_id: str,
+    *,
+    regenerate: bool = False,
+    dry_run: bool = False,
+    table_key: str = DEFAULT_TABLE_KEY,
+) -> Dict[str, Any]:
+    ensure_table(table_key)
+    table_id = table_id_for_key(table_key)
+    fields = safe_get_record(token, table_id, record_id)
+    if table_key == DEFAULT_TABLE_KEY:
+        fields = apply_prompt_video_default_to_record(token, record_id, fields)
+    else:
+        fields = apply_prompt_video_default_to_record(token, record_id, fields, table_key=table_key)
     if extract_text(fields.get("图片审核状态")).strip() != "通过":
         raise ValueError("图片审核状态必须为通过，才能生成视频")
     prompt = extract_text(fields.get("图生视频提示词")).strip()
@@ -943,7 +1011,7 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         raise ValueError("缺少已生成图片，无法图生视频")
     has_existing_video = bool(latest_media_token(fields, "生成视频", "生成视频file_token"))
     version = current_version(fields, "视频版本") + (1 if (regenerate or has_existing_video) else 0)
-    work_dir = ensure_work_dir(record_id, "video", version)
+    work_dir = ensure_work_dir(record_id, "video", version, table_key=table_key)
     image_save_path = work_dir / f"generated_image_v{current_version(fields, '图片版本')}.png"
     image_path = Path(_downloaded_path(download_feishu_attachment_raw(token, image_token, image_save_path), image_save_path))
     route = resolve_video_route(fields, token)
@@ -974,7 +1042,7 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
     if dry_run:
         summary["status"] = "dry_run_ready"
         return summary
-    safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, {
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, {
         "视频版本": version,
         "视频生成状态": "生成中",
         "视频错误信息": "",
@@ -1000,9 +1068,9 @@ def run_video(token: str, record_id: str, *, regenerate: bool = False, dry_run: 
         "历史生成记录JSON": history_patch(fields, {"stage": "video", "version": version, "file_token": file_token, "task_id": result.task_id, "time": int(time.time() * 1000)}),
     }
     if result.video_url:
-        field_types = get_table_field_types(token, TABLE_PROMPT_IMAGE_VIDEO)
+        field_types = get_table_field_types(token, table_id)
         success_fields["视频URL"] = format_url_field_value(result.video_url, field_types.get("视频URL", 0))
-    safe_update_record(token, TABLE_PROMPT_IMAGE_VIDEO, record_id, filter_existing_fields(token, TABLE_PROMPT_IMAGE_VIDEO, success_fields))
+    safe_update_record(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
     summary.update({"status": "success", "file_token": file_token, "task_id": result.task_id, "video_url": result.video_url})
     return summary
 

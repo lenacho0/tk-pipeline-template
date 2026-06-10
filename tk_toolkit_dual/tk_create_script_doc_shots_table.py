@@ -36,6 +36,7 @@ DEFAULT_CONFIG_PATHS = [
 TASK_TABLE_NAME = "脚本文档-任务表"
 ASSET_TABLE_NAME = "脚本文档-参考资产表"
 SHOT_TABLE_NAME = "脚本文档-分镜生产表"
+UNIFIED_TABLE_NAME = "003-脚本文档生产表"
 
 
 def opt(name, hue="Blue", lightness="Lighter"):
@@ -76,9 +77,67 @@ def select(name, options):
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 PARSE_STATUS_OPTIONS = [opt("待解析"), opt("解析中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 REVIEW_STATUS_OPTIONS = [opt("待确认", "Gray"), opt("通过", "Green"), opt("不通过", "Red")]
-VIDEO_CHANNEL_OPTIONS = [opt("AIHubMix"), opt("OTU", "Green")]
+VIDEO_CHANNEL_OPTIONS = [opt("OTU", "Green"), opt("AIHubMix")]
 END_FRAME_MODE_OPTIONS = [opt("不启用", "Gray"), opt("启用", "Green")]
 YES_NO_OPTIONS = [opt("否", "Gray"), opt("是", "Green")]
+RECORD_TYPE_OPTIONS = [opt("文档任务", "Purple"), opt("参考资产", "Blue"), opt("分镜", "Green")]
+RECORD_STATE_OPTIONS = [opt("有效", "Green"), opt("已废弃", "Red")]
+UNIFIED_OMITTED_FIELDS = {
+    "口播音频状态",
+    "口播音频",
+    "口播音频时长秒",
+    "口播音频路径",
+    "口播音频下载链接",
+    "口播音频FileToken",
+    "口播音频错误信息",
+}
+UNIFIED_REMOVED_FIELDS = UNIFIED_OMITTED_FIELDS | {
+    "记录状态",
+    "旧表来源",
+    "旧记录ID",
+    "脚本文档标题",
+    "脚本文档正文",
+    "脚本文档链接",
+    "产品名",
+    "关联产品",
+    "选择产品",
+    "口播音色ID",
+    "口播文本",
+    "AI供应商",
+    "AI能力类型",
+    "AI任务类型",
+    "AI模型",
+    "AI参数JSON",
+    "视频AI模型",
+    "解析结果JSON",
+    "解析后逐镜头脚本",
+    "参考图file_token",
+    "参考图本地路径",
+    "参考图原始响应JSON",
+    "分镜原文",
+    "人物描述",
+    "场景描述",
+    "产品焦点",
+    "连续性要求",
+    "文本",
+    "提示词",
+    "参考图选择原因",
+    "分镜图本地路径",
+    "分镜图file_token",
+    "分镜图原始响应JSON",
+    "分镜图生成时间",
+    "尾帧图提示词",
+    "尾帧图本地路径",
+    "尾帧图file_token",
+    "尾帧图原始响应JSON",
+    "尾帧图生成时间",
+    "本地视频路径",
+    "分镜视频file_token",
+    "视频生成原始响应JSON",
+    "视频生成时间",
+    "生成时间",
+    "发布平台",
+}
 IMAGE_SIZE_OPTIONS = [
     opt("720x1280", "Green"),
     opt("1080x1920", "Blue"),
@@ -282,6 +341,75 @@ TABLE_DEFINITIONS = [
 ]
 
 
+def unified_field(field):
+    item = dict(field)
+    if item.get("link_table") == "__TASK_TABLE_ID__":
+        item["link_table"] = "__UNIFIED_TABLE_ID__"
+    return item
+
+
+def merge_unified_fields():
+    merged = [
+        text("任务名称"),
+        select("记录类型", RECORD_TYPE_OPTIONS),
+    ]
+    seen = {item["name"] for item in merged}
+    for field in TASK_FIELDS + ASSET_FIELDS + SHOT_FIELDS:
+        name = field["name"]
+        if name == "脚本文档标题" and "脚本文档" not in seen:
+            merged.append(text("脚本文档"))
+            seen.add("脚本文档")
+        if name in seen or name in UNIFIED_REMOVED_FIELDS:
+            continue
+        merged.append(unified_field(field))
+        seen.add(name)
+    return merged
+
+
+UNIFIED_SCRIPT_DOC_FIELDS = merge_unified_fields()
+
+
+def view_filter(record_type):
+    return {"logic": "and", "conditions": [["记录类型", "is", [record_type]]]}
+
+
+UNIFIED_TABLE_DEFINITION = {
+    "key": "script_doc_unified",
+    "name": UNIFIED_TABLE_NAME,
+    "fields": UNIFIED_SCRIPT_DOC_FIELDS,
+    "views": {
+        "01-文档入口": {
+            "visible_fields": ["任务名称", "脚本文档", "脚本文档附件", "关联产品记录", "视频时长", "解析状态", "总分镜数", "解析错误信息"],
+            "filter": view_filter("文档任务"),
+        },
+        "02-参考图确认": {
+            "visible_fields": ["任务名称", "参考名称", "参考类型", "参考提示词", "参考图AI模型", "参考图生成状态", "参考图", "参考图审核状态", "参考图修改要求", "错误信息"],
+            "filter": view_filter("参考资产"),
+        },
+        "03-分镜图生成": {
+            "visible_fields": ["任务名称", "分镜序号", "画面描述", "图片提示词", "分镜图AI模型", "分镜图生成状态", "分镜图", "首尾帧视频模式", "尾帧画面描述", "尾帧图生成状态", "尾帧图", "分镜图错误信息"],
+            "filter": view_filter("分镜"),
+        },
+        "04-分镜视频": {
+            "visible_fields": ["任务名称", "分镜序号", "目标时长秒", "分镜图", "尾帧图", "视频提示词", "视频通道", "视频生成模型", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息"],
+            "filter": view_filter("分镜"),
+        },
+        "05-发布素材": {
+            "visible_fields": ["任务名称", "分镜序号", "发布视频标题", "发布文案", "发布视频标签", "发布状态"],
+            "filter": view_filter("分镜"),
+        },
+        "高级AI参数": {
+            "visible_fields": ["任务名称", "使用统一AI路由", "解析AI模型", "解析AI参数JSON", "参考图AI模型", "参考图AI参数JSON", "参考图画面尺寸", "参考图画面比例", "分镜图AI模型", "分镜图AI参数JSON", "分镜图画面尺寸", "分镜图画面比例", "尾帧图AI模型", "尾帧图AI参数JSON", "尾帧图画面尺寸", "尾帧图画面比例", "视频通道", "视频生成模型", "视频AI参数JSON", "视频画面尺寸", "视频画面比例"],
+            "filter": {"conditions": []},
+        },
+        "99-排错全字段": {
+            "visible_fields": [field["name"] for field in UNIFIED_SCRIPT_DOC_FIELDS],
+            "filter": {"conditions": []},
+        },
+    },
+}
+
+
 def run_json(args):
     proc = subprocess.run(args, text=True, capture_output=True)
     if proc.returncode != 0:
@@ -308,6 +436,10 @@ def resolved_fields(config, fields, task_table_id=""):
                 continue
             item["link_table"] = product_table
         if item.get("link_table") == "__TASK_TABLE_ID__":
+            if not task_table_id:
+                continue
+            item["link_table"] = task_table_id
+        if item.get("link_table") == "__UNIFIED_TABLE_ID__":
             if not task_table_id:
                 continue
             item["link_table"] = task_table_id
@@ -372,7 +504,13 @@ def create_or_update_views(base_token, table_id, view_definitions):
     existing = list_views(base_token, table_id)
     created = 0
     updated = 0
-    for name, visible_fields in view_definitions.items():
+    for name, definition in view_definitions.items():
+        if isinstance(definition, dict):
+            visible_fields = definition.get("visible_fields", [])
+            view_filter_definition = definition.get("filter")
+        else:
+            visible_fields = definition
+            view_filter_definition = None
         view_id = existing.get(name)
         if not view_id:
             data = run_json([
@@ -386,7 +524,7 @@ def create_or_update_views(base_token, table_id, view_definitions):
             if not view_id:
                 view_id = list_views(base_token, table_id).get(name)
             created += 1
-        if view_id:
+        if view_id and visible_fields is not None:
             for attempt in range(4):
                 try:
                     run_json([
@@ -400,9 +538,20 @@ def create_or_update_views(base_token, table_id, view_definitions):
                 except RuntimeError as exc:
                     if "800070003" in str(exc) or "no operation produced" in str(exc):
                         break
+                    if '"code": 2200' in str(exc) or '"code":2200' in str(exc):
+                        print(f"WARNING: skip visible fields for view {name}: {exc}", file=sys.stderr)
+                        break
                     if "800004135" not in str(exc) or attempt == 3:
                         raise
                     time.sleep(2 + attempt * 2)
+            if view_filter_definition is not None:
+                run_json([
+                    "lark-cli", "base", "+view-set-filter",
+                    "--base-token", base_token,
+                    "--table-id", table_id,
+                    "--view-id", view_id,
+                    "--json", json.dumps(view_filter_definition, ensure_ascii=False),
+                ])
             updated += 1
     return {"created": created, "updated": updated}
 
@@ -414,16 +563,51 @@ def update_config(config_path, table_ids):
     config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def ensure_unified_table(config, base_token, tables, *, update_config_files=False):
+    configured_tables = (config.get("feishu") or {}).get("tables") or {}
+    table_id = configured_tables.get("script_doc_unified") or tables.get(UNIFIED_TABLE_NAME)
+    fields = resolved_fields(config, UNIFIED_SCRIPT_DOC_FIELDS, task_table_id=table_id or "")
+    created_table = False
+    if not table_id:
+        table_id = create_table(base_token, UNIFIED_TABLE_NAME, fields)
+        created_table = True
+    if not table_id:
+        raise RuntimeError(f"创建表失败：{UNIFIED_TABLE_NAME} 未返回 table_id")
+    fields = resolved_fields(config, UNIFIED_SCRIPT_DOC_FIELDS, task_table_id=table_id)
+    created_fields = create_missing_fields(base_token, table_id, fields)
+    view_result = create_or_update_views(base_token, table_id, UNIFIED_TABLE_DEFINITION["views"])
+    if update_config_files:
+        for path in DEFAULT_CONFIG_PATHS:
+            if path.exists():
+                update_config(path, {"script_doc_unified": table_id})
+    return {
+        "table_name": UNIFIED_TABLE_NAME,
+        "table_id": table_id,
+        "created_table": created_table,
+        "created_fields": created_fields,
+        "views": view_result,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Create script doc shots table")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATHS[0]))
     parser.add_argument("--update-config", action="store_true")
+    parser.add_argument("--unified", action="store_true", help="只创建/更新 003-脚本文档生产表，不改旧三表")
     args = parser.parse_args()
 
     config_path = Path(args.config)
     config = load_config(config_path)
     base_token = config["feishu"]["bitable_app_token"]
     tables = list_tables(base_token)
+    if args.unified:
+        result = ensure_unified_table(config, base_token, tables, update_config_files=args.update_config)
+        print(json.dumps({
+            "tables": [result],
+            "config_updated": bool(args.update_config),
+        }, ensure_ascii=False, indent=2))
+        return
+
     configured_tables = (config.get("feishu") or {}).get("tables") or {}
     table_ids = {}
     results = []

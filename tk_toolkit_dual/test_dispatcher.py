@@ -192,6 +192,32 @@ class DispatcherRecoveryTests(unittest.TestCase):
 
         self.assertEqual(applied["max_concurrency"], 0)
 
+    def test_media_regeneration_watches_are_polled_first_without_duplicates(self):
+        ordered = dispatcher.ordered_watch_list()
+        ordered_names = [watch["name"] for watch in ordered]
+
+        self.assertEqual(ordered_names[:len(dispatcher.MEDIA_REGENERATION_WATCH_NAMES)], dispatcher.MEDIA_REGENERATION_WATCH_NAMES)
+        self.assertEqual(len(ordered_names), len(set(ordered_names)))
+        self.assertEqual(set(ordered_names), {watch["name"] for watch in dispatcher.WATCH_LIST})
+
+    def test_effective_concurrency_report_shows_policy_override(self):
+        watch = {
+            "name": "多角色关键帧重生成",
+            "script": "tk_multi_role_first_last.py",
+            "args": ["regenerate-keyframe"],
+            "max_concurrency": 2,
+        }
+        policy = {"stage_policies": {"多角色关键帧重生成": {"max_concurrency": 20}}}
+
+        rows = dispatcher.effective_concurrency_report(policy, [watch])
+
+        self.assertEqual(rows, [{
+            "watch_name": "多角色关键帧重生成",
+            "local_default": 2,
+            "applied_max_concurrency": 20,
+            "policy_source": "feishu",
+        }])
+
     def test_check_and_run_uses_feishu_global_concurrency_limit(self):
         watch = {
             "name": "测试图片生成",
@@ -371,7 +397,7 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertIn("bad size", payload["message"])
 
     def test_nine_grid_image_claim_clears_stale_task_state_for_waiting_records(self):
-        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多图九宫格图片生成")
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多图宫格图片生成")
         claim_fields = {watch["status_field"]: watch["running_value"]}
 
         dispatcher.apply_claim_clear_fields(claim_fields, watch, trigger_value="待生成")
@@ -397,6 +423,29 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(claim_fields["结果视频"], [])
         self.assertEqual(claim_fields["视频任务ID"], "")
         self.assertEqual(claim_fields["错误信息"], "")
+
+    def test_unified_script_doc_video_watch_reclaims_running_records(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "003新表脚本文档分镜视频生成")
+
+        self.assertEqual(watch["trigger_values"], ["待生成", "生成中"])
+
+    def test_unified_script_doc_video_claim_clears_task_id_for_waiting_records(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "003新表脚本文档分镜视频生成")
+        claim_fields = {watch["status_field"]: watch["running_value"]}
+
+        dispatcher.apply_claim_clear_fields(claim_fields, watch, trigger_value="待生成")
+
+        self.assertEqual(claim_fields["视频生成状态"], "生成中")
+        self.assertEqual(claim_fields["视频任务ID"], "")
+
+    def test_unified_script_doc_video_claim_keeps_task_id_when_reclaiming_running_records(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "003新表脚本文档分镜视频生成")
+        claim_fields = {watch["status_field"]: watch["running_value"]}
+
+        dispatcher.apply_claim_clear_fields(claim_fields, watch, trigger_value="生成中")
+
+        self.assertEqual(claim_fields["视频生成状态"], "生成中")
+        self.assertNotIn("视频任务ID", claim_fields)
 
 
 if __name__ == "__main__":

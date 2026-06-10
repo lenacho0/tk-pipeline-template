@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-创建“多图九宫格视频生成表”。
+创建“多图宫格视频生成表”。
 
 用法:
   python3 tk_create_nine_grid_video_table.py --update-config
@@ -34,12 +34,13 @@ from tk_create_script_doc_shots_table import (
 from ai_model_catalog import IMAGE_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_OPTIONS, REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS, TEXT_MODEL_OPTIONS
 
 
-TABLE_NAME = "多图九宫格视频生成表"
+TABLE_NAME = "多图宫格视频生成表"
 
 RUN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 PLAN_STATUS_OPTIONS = [opt("不触发", "Gray"), opt("待生成"), opt("生成中", "Orange"), opt("成功", "Green"), opt("失败", "Red")]
 RECORD_TYPE_OPTIONS = [opt("母任务", "Blue"), opt("参考资产", "Purple"), opt("Board分段", "Green")]
 INPUT_MODE_OPTIONS = [opt("文档直拆", "Green"), opt("AI方案生成（旧）", "Gray")]
+GRID_COUNT_OPTIONS = [opt("4宫格", "Green"), opt("6宫格", "Blue"), opt("8宫格", "Purple"), opt("9宫格", "Gray")]
 REVIEW_STATUS_OPTIONS = [opt("待确认", "Orange"), opt("通过", "Green"), opt("不通过", "Red"), opt("已触发下游", "Blue")]
 REFERENCE_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue"), opt("选择模特表", "Purple")]
 ENVIRONMENT_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传", "Blue")]
@@ -64,6 +65,8 @@ NINE_GRID_VIDEO_FIELDS = [
     text("任务名称"),
     select("记录类型", RECORD_TYPE_OPTIONS),
     select("输入模式", INPUT_MODE_OPTIONS),
+    select("宫格数量", GRID_COUNT_OPTIONS),
+    text("宫格布局"),
     text("父任务记录ID"),
     text("批次ID"),
     text("脚本内容"),
@@ -101,15 +104,15 @@ NINE_GRID_VIDEO_FIELDS = [
     text("起始画面"),
     text("结束画面"),
     text("衔接锚点"),
-    text("九格摘要JSON"),
+    text("宫格摘要JSON"),
     select("审核状态", REVIEW_STATUS_OPTIONS),
     text("审核备注"),
-    text("九宫格图片提示词"),
+    text("宫格图片提示词"),
     *prefixed_field_group("图片", IMAGE_MODEL_OPTIONS),
     select("图片画面尺寸", IMAGE_SIZE_OPTIONS),
     select("图片画面比例", IMAGE_ASPECT_RATIO_OPTIONS),
     select("图片生成状态", RUN_STATUS_OPTIONS),
-    attachment("九宫格图"),
+    attachment("宫格图"),
     text("图片任务ID"),
     text("图片错误信息"),
     datetime_field("图片生成时间"),
@@ -135,7 +138,7 @@ TABLE_DEFINITION = {
     "fields": NINE_GRID_VIDEO_FIELDS,
     "views": {
         "01-任务入口": [
-            "任务名称", "输入模式", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
+            "任务名称", "输入模式", "宫格数量", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
         ],
         "02-参考资产确认": [
             "记录类型", "任务名称", "父任务记录ID", "资产ID", "资产类型", "资产名称",
@@ -145,21 +148,21 @@ TABLE_DEFINITION = {
             "参考图审核状态", "参考图操作", "参考图错误信息",
         ],
         "02-方案审核": [
-            "记录类型", "任务名称", "父任务记录ID", "Board编号", "Time Range", "叙事任务",
-            "起始画面", "结束画面", "衔接锚点", "九格摘要JSON", "审核状态", "审核备注",
+            "记录类型", "任务名称", "父任务记录ID", "Board编号", "宫格数量", "宫格布局", "Time Range", "叙事任务",
+            "起始画面", "结束画面", "衔接锚点", "宫格摘要JSON", "审核状态", "审核备注",
         ],
-        "03-九宫格生成": [
-            "记录类型", "任务名称", "父任务记录ID", "Board编号", "Time Range",
-            "九宫格图片提示词", "图片AI模型", "图片AI参数JSON",
-            "图片画面尺寸", "图片画面比例", "图片生成状态", "九宫格图", "图片错误信息",
+        "03-宫格生成": [
+            "记录类型", "任务名称", "父任务记录ID", "Board编号", "宫格数量", "宫格布局", "Time Range",
+            "宫格图片提示词", "图片AI模型", "图片AI参数JSON",
+            "图片画面尺寸", "图片画面比例", "图片生成状态", "宫格图", "图片错误信息",
         ],
         "04-视频生成": [
-            "记录类型", "任务名称", "父任务记录ID", "Board编号", "Time Range", "九宫格图",
+            "记录类型", "任务名称", "父任务记录ID", "Board编号", "宫格数量", "宫格布局", "Time Range", "宫格图",
             "视频提示词", "视频生成模型",
             "视频画面尺寸", "视频画面比例", "视频生成状态", "分镜视频", "分镜视频URL", "视频错误信息",
         ],
         "高级AI参数": [
-            "记录类型", "任务名称", "父任务记录ID", "Board编号", "输入模式",
+            "记录类型", "任务名称", "父任务记录ID", "Board编号", "输入模式", "宫格数量", "宫格布局",
             "参考图AI供应商", "参考图AI模型", "参考图AI参数JSON",
             "参考图画面尺寸", "参考图画面比例",
             "方案AI供应商", "方案AI模型", "方案AI参数JSON",
@@ -169,11 +172,11 @@ TABLE_DEFINITION = {
             "视频画面尺寸", "视频画面比例",
         ],
         "99-排错": [
-            "记录类型", "输入模式", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
+            "记录类型", "输入模式", "宫格数量", "宫格布局", "任务名称", "父任务记录ID", "批次ID", "关联产品记录", "选择模特",
             "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源",
             "参考图生成状态", "参考图审核状态", "参考图任务ID", "参考图file_token",
             "参考图本地路径", "参考图错误信息", "参考图生成时间",
-            "方案生成状态", "方案JSON", "方案Markdown", "九格摘要JSON",
+            "方案生成状态", "方案JSON", "方案Markdown", "宫格摘要JSON",
             "图片任务ID", "图片错误信息", "图片生成时间",
             "视频任务ID", "视频本地路径", "视频错误信息", "视频生成时间", "错误信息",
             "参考图AI供应商", "参考图AI模型", "参考图AI参数JSON",
@@ -192,7 +195,7 @@ VIEW_FILTERS = {
     "01-任务入口": {"logic": "and", "conditions": [["记录类型", "intersects", ["母任务"]]]},
     "02-参考资产确认": {"logic": "and", "conditions": [["记录类型", "intersects", ["参考资产"]]]},
     "02-方案审核": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
-    "03-九宫格生成": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
+    "03-宫格生成": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
     "04-视频生成": {"logic": "and", "conditions": [["记录类型", "intersects", ["Board分段"]]]},
 }
 
@@ -253,7 +256,7 @@ def apply_nine_grid_view_filters(base_token, table_id, filters=VIEW_FILTERS):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create multi-image nine-grid video table")
+    parser = argparse.ArgumentParser(description="Create multi-image multi-grid video table")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATHS[0]))
     parser.add_argument("--update-config", action="store_true")
     args = parser.parse_args()

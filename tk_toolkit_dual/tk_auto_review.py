@@ -26,8 +26,13 @@ TABLE_AUTO_REVIEW_STAGE_NAMES = {
     "multi_role_first_last": "001-多角色首尾帧生成表一键审核通过模式",
     "first_last_video": "002-首尾帧视频生成表一键审核通过模式",
     "script_doc_shots": "003-脚本文档分镜链路一键审核通过模式",
-    "nine_grid_video": "005-多图九宫格视频生成表一键审核通过模式",
+    "script_doc_unified": "003-脚本文档生产表一键审核通过模式",
+    "storyboard_video": "004-故事板视频生成表一键审核通过模式",
+    "nine_grid_video": "005-多图宫格视频生成表一键审核通过模式",
     "prompt_image_video": "008-图生视频生成表一键审核通过模式",
+}
+AUTO_REVIEW_STAGE_ALIASES = {
+    "005-多图宫格视频生成表一键审核通过模式": ("005-多图九宫格视频生成表一键审核通过模式",),
 }
 ENABLED_VALUES = {"启用", "开启", "是", "true", "1", "enabled", "enable", "on"}
 
@@ -52,9 +57,10 @@ def auto_review_enabled(
         records = list(config_records) if config_records is not None else safe_list_records(token, TABLE_CONFIG)
     except Exception:
         return False
+    stage_names = {stage_name, *AUTO_REVIEW_STAGE_ALIASES.get(stage_name, ())}
     for rec in records:
         fields = rec.get("fields") or {}
-        if _norm(fields.get("环节")) != stage_name:
+        if _norm(fields.get("环节")) not in stage_names:
             continue
         return _norm(fields.get("状态")).lower() in ENABLED_VALUES
     return False

@@ -56,6 +56,7 @@ KNOWN_ATTACHMENT_FIELD_NAMES = {
     '首尾帧视频',
     '故事板图',
     '分镜视频',
+    '宫格图',
     '九宫格图',
     '生成图片',
     '生成视频',
@@ -128,7 +129,7 @@ WATCH_LIST = [
         },
     },
     {
-        'name': '多图九宫格方案生成',
+        'name': '多图宫格方案生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '方案生成状态',
         'trigger_value': '待生成',
@@ -140,10 +141,11 @@ WATCH_LIST = [
         'timeout': 900,
         'max_concurrency': 1,
         'max_retries': 1,
+        'keep_when_table_missing': True,
         'required_field_values': {'记录类型': ['母任务']},
     },
     {
-        'name': '多图九宫格参考图生成',
+        'name': '多图宫格参考图生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '参考图生成状态',
         'trigger_value': '待生成',
@@ -170,7 +172,7 @@ WATCH_LIST = [
         },
     },
     {
-        'name': '多图九宫格参考图审核推进',
+        'name': '多图宫格参考图审核推进',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '参考图审核状态',
         'trigger_value': '通过',
@@ -189,7 +191,7 @@ WATCH_LIST = [
         },
     },
     {
-        'name': '多图九宫格参考图重生成',
+        'name': '多图宫格参考图重生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '参考图操作',
         'trigger_value': '重新生成参考图',
@@ -214,7 +216,7 @@ WATCH_LIST = [
         },
     },
     {
-        'name': '多图九宫格图片生成',
+        'name': '多图宫格图片生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '图片生成状态',
         'trigger_value': '待生成',
@@ -230,6 +232,7 @@ WATCH_LIST = [
         'required_field_values': {'记录类型': ['Board分段']},
         'claim_clear_values_by_trigger_value': {
             '待生成': {
+                '宫格图': [],
                 '九宫格图': [],
                 '图片任务ID': '',
                 '图片错误信息': '',
@@ -245,7 +248,7 @@ WATCH_LIST = [
         },
     },
     {
-        'name': '多图九宫格视频生成',
+        'name': '多图宫格视频生成',
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
@@ -318,6 +321,89 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '生成视频': [],
+                '生成视频file_token': '',
+                '视频本地路径': '',
+                '视频任务ID': '',
+                '视频原始响应JSON': '',
+                '视频错误信息': '',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '004故事板文档解析',
+        'table': TABLE_STORYBOARD_VIDEO,
+        'status_field': '解析状态',
+        'trigger_value': '待解析',
+        'running_value': '解析中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_storyboard_video.py',
+        'args': ['parse'],
+        'timeout': 900,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['母任务']},
+        'claim_clear_values': {
+            '错误信息': '',
+        },
+    },
+    {
+        'name': '004故事板图片生成',
+        'table': TABLE_STORYBOARD_VIDEO,
+        'status_field': '图片生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '图片错误信息',
+        'script': 'tk_storyboard_video.py',
+        'args': ['image'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['Storyboard分段']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '生成图片': [],
+                '图片file_token': '',
+                '图片本地路径': '',
+                '图片任务ID': '',
+                '图片原始响应JSON': '',
+                '图片审核状态': '待确认',
+                '图片错误信息': '',
+                '视频生成状态': '不触发',
+                '生成视频': [],
+                '生成视频file_token': '',
+                '视频本地路径': '',
+                '视频任务ID': '',
+                '视频原始响应JSON': '',
+                '视频错误信息': '',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '004故事板视频生成',
+        'table': TABLE_STORYBOARD_VIDEO,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '视频错误信息',
+        'script': 'tk_storyboard_video.py',
+        'args': ['video'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['Storyboard分段']},
         'claim_clear_values_by_trigger_value': {
             '待生成': {
                 '生成视频': [],
@@ -899,11 +985,152 @@ WATCH_LIST = [
         'max_retries': 1,
         'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
     },
+    {
+        'name': '003新表脚本文档解析拆分',
+        'table': TABLE_SCRIPT_DOC_UNIFIED,
+        'status_field': '解析状态',
+        'trigger_value': '待解析',
+        'running_value': '解析中',
+        'failed_value': '失败',
+        'error_field': '解析错误信息',
+        'script': 'tk_script_doc_shots.py',
+        'args': ['parse', '--unified'],
+        'timeout': 900,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['文档任务']},
+    },
+    {
+        'name': '003新表脚本文档参考底图生成',
+        'table': TABLE_SCRIPT_DOC_UNIFIED,
+        'status_field': '参考图生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '错误信息',
+        'script': 'tk_script_doc_shots.py',
+        'args': ['reference-image', '--unified'],
+        'timeout': 1200,
+        'max_concurrency': 1,
+        'max_retries': 3,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['参考资产']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '参考图': [],
+                '参考图任务ID': '',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '003新表脚本文档分镜图生成',
+        'table': TABLE_SCRIPT_DOC_UNIFIED,
+        'status_field': '分镜图生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '分镜图错误信息',
+        'script': 'tk_shot_storyboard.py',
+        'args': ['render', '--table', 'script_doc_unified'],
+        'timeout': 1200,
+        'max_concurrency': 2,
+        'max_retries': 2,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['分镜']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '分镜图': [],
+                '分镜图任务ID': '',
+                '分镜图错误信息': '',
+                '尾帧图': [],
+                '尾帧图任务ID': '',
+                '尾帧图错误信息': '',
+                '尾帧图生成状态': '不触发',
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '003新表脚本文档尾帧图生成',
+        'table': TABLE_SCRIPT_DOC_UNIFIED,
+        'status_field': '尾帧图生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '尾帧图错误信息',
+        'script': 'tk_shot_storyboard.py',
+        'args': ['last-frame', '--table', 'script_doc_unified'],
+        'timeout': 1200,
+        'max_concurrency': 2,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['分镜']},
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '尾帧图': [],
+                '尾帧图任务ID': '',
+                '尾帧图错误信息': '',
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成状态': '不触发',
+                '错误信息': '',
+            },
+        },
+    },
+    {
+        'name': '003新表脚本文档分镜视频生成',
+        'table': TABLE_SCRIPT_DOC_UNIFIED,
+        'status_field': '视频生成状态',
+        'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
+        'running_value': '生成中',
+        'failed_value': '失败',
+        'error_field': '视频错误信息',
+        'script': 'tk_shot_video.py',
+        'args': ['--table', 'script_doc_unified'],
+        'timeout': 2400,
+        'max_concurrency': 1,
+        'max_retries': 1,
+        'keep_when_table_missing': True,
+        'required_field_values': {'记录类型': ['分镜']},
+        'claim_clear_fields_by_trigger_value': {
+            '待生成': ['视频任务ID'],
+        },
+    },
 ]
 
 
 RAW_WATCH_LIST = list(WATCH_LIST)
 WATCH_LIST = [w for w in WATCH_LIST if w.get('table') or w.get('keep_when_table_missing')]
+MEDIA_REGENERATION_WATCH_NAMES = [
+    '多图宫格参考图重生成',
+    '首尾帧首帧图重生成',
+    '首尾帧尾帧图重生成',
+    '首尾帧视频重生成',
+    '多角色参考图重生成',
+    '多角色关键帧重生成',
+    '多角色视频片段重生成',
+]
+
+
+def ordered_watch_list(watches=None):
+    source = list(watches if watches is not None else WATCH_LIST)
+    priority = [watch for watch in source if watch.get('name') in MEDIA_REGENERATION_WATCH_NAMES]
+    normal = [watch for watch in source if watch.get('name') not in MEDIA_REGENERATION_WATCH_NAMES]
+    priority.sort(key=lambda watch: MEDIA_REGENERATION_WATCH_NAMES.index(watch.get('name')))
+    return priority + normal
 
 
 running_processes = {}
@@ -1071,6 +1298,43 @@ def apply_stage_policy(watch):
             if key in feishu_stage_policy:
                 merged[key] = feishu_stage_policy[key]
     return merged
+
+
+def apply_local_stage_config(watch):
+    merged = dict(watch)
+    args_key = ' '.join(watch.get('args') or [])
+    stage_keys = [watch.get('script')]
+    if args_key:
+        stage_keys.append(f"{watch.get('script')} {args_key}")
+    stage_keys.append(watch.get('name'))
+    for stage_key in stage_keys:
+        cfg = STAGE_CFG.get(stage_key) if stage_key else None
+        if not cfg:
+            continue
+        for key in ('max_concurrency', 'max_retries', 'timeout'):
+            if key in cfg:
+                merged[key] = cfg[key]
+    return merged
+
+
+def effective_concurrency_report(policy, watches=None):
+    rows = []
+    stage_policies = (policy or {}).get('stage_policies') or {}
+    for watch in list(watches if watches is not None else WATCH_LIST):
+        local_default = watch.get('max_concurrency', 1)
+        applied = apply_local_stage_config(watch)
+        policy_source = 'local'
+        feishu_stage_policy = stage_policies.get(watch.get('name'))
+        if feishu_stage_policy and 'max_concurrency' in feishu_stage_policy:
+            applied['max_concurrency'] = feishu_stage_policy['max_concurrency']
+            policy_source = 'feishu'
+        rows.append({
+            'watch_name': watch.get('name'),
+            'local_default': local_default,
+            'applied_max_concurrency': applied.get('max_concurrency', 1),
+            'policy_source': policy_source,
+        })
+    return rows
 
 
 def normalize_dispatcher_error_payload(payload):
@@ -1889,16 +2153,28 @@ def write_heartbeat(status='running', note=None):
     save_json_file(HEARTBEAT_FILE, payload)
 
 
+def log_effective_concurrency(policy, watches=None):
+    rows = effective_concurrency_report(policy, watches)
+    compact_rows = [
+        f"{row['watch_name']} local={row['local_default']} applied={row['applied_max_concurrency']} source={row['policy_source']}"
+        for row in rows
+        if row['policy_source'] == 'feishu' or row['watch_name'] in MEDIA_REGENERATION_WATCH_NAMES
+    ]
+    if compact_rows:
+        log.info(f"   最终生效并发: {'; '.join(compact_rows)}")
+
+
 def main():
     log.info("🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）")
     log.info(f"   实例名: {INSTANCE}")
     log.info(f"   配置文件: {os.environ.get('TK_CONFIG_FILE', os.path.join(SCRIPTS_DIR, 'config.json'))}")
     log.info(f"   轮询间隔: {POLL_INTERVAL}秒")
-    log.info(f"   监控环节: {', '.join(w['name'] for w in WATCH_LIST)}")
+    log.info(f"   监控环节: {', '.join(w['name'] for w in ordered_watch_list())}")
 
     bootstrap_running_state()
     token = get_feishu_token()
     token_time = time.time()
+    log_effective_concurrency(load_feishu_concurrency_policy(token, force=True), ordered_watch_list())
     last_metrics_log = 0
 
     while True:
@@ -1907,6 +2183,7 @@ def main():
             try:
                 token = get_feishu_token()
                 token_time = time.time()
+                log_effective_concurrency(load_feishu_concurrency_policy(token, force=True), ordered_watch_list())
             except Exception as e:
                 log.error(f"刷新 token 失败: {e}")
                 append_last_error('系统', 'TOKEN', e)
@@ -1916,7 +2193,7 @@ def main():
         cleanup_finished_processes(token)
         check_daily_health()
 
-        for watch in WATCH_LIST:
+        for watch in ordered_watch_list():
             if not watch.get('table'):
                 continue
             check_and_run(token, watch)

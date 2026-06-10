@@ -63,11 +63,12 @@ class AutoReviewTests(unittest.TestCase):
             result = auto_review.ensure_table_auto_review_switch_records("token", write=True)
 
         self.assertEqual(result["status"], "created")
-        self.assertEqual(len(created), 5)
+        self.assertEqual(len(created), len(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES))
         self.assertEqual(
             {payload["fields"]["环节"] for payload in created},
             set(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES.values()),
         )
+        self.assertIn(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES["storyboard_video"], {payload["fields"]["环节"] for payload in created})
         self.assertEqual({payload["fields"]["状态"] for payload in created}, {"停用"})
         self.assertEqual({payload["fields"]["配置类型"] for payload in created}, {"自动审核"})
 
@@ -94,8 +95,9 @@ class AutoReviewTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "synced")
         self.assertEqual(set(deleted), {"recLegacy", "rec001Dup"})
-        self.assertEqual(len(created), 4)
+        self.assertEqual(len(created), len(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES) - 1)
         self.assertIn(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES["first_last_video"], {payload["fields"]["环节"] for payload in created})
+        self.assertIn(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES["storyboard_video"], {payload["fields"]["环节"] for payload in created})
         self.assertEqual({payload["fields"]["状态"] for payload in created}, {"停用"})
         self.assertEqual({payload["fields"]["配置类型"] for payload in created}, {"自动审核"})
 
@@ -107,8 +109,10 @@ class AutoReviewTests(unittest.TestCase):
             result = auto_review.ensure_auto_review_switch_record("token", write=True)
 
         self.assertEqual(result["status"], "created")
-        self.assertEqual(len(created), 5)
+        self.assertEqual(len(created), len(auto_review.TABLE_AUTO_REVIEW_STAGE_NAMES))
+        self.assertIn("004-故事板视频生成表一键审核通过模式", {payload["fields"]["环节"] for payload in created})
         self.assertIn("008-图生视频生成表一键审核通过模式", {payload["fields"]["环节"] for payload in created})
+        self.assertIn("003-脚本文档生产表一键审核通过模式", {payload["fields"]["环节"] for payload in created})
 
 
 if __name__ == "__main__":

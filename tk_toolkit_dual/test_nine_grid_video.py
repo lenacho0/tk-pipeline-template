@@ -15,7 +15,7 @@ import tk_nine_grid_video_prompt as prompts
 import tk_dispatcher as dispatcher
 
 
-def sample_plan_payload():
+def sample_plan_payload(cell_count=9):
     cells = [
         {
             "cell_index": idx,
@@ -27,8 +27,14 @@ def sample_plan_payload():
             "camera": "handheld close-up",
             "dialogue_or_voiceover": "",
         }
-        for idx in range(1, 10)
+        for idx in range(1, cell_count + 1)
     ]
+    layout = {
+        4: "2x2",
+        6: "3x2",
+        8: "4x2",
+        9: "3x3",
+    }.get(cell_count, "3x3")
     return {
         "task_type": "MULTI_IMAGE_NINE_GRID_PLAN",
         "script_analysis": {
@@ -58,8 +64,8 @@ def sample_plan_payload():
                     "after": "stain disappears",
                 },
                 "cells": cells,
-                "image_prompt": "Create one vertical 9:16 image containing exactly 9 panels arranged in a 3x3 grid.",
-                "video_prompt": "Turn the nine-grid storyboard into one continuous vertical UGC video.",
+                "image_prompt": f"Create one vertical 9:16 image containing exactly {cell_count} panels arranged in a {layout} grid.",
+                "video_prompt": "Turn the multi-panel storyboard into one continuous vertical UGC video.",
             }
         ],
         "continuity_check": {
@@ -190,6 +196,89 @@ Use the uploaded Board 01 nine-grid storyboard only as the narrative order and a
 """.strip()
 
 
+def sample_direct_markdown_document_with_cells(cell_count):
+    cell_lines = "\n".join(
+        f"Cell {idx}: Visual beat {idx}. Product demo action {idx}."
+        for idx in range(1, cell_count + 1)
+    )
+    tail_start = 8.6 if cell_count == 9 else max(cell_count - 1, 1)
+    return f"""
+# 方向1_多宫格脚本提示词文档
+
+## 参考图生成提示词
+
+### 人物参考图提示词｜女主
+
+```text
+PERSON_PROMPT_RAW_OWNER
+```
+
+### 环境参考图提示词
+
+```text
+ENV_PROMPT_RAW_LIVING_ROOM
+```
+
+## Board 01 宫格分镜图提示词
+
+```text
+Create one vertical 9:16 Thai TikTok UGC multi-panel storyboard image.
+{cell_lines}
+```
+
+## Board 01 图生视频提示词
+
+```text
+Use the uploaded Board 01 storyboard only as the narrative order and action path reference.
+0.0-1.2s: Start on the scene.
+{tail_start:.1f}-{tail_start + 1.4:.1f}s: Return to the same scene.
+```
+""".strip()
+
+
+def sample_plain_direct_markdown_document():
+    return """
+# 方向1 门口驱逐 九宫格纯提示词版
+
+## 参考图生成提示词
+
+### 人物参考图提示词
+
+Create two realistic Thai adult character reference images for a vertical TikTok UGC pet-care short.
+
+### 宠物参考图提示词
+
+Create a realistic small dog reference image, small indoor dog, short coat.
+
+### 产品参考图提示词
+
+Use the selected fipronil spot-on product reference exactly.
+
+### 环境参考图提示词
+
+Create a realistic Thai apartment doorway environment, natural phone-camera light, no people.
+
+## Board 01 九宫格分镜图提示词
+
+Create one vertical 9:16 Thai TikTok UGC nine-grid storyboard image.
+Cell 1: Doorway conflict hook. Small dog near the door.
+Cell 2: Flea problem evidence. Dog scratches near the entrance.
+Cell 3: Human pressure reaction. One adult points toward outside.
+Cell 4: Rescue character enters. Product is brought into the room.
+Cell 5: Product close-up. Fipronil spot-on packaging visible.
+Cell 6: Correct application setup. Fur is parted at the nape.
+Cell 7: Application. One transparent drop is applied.
+Cell 8: Result evidence. Dog stops scratching and relaxes.
+Cell 9: Emotional reversal. Door stays closed and dog remains inside.
+
+## Board 01 图生视频提示词
+
+Use the uploaded Board 01 storyboard only as the narrative order and action path reference.
+0.0-1.2s: Start at the apartment doorway with the dog near the threshold.
+8.6-10.0s: Return to the same doorway and show the dog safely inside.
+""".strip()
+
+
 class NineGridVideoTests(unittest.TestCase):
     def setUp(self):
         self._auto_review_patcher = patch.object(nine_grid, "auto_review_enabled", return_value=False)
@@ -267,20 +356,23 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertNotIn("OTU", prompts.NINE_GRID_IMAGE_SYSTEM_PROMPT)
         self.assertNotIn("Omni", prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT)
 
-    def test_normalize_plan_payload_requires_exactly_nine_cells(self):
-        payload = sample_plan_payload()
-        payload["boards"][0]["cells"] = payload["boards"][0]["cells"][:8]
+    def test_normalize_plan_payload_rejects_unsupported_three_cells(self):
+        payload = sample_plan_payload(cell_count=3)
 
-        with self.assertRaisesRegex(ValueError, "必须正好 9 个"):
+        with self.assertRaisesRegex(ValueError, "仅支持 4/6/8/9 宫格"):
             nine_grid.normalize_nine_grid_plan_payload(payload)
 
-    def test_normalize_plan_payload_keeps_json_execution_fields(self):
-        normalized = nine_grid.normalize_nine_grid_plan_payload(sample_plan_payload())
+    def test_normalize_plan_payload_defaults_ai_plan_to_four_cells(self):
+        normalized = nine_grid.normalize_nine_grid_plan_payload(sample_plan_payload(cell_count=4))
 
         self.assertEqual(normalized["task_type"], "MULTI_IMAGE_NINE_GRID_PLAN")
         self.assertEqual(len(normalized["boards"]), 1)
-        self.assertEqual(len(normalized["boards"][0]["cells"]), 9)
+        self.assertEqual(normalized["grid_count"], 4)
+        self.assertEqual(normalized["grid_layout"], "2x2")
+        self.assertEqual(len(normalized["boards"][0]["cells"]), 4)
         self.assertEqual(normalized["boards"][0]["board_index"], 1)
+        self.assertEqual(normalized["boards"][0]["grid_count"], 4)
+        self.assertEqual(normalized["boards"][0]["grid_layout"], "2x2")
 
     def test_product_manifest_reference_does_not_create_generated_reference_asset(self):
         payload = sample_plan_payload()
@@ -323,8 +415,60 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("Create one vertical 9:16", board["image_prompt"])
         self.assertIn("Use the uploaded Board 01", board["video_prompt"])
         self.assertEqual(len(board["cells"]), 9)
+        self.assertEqual(payload["grid_count"], 9)
+        self.assertEqual(payload["grid_layout"], "3x3")
+        self.assertEqual(board["grid_count"], 9)
+        self.assertEqual(board["grid_layout"], "3x3")
         self.assertEqual(board["cells"][0]["visual_node"], "Immediate hook. Beige fabric sofa close-up.")
         self.assertTrue(board["direct_prompt"])
+
+    def test_parse_direct_markdown_document_accepts_plain_prompt_sections(self):
+        payload = nine_grid.parse_direct_markdown_document(
+            sample_plain_direct_markdown_document(),
+            requested_grid_count=9,
+        )
+
+        refs = payload["reference_manifest"]["required_references"]
+        self.assertEqual(
+            [(item["role"], item["name"], item["prompt"]) for item in refs],
+            [
+                ("human", "人物1", "Create two realistic Thai adult character reference images for a vertical TikTok UGC pet-care short."),
+                ("pet", "宠物1", "Create a realistic small dog reference image, small indoor dog, short coat."),
+                ("environment", "环境1", "Create a realistic Thai apartment doorway environment, natural phone-camera light, no people."),
+            ],
+        )
+        self.assertEqual(payload["product_reference_prompt"], "Use the selected fipronil spot-on product reference exactly.")
+        board = payload["boards"][0]
+        self.assertEqual(board["grid_count"], 9)
+        self.assertEqual(board["grid_layout"], "3x3")
+        self.assertEqual(len(board["cells"]), 9)
+        self.assertIn("Create one vertical 9:16", board["image_prompt"])
+        self.assertIn("Use the uploaded Board 01", board["video_prompt"])
+
+    def test_parse_direct_markdown_document_infers_supported_grid_counts(self):
+        expected_layouts = {4: "2x2", 6: "3x2", 8: "4x2", 9: "3x3"}
+        for cell_count, layout in expected_layouts.items():
+            with self.subTest(cell_count=cell_count):
+                payload = nine_grid.parse_direct_markdown_document(
+                    sample_direct_markdown_document_with_cells(cell_count)
+                )
+
+                self.assertEqual(payload["grid_count"], cell_count)
+                self.assertEqual(payload["grid_layout"], layout)
+                self.assertEqual(payload["boards"][0]["grid_count"], cell_count)
+                self.assertEqual(payload["boards"][0]["grid_layout"], layout)
+                self.assertEqual(len(payload["boards"][0]["cells"]), cell_count)
+
+    def test_parse_direct_markdown_document_rejects_three_cells(self):
+        with self.assertRaisesRegex(ValueError, "仅支持 4/6/8/9 宫格"):
+            nine_grid.parse_direct_markdown_document(sample_direct_markdown_document_with_cells(3))
+
+    def test_parse_direct_markdown_document_rejects_explicit_grid_count_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "宫格数量不一致"):
+            nine_grid.parse_direct_markdown_document(
+                sample_direct_markdown_document(),
+                requested_grid_count=4,
+            )
 
     def test_parse_direct_markdown_document_requires_board_video_pair(self):
         markdown = sample_direct_markdown_document().replace("## Board 01 图生视频提示词", "## Board 02 图生视频提示词")
@@ -332,10 +476,13 @@ class NineGridVideoTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Board 1 缺少图生视频提示词"):
             nine_grid.parse_direct_markdown_document(markdown)
 
-    def test_parse_direct_markdown_document_requires_fenced_code_block(self):
-        markdown = sample_direct_markdown_document().replace("```text\nPERSON_PROMPT_RAW_OWNER\n```", "PERSON_PROMPT_RAW_OWNER")
+    def test_parse_direct_markdown_document_rejects_empty_prompt_section(self):
+        markdown = sample_plain_direct_markdown_document().replace(
+            "Create two realistic Thai adult character reference images for a vertical TikTok UGC pet-care short.",
+            "",
+        )
 
-        with self.assertRaisesRegex(ValueError, "人物参考图提示词｜女主 缺少 fenced code block"):
+        with self.assertRaisesRegex(ValueError, "人物参考图提示词 提示词为空"):
             nine_grid.parse_direct_markdown_document(markdown)
 
     def test_parse_direct_markdown_document_time_range_ignores_age_ranges(self):
@@ -378,7 +525,9 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(len(board_records), 1)
         fields = board_records[0]["fields"]
         self.assertEqual(fields["图片生成状态"], "不触发")
-        self.assertIn("Create one vertical 9:16", fields["九宫格图片提示词"])
+        self.assertEqual(fields["宫格数量"], "9宫格")
+        self.assertEqual(fields["宫格布局"], "3x3")
+        self.assertIn("Create one vertical 9:16", fields["宫格图片提示词"])
         self.assertIn("Use the uploaded Board 01", fields["视频提示词"])
         self.assertNotIn("Generate one continuous", fields["视频提示词"])
 
@@ -440,6 +589,8 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(fields["记录类型"], "Board分段")
         self.assertEqual(fields["关联产品记录"], ["recProduct"])
         self.assertEqual(fields["选择模特"], ["recModel"])
+        self.assertEqual(fields["宫格数量"], "9宫格")
+        self.assertEqual(fields["宫格布局"], "3x3")
         self.assertEqual(fields["图片生成状态"], "待生成")
         self.assertEqual(fields["视频生成状态"], "不触发")
         self.assertEqual(fields["视频AI模型"], "OTU / omni_flash-10s")
@@ -708,13 +859,15 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(create_table.TABLE_DEFINITION["key"], "nine_grid_video")
         field_names = [field["name"] for field in create_table.NINE_GRID_VIDEO_FIELDS]
         for name in [
-            "输入模式", "方案生成状态", "方案JSON", "审核状态", "九宫格图片提示词", "视频提示词",
+            "输入模式", "宫格数量", "宫格布局", "方案生成状态", "方案JSON", "审核状态", "宫格图片提示词", "视频提示词",
             "方案AI供应商", "方案AI模型", "图片AI供应商", "图片AI模型", "视频AI供应商", "视频AI模型",
             "人物/宠物默认来源", "环境图来源", "资产ID", "资产类型", "参考图来源", "参考图",
             "参考图生成状态", "参考图审核状态", "参考图操作",
             "参考图画面尺寸", "参考图画面比例",
         ]:
             self.assertIn(name, field_names)
+        grid_counts = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["宫格数量"]["options"]]
+        self.assertEqual(grid_counts, ["4宫格", "6宫格", "8宫格", "9宫格"])
         input_modes = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["输入模式"]["options"]]
         self.assertEqual(input_modes, ["文档直拆", "AI方案生成（旧）"])
         record_types = [item["name"] for item in {field["name"]: field for field in create_table.NINE_GRID_VIDEO_FIELDS}["记录类型"]["options"]]
@@ -726,12 +879,12 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(
             create_table.TABLE_DEFINITION["views"]["01-任务入口"],
             [
-                "任务名称", "输入模式", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
+                "任务名称", "输入模式", "宫格数量", "脚本内容", "关联产品记录", "方案生成状态", "错误信息",
             ],
         )
         self.assertIn("02-参考资产确认", create_table.TABLE_DEFINITION["views"])
         self.assertIn("02-方案审核", create_table.TABLE_DEFINITION["views"])
-        self.assertIn("03-九宫格生成", create_table.TABLE_DEFINITION["views"])
+        self.assertIn("03-宫格生成", create_table.TABLE_DEFINITION["views"])
         self.assertIn("04-视频生成", create_table.TABLE_DEFINITION["views"])
         reference_view = create_table.TABLE_DEFINITION["views"]["02-参考资产确认"]
         self.assertIn("参考图画面尺寸", reference_view)
@@ -757,6 +910,8 @@ class NineGridVideoTests(unittest.TestCase):
         ]:
             self.assertIn(name, advanced_view)
             self.assertIn(name, create_table.TABLE_DEFINITION["views"]["99-排错"])
+        self.assertIn("宫格数量", create_table.TABLE_DEFINITION["views"]["99-排错"])
+        self.assertIn("宫格布局", create_table.TABLE_DEFINITION["views"]["99-排错"])
         self.assertIn("视频生成模型", create_table.TABLE_DEFINITION["views"]["99-排错"])
         self.assertIn("视频AI模型", create_table.TABLE_DEFINITION["views"]["99-排错"])
 
@@ -786,65 +941,65 @@ class NineGridVideoTests(unittest.TestCase):
         watches = {
             watch["name"]: watch
             for watch in dispatcher.RAW_WATCH_LIST
-            if watch["name"].startswith("多图九宫格")
+            if watch["name"].startswith("多图宫格")
         }
 
         self.assertEqual(
-            watches["多图九宫格方案生成"]["required_field_values"],
+            watches["多图宫格方案生成"]["required_field_values"],
             {"记录类型": ["母任务"]},
         )
         self.assertEqual(
-            watches["多图九宫格参考图生成"]["required_field_values"],
+            watches["多图宫格参考图生成"]["required_field_values"],
             {"记录类型": ["参考资产"]},
         )
-        self.assertEqual(watches["多图九宫格参考图生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["多图宫格参考图生成"]["trigger_values"], ["待生成", "生成中"])
         reference_waiting_claim = {"参考图生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(reference_waiting_claim, watches["多图九宫格参考图生成"], "待生成")
+        dispatcher.apply_claim_clear_fields(reference_waiting_claim, watches["多图宫格参考图生成"], "待生成")
         self.assertEqual(reference_waiting_claim["参考图任务ID"], "")
 
         reference_running_claim = {"参考图生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(reference_running_claim, watches["多图九宫格参考图生成"], "生成中")
+        dispatcher.apply_claim_clear_fields(reference_running_claim, watches["多图宫格参考图生成"], "生成中")
         self.assertNotIn("参考图任务ID", reference_running_claim)
         self.assertEqual(
-            watches["多图九宫格参考图审核推进"]["required_field_values"],
+            watches["多图宫格参考图审核推进"]["required_field_values"],
             {"记录类型": ["参考资产"], "参考图审核状态": ["通过"]},
         )
-        self.assertEqual(watches["多图九宫格参考图审核推进"]["failed_value"], "通过")
+        self.assertEqual(watches["多图宫格参考图审核推进"]["failed_value"], "通过")
         self.assertEqual(
-            watches["多图九宫格图片生成"]["required_field_values"],
+            watches["多图宫格图片生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
         )
-        self.assertEqual(watches["多图九宫格图片生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["多图宫格图片生成"]["trigger_values"], ["待生成", "生成中"])
         image_waiting_claim = {"图片生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(image_waiting_claim, watches["多图九宫格图片生成"], "待生成")
+        dispatcher.apply_claim_clear_fields(image_waiting_claim, watches["多图宫格图片生成"], "待生成")
         self.assertEqual(image_waiting_claim["图片任务ID"], "")
 
         image_running_claim = {"图片生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(image_running_claim, watches["多图九宫格图片生成"], "生成中")
+        dispatcher.apply_claim_clear_fields(image_running_claim, watches["多图宫格图片生成"], "生成中")
         self.assertNotIn("图片任务ID", image_running_claim)
         self.assertEqual(
-            watches["多图九宫格视频生成"]["required_field_values"],
+            watches["多图宫格视频生成"]["required_field_values"],
             {"记录类型": ["Board分段"]},
         )
-        self.assertEqual(watches["多图九宫格视频生成"]["trigger_values"], ["待生成", "生成中"])
+        self.assertEqual(watches["多图宫格视频生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(
-            watches["多图九宫格视频生成"]["claim_clear_fields_by_trigger_value"],
+            watches["多图宫格视频生成"]["claim_clear_fields_by_trigger_value"],
             {"待生成": ["视频任务ID"]},
         )
 
         waiting_claim = {"视频生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(waiting_claim, watches["多图九宫格视频生成"], "待生成")
+        dispatcher.apply_claim_clear_fields(waiting_claim, watches["多图宫格视频生成"], "待生成")
         self.assertEqual(waiting_claim["视频任务ID"], "")
 
         running_claim = {"视频生成状态": "生成中"}
-        dispatcher.apply_claim_clear_fields(running_claim, watches["多图九宫格视频生成"], "生成中")
+        dispatcher.apply_claim_clear_fields(running_claim, watches["多图宫格视频生成"], "生成中")
         self.assertNotIn("视频任务ID", running_claim)
 
     def test_bootstrap_config_records_are_supplier_neutral_and_do_not_require_api_keys(self):
         wanted = bootstrap_config.build_wanted_config_records()
         stages = [item["环节"] for item in wanted]
 
-        self.assertEqual(stages, ["多图九宫格方案生成", "多图九宫格图片生成", "多图九宫格视频生成"])
+        self.assertEqual(stages, ["多图宫格方案生成", "多图宫格图片生成", "多图宫格视频生成"])
         for item in wanted:
             self.assertEqual(item.get("是否统一AI预设"), "是")
             self.assertEqual(item.get("API Key", ""), "")
@@ -1035,7 +1190,7 @@ class NineGridVideoTests(unittest.TestCase):
         contact_sheet.assert_not_called()
         poller.assert_called_once()
         self.assertEqual(poller.call_args.args[1], "task_existing_image")
-        self.assertIn("恢复轮询已有 OTU 九宫格图片任务", updates[0]["图片错误信息"])
+        self.assertIn("恢复轮询已有 OTU 宫格图片任务", updates[0]["图片错误信息"])
 
     def test_build_reference_asset_records_creates_separate_humans_pet_and_environment(self):
         payload = sample_plan_payload()
@@ -2096,7 +2251,7 @@ class NineGridVideoTests(unittest.TestCase):
              ]), \
              patch.object(nine_grid, "get_config_record", return_value=("cfg", {"api_key": "sk", "api_base": "https://otuapi.com", "model": "omni_flash-10s"})), \
              patch.object(nine_grid, "safe_list_records", return_value=[]):
-            with self.assertRaisesRegex(ValueError, "九宫格视频只支持参考图生视频模型"):
+            with self.assertRaisesRegex(ValueError, "宫格视频只支持参考图生视频模型"):
                 nine_grid.render_nine_grid_video("recBoard", dry_run=True)
 
     def test_video_dry_run_requires_product_reference_and_reports_two_references(self):
@@ -2128,7 +2283,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn(prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT, prompt)
         self.assertIn("Faithfully translate any Chinese visual/action directions into English", prompt)
         self.assertIn("Do not rewrite, soften, add, remove, or sanitize story details.", prompt)
-        self.assertIn("Reference image 1 = current Board nine-grid storyboard", prompt)
+        self.assertIn("Reference image 1 = current Board multi-panel storyboard", prompt)
         self.assertIn("Reference image 2 = exact product reference", prompt)
         self.assertIn(raw_prompt, prompt)
         self.assertIn("อย่าเอาแมวมาใกล้ผม!", prompt)
@@ -2218,7 +2373,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(args[0]["model"], "omni_flash-10s")
         self.assertIn(prompts.NINE_GRID_VIDEO_SYSTEM_PROMPT, args[1])
         self.assertIn("Faithfully translate any Chinese visual/action directions into English", args[1])
-        self.assertIn("Reference image 1 = current Board nine-grid storyboard", args[1])
+        self.assertIn("Reference image 1 = current Board multi-panel storyboard", args[1])
         self.assertIn("Reference image 2 = exact product reference", args[1])
         self.assertIn("Reference image 3 = human character reference (Pear)", args[1])
         self.assertIn("Reference image 4 = human character reference (Non)", args[1])

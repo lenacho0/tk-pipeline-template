@@ -23,6 +23,7 @@ from common import (  # noqa: E402
     APP_TOKEN,
     CONFIG_RECORDS,
     TABLE_CONFIG,
+    TABLE_SCRIPT_DOC_UNIFIED,
     TABLE_PRODUCT,
     TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     TABLE_SCRIPT_DOC_SHOTS,
@@ -78,6 +79,7 @@ from tk_auto_review import TABLE_AUTO_REVIEW_STAGE_NAMES, auto_review_enabled  #
 
 
 AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_shots"]
+UNIFIED_AUTO_REVIEW_STAGE_NAME = TABLE_AUTO_REVIEW_STAGE_NAMES["script_doc_unified"]
 TEXT_SPLIT_STAGE_NAME = "脚本文档结构化拆分-Gemini"
 IMAGE_STAGE_NAME = "图片生成-OTU"
 ASSET_TYPES = {"pet", "environment", "human"}
@@ -140,6 +142,83 @@ PRODUCT_ASSET_ID_TERMS = (
     "喷雾",
     "喷瓶",
 )
+UNIFIED_REMOVED_FIELDS = {
+    "记录状态",
+    "旧表来源",
+    "旧记录ID",
+    "脚本文档标题",
+    "脚本文档正文",
+    "脚本文档链接",
+    "产品名",
+    "关联产品",
+    "选择产品",
+    "口播音色ID",
+    "口播文本",
+    "AI供应商",
+    "AI能力类型",
+    "AI任务类型",
+    "AI模型",
+    "AI参数JSON",
+    "视频AI模型",
+    "解析结果JSON",
+    "解析后逐镜头脚本",
+    "参考图file_token",
+    "参考图本地路径",
+    "参考图原始响应JSON",
+    "分镜原文",
+    "人物描述",
+    "场景描述",
+    "产品焦点",
+    "连续性要求",
+    "文本",
+    "提示词",
+    "参考图选择原因",
+    "分镜图本地路径",
+    "分镜图file_token",
+    "分镜图原始响应JSON",
+    "分镜图生成时间",
+    "尾帧图提示词",
+    "尾帧图本地路径",
+    "尾帧图file_token",
+    "尾帧图原始响应JSON",
+    "尾帧图生成时间",
+    "本地视频路径",
+    "分镜视频file_token",
+    "视频生成原始响应JSON",
+    "视频生成时间",
+    "生成时间",
+    "发布平台",
+}
+
+
+def script_doc_tables(*, unified: bool = False) -> Dict[str, str]:
+    if unified:
+        return {
+            "tasks": TABLE_SCRIPT_DOC_UNIFIED,
+            "assets": TABLE_SCRIPT_DOC_UNIFIED,
+            "shots": TABLE_SCRIPT_DOC_UNIFIED,
+            "task_app_table": TASK_TABLES.get("script_doc_unified", "003-脚本文档生产表"),
+            "asset_app_table": TASK_TABLES.get("script_doc_unified", "003-脚本文档生产表"),
+            "shot_app_table": TASK_TABLES.get("script_doc_unified", "003-脚本文档生产表"),
+        }
+    return {
+        "tasks": TABLE_SCRIPT_DOC_TASKS,
+        "assets": TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        "shots": TABLE_SCRIPT_DOC_SHOTS,
+        "task_app_table": TASK_TABLES["script_doc_tasks"],
+        "asset_app_table": TASK_TABLES["script_doc_reference_assets"],
+        "shot_app_table": TASK_TABLES["script_doc_shots"],
+    }
+
+
+def mark_unified_record(fields: Dict[str, Any], record_type: str) -> Dict[str, Any]:
+    marked = {
+        k: v
+        for k, v in fields.items()
+        if not k.startswith("口播音频") and k not in UNIFIED_REMOVED_FIELDS
+    }
+    marked["记录类型"] = record_type
+    return marked
 
 DEFAULT_PARSE_PROMPT = """
 你是短视频脚本文档结构化拆解器。用户会给你一整篇已经写好的脚本文档。
@@ -441,23 +520,43 @@ def validate_and_normalize_payload(payload: Dict[str, Any], target_seconds: floa
     }
 
 
-def build_reference_asset_records(parent_record_id: str, payload: Dict[str, Any]) -> List[Dict[str, Dict[str, Any]]]:
+def build_reference_asset_records(parent_record_id: str, payload: Dict[str, Any], *, task_name: str = "") -> List[Dict[str, Dict[str, Any]]]:
     records = []
     for asset in payload.get("global_assets", []):
-        records.append({
-            "fields": {
-                "关联任务": [parent_record_id],
-                "父文档记录ID": parent_record_id,
-                "资产ID": asset["asset_id"],
-                "参考类型": asset["asset_type"],
-                "参考名称": asset["asset_name"],
-                "参考提示词": asset["prompt"],
-                "参考图生成状态": "待生成",
-                "参考图审核状态": "待确认",
-                "错误信息": "",
-            }
-        })
+        fields = {
+            "关联任务": [parent_record_id],
+            "父文档记录ID": parent_record_id,
+            "资产ID": asset["asset_id"],
+            "参考类型": asset["asset_type"],
+            "参考名称": asset["asset_name"],
+            "参考提示词": asset["prompt"],
+            "参考图生成状态": "待生成",
+            "参考图审核状态": "待确认",
+            "错误信息": "",
+        }
+        if task_name:
+            fields["任务名称"] = task_name
+        records.append({"fields": fields})
     return records
+
+
+def read_script_document_text(token: str, record_id: str, fields: Dict[str, Any], *, unified: bool = False) -> str:
+    field_names = ("脚本文档", "脚本文档正文") if unified else ("脚本文档正文",)
+    for field_name in field_names:
+        raw_doc = extract_text(fields.get(field_name)).strip()
+        if raw_doc:
+            return raw_doc
+
+    if unified:
+        attachment_token = latest_attachment_token(fields.get("脚本文档附件"))
+        if attachment_token:
+            source_dir = Path(WORKSPACE) / "script_doc_source_work" / record_id
+            source_dir.mkdir(parents=True, exist_ok=True)
+            source_path = source_dir / f"{record_id}_source_document.txt"
+            safe_download_attachment(token, attachment_token, str(source_path))
+            return source_path.read_bytes().decode("utf-8", errors="ignore").strip()
+
+    return ""
 
 
 def _build_video_prompt_for_doc_shot(shot: Dict[str, Any], parent_fields: Dict[str, Any]) -> str:
@@ -478,7 +577,7 @@ def _build_video_prompt_for_doc_shot(shot: Dict[str, Any], parent_fields: Dict[s
 
 
 def _prefixed_video_model_value(channel: str, model: str) -> str:
-    raw_channel = extract_text(channel).strip() or "AIHubMix"
+    raw_channel = extract_text(channel).strip() or "OTU"
     raw_model = extract_text(model).strip() or "默认（配置表）"
     if " / " in raw_model:
         return raw_model
@@ -493,6 +592,7 @@ def build_child_shot_records(
     batch_id: str,
 ) -> List[Dict[str, Dict[str, Any]]]:
     total = len(payload.get("shots", []))
+    task_name = extract_text(parent_fields.get("任务名称")).strip() or f"脚本文档任务-{parent_record_id[-6:]}"
     inherited_route_fields = {
         name: parent_fields.get(name)
         for name in (
@@ -540,6 +640,7 @@ def build_child_shot_records(
             "reference_requirements": refs,
         }
         fields = {
+            "任务名称": task_name,
             "关联任务": [parent_record_id],
             "父文档记录ID": parent_record_id,
             "批次ID": batch_id,
@@ -564,9 +665,9 @@ def build_child_shot_records(
             "参考资产ID列表": _csv(refs["asset_ids"]),
             "参考图选择原因": refs.get("reason", ""),
             "分镜图生成状态": "不触发",
-            "视频通道": extract_text(parent_fields.get("视频通道")).strip() or "AIHubMix",
+            "视频通道": extract_text(parent_fields.get("视频通道")).strip() or "OTU",
             "视频生成模型": _prefixed_video_model_value(
-                extract_text(parent_fields.get("视频通道")).strip() or "AIHubMix",
+                extract_text(parent_fields.get("视频通道")).strip() or "OTU",
                 extract_text(parent_fields.get("视频生成模型")).strip() or "默认（配置表）",
             ),
             "视频生成状态": "不触发",
@@ -673,7 +774,11 @@ def collect_reference_images_for_shot(
     return refs
 
 
-def ensure_script_doc_tables(*, need_tasks: bool = False, need_assets: bool = False, need_shots: bool = False) -> None:
+def ensure_script_doc_tables(*, need_tasks: bool = False, need_assets: bool = False, need_shots: bool = False, unified: bool = False) -> None:
+    if unified:
+        if not TABLE_SCRIPT_DOC_UNIFIED:
+            raise RuntimeError("config.json 尚未配置脚本文档统一表: script_doc_unified")
+        return
     missing = []
     if need_tasks and not TABLE_SCRIPT_DOC_TASKS:
         missing.append("script_doc_tasks")
@@ -701,10 +806,12 @@ def _approved_asset_id_map(asset_records: List[Dict[str, Any]], parent_record_id
     return ready
 
 
-def advance_shots_after_reference_approval(token: str, parent_record_id: str) -> Dict[str, Any]:
-    ensure_script_doc_tables(need_assets=True, need_shots=True)
-    asset_records = safe_list_records(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS)
-    shot_records = safe_list_records(token, TABLE_SCRIPT_DOC_SHOTS)
+def advance_shots_after_reference_approval(token: str, parent_record_id: str, *, unified: bool = False) -> Dict[str, Any]:
+    tables = script_doc_tables(unified=unified)
+    ensure_script_doc_tables(need_assets=True, need_shots=True, unified=unified)
+    records = safe_list_records(token, tables["assets"])
+    asset_records = [rec for rec in records if (not unified or extract_text((rec.get("fields") or {}).get("记录类型")).strip() == "参考资产")]
+    shot_records = records if unified else safe_list_records(token, tables["shots"])
     approved_assets = _approved_asset_id_map(asset_records, parent_record_id)
     advanced = 0
     for rec in shot_records:
@@ -718,9 +825,9 @@ def advance_shots_after_reference_approval(token: str, parent_record_id: str) ->
             continue
         safe_update_record(
             token,
-            TABLE_SCRIPT_DOC_SHOTS,
+            tables["shots"],
             rec["record_id"],
-            filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, {
+            filter_existing_fields(token, tables["shots"], {
                 "分镜图生成状态": "待生成",
                 "错误信息": "",
             }),
@@ -729,24 +836,26 @@ def advance_shots_after_reference_approval(token: str, parent_record_id: str) ->
     return {"status": "advanced" if advanced else "no_shots_to_advance", "parent_record_id": parent_record_id, "advanced_shots": advanced}
 
 
-def maybe_auto_approve_reference_image(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str) -> Dict[str, Any]:
-    if not auto_review_enabled(token, stage_name=AUTO_REVIEW_STAGE_NAME):
+def maybe_auto_approve_reference_image(token: str, record_id: str, fields: Dict[str, Any], *, file_token: str, unified: bool = False) -> Dict[str, Any]:
+    stage_name = UNIFIED_AUTO_REVIEW_STAGE_NAME if unified else AUTO_REVIEW_STAGE_NAME
+    if not auto_review_enabled(token, stage_name=stage_name):
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}
     parent_record_id = extract_text(fields.get("父文档记录ID")).strip()
     if not parent_record_id:
         return {"status": "skipped", "reason": "missing_parent_record_id"}
+    asset_table = TABLE_SCRIPT_DOC_UNIFIED if unified else TABLE_SCRIPT_DOC_REFERENCE_ASSETS
     safe_update_record(
         token,
-        TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        asset_table,
         record_id,
-        filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+        filter_existing_fields(token, asset_table, {
             "参考图审核状态": "通过",
             "错误信息": "",
         }),
     )
-    advance_summary = advance_shots_after_reference_approval(token, parent_record_id)
+    advance_summary = advance_shots_after_reference_approval(token, parent_record_id, unified=unified)
     return {"status": "auto_approved", "advance": advance_summary}
 
 
@@ -843,11 +952,13 @@ def create_records(token: str, table_id: str, records: List[Dict[str, Dict[str, 
     return created
 
 
-def cleanup_children(token: str, table_id: str, parent_record_id: str) -> int:
+def cleanup_children(token: str, table_id: str, parent_record_id: str, *, record_type: str = "") -> int:
     deleted = 0
     for rec in safe_list_records(token, table_id):
         fields = rec.get("fields", {})
         if extract_text(fields.get("父文档记录ID")) != parent_record_id:
+            continue
+        if record_type and extract_text(fields.get("记录类型")).strip() != record_type:
             continue
         safe_request(
             "delete",
@@ -861,12 +972,13 @@ def cleanup_children(token: str, table_id: str, parent_record_id: str) -> int:
     return deleted
 
 
-def apply_reference_asset_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+def apply_reference_asset_default_models(token: str, records: List[Dict[str, Dict[str, Any]]], *, unified: bool = False) -> List[Dict[str, Dict[str, Any]]]:
+    app_table = script_doc_tables(unified=unified)["asset_app_table"]
     for record in records:
         record["fields"] = apply_task_default_to_fields(
             token,
             record.get("fields") or {},
-            app_table=TASK_TABLES["script_doc_reference_assets"],
+            app_table=app_table,
             stage="参考底图生成默认",
             model_field="参考图AI模型",
             size_field="参考图画面尺寸",
@@ -876,13 +988,14 @@ def apply_reference_asset_default_models(token: str, records: List[Dict[str, Dic
     return records
 
 
-def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
+def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]]], *, unified: bool = False) -> List[Dict[str, Dict[str, Any]]]:
+    app_table = script_doc_tables(unified=unified)["shot_app_table"]
     for record in records:
         fields = record.get("fields") or {}
         fields = apply_task_default_to_fields(
             token,
             fields,
-            app_table=TASK_TABLES["script_doc_shots"],
+            app_table=app_table,
             stage="分镜图生成默认",
             model_field="分镜图AI模型",
             size_field="分镜图画面尺寸",
@@ -892,7 +1005,7 @@ def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]
         fields = apply_task_default_to_fields(
             token,
             fields,
-            app_table=TASK_TABLES["script_doc_shots"],
+            app_table=app_table,
             stage="尾帧图生成默认",
             model_field="尾帧图AI模型",
             size_field="尾帧图画面尺寸",
@@ -902,8 +1015,9 @@ def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]
         fields = apply_task_default_to_fields(
             token,
             fields,
-            app_table=TASK_TABLES["script_doc_shots"],
+            app_table=app_table,
             stage="分镜视频生成默认",
+            channel_field="视频通道",
             model_field="视频生成模型",
             size_field="视频画面尺寸",
             ratio_field="视频画面比例",
@@ -914,12 +1028,15 @@ def apply_shot_default_models(token: str, records: List[Dict[str, Dict[str, Any]
     return records
 
 
-def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
-    ensure_script_doc_tables(need_tasks=True, need_assets=True, need_shots=True)
+def parse_parent_record(record_id: str, *, dry_run: bool = False, unified: bool = False) -> Dict[str, Any]:
+    tables = script_doc_tables(unified=unified)
+    ensure_script_doc_tables(need_tasks=True, need_assets=True, need_shots=True, unified=unified)
     token = get_feishu_token()
-    fields = safe_get_record(token, TABLE_SCRIPT_DOC_TASKS, record_id)
-    raw_script = extract_text(fields.get("脚本文档正文")).strip()
+    fields = safe_get_record(token, tables["tasks"], record_id)
+    raw_script = read_script_document_text(token, record_id, fields, unified=unified)
     if not raw_script:
+        if unified:
+            raise ValueError("脚本文档为空；请在“脚本文档”粘贴完整内容，或上传“脚本文档附件”")
         raise ValueError("脚本文档正文为空")
     target_seconds = parse_target_seconds(fields.get("视频时长", "15s"))
     cfg = get_model_config(token, f"stage:{TEXT_SPLIT_STAGE_NAME}")
@@ -951,7 +1068,7 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
         summary["status"] = "unified_ai_dry_run_ready"
         return summary
 
-    safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
+    safe_update_record(token, tables["tasks"], record_id, filter_existing_fields(token, tables["tasks"], {
         "解析状态": "解析中",
         "解析错误信息": "",
     }))
@@ -970,29 +1087,37 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     payload = validate_and_normalize_payload(extract_json_object(raw_text), target_seconds)
     readable_script = build_readable_script({"shots": payload["shots"]})
     batch_id = f"SCRIPTDOC-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
-    asset_records = apply_reference_asset_default_models(token, build_reference_asset_records(record_id, payload))
-    shot_records = apply_shot_default_models(token, build_child_shot_records(fields, payload, parent_record_id=record_id, batch_id=batch_id))
+    task_name = extract_text(fields.get("任务名称")).strip() or f"脚本文档任务-{record_id[-6:]}"
+    asset_records = apply_reference_asset_default_models(token, build_reference_asset_records(record_id, payload, task_name=task_name if unified else ""), unified=unified)
+    shot_records = apply_shot_default_models(token, build_child_shot_records(fields, payload, parent_record_id=record_id, batch_id=batch_id), unified=unified)
+    if unified:
+        asset_records = [{"fields": mark_unified_record(item["fields"], "参考资产")} for item in asset_records]
+        shot_records = [{"fields": mark_unified_record(item["fields"], "分镜")} for item in shot_records]
 
     deleted = (
-        cleanup_children(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id)
-        + cleanup_children(token, TABLE_SCRIPT_DOC_SHOTS, record_id)
+        cleanup_children(token, tables["assets"], record_id, record_type="参考资产" if unified else "")
+        + cleanup_children(token, tables["shots"], record_id, record_type="分镜" if unified else "")
     )
-    create_records(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, [
-        {"fields": filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, item["fields"])}
+    create_records(token, tables["assets"], [
+        {"fields": filter_existing_fields(token, tables["assets"], item["fields"])}
         for item in asset_records
     ])
-    create_records(token, TABLE_SCRIPT_DOC_SHOTS, [
-        {"fields": filter_existing_fields(token, TABLE_SCRIPT_DOC_SHOTS, item["fields"])}
+    create_records(token, tables["shots"], [
+        {"fields": filter_existing_fields(token, tables["shots"], item["fields"])}
         for item in shot_records
     ])
-    safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
+    done_fields = {
         "解析状态": "成功",
-        "解析结果JSON": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))[:10000],
-        "解析后逐镜头脚本": readable_script[:10000],
         "总分镜数": len(payload["shots"]),
         "批次ID": batch_id,
         "解析错误信息": "",
-    }))
+    }
+    if not unified:
+        done_fields.update({
+            "解析结果JSON": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))[:10000],
+            "解析后逐镜头脚本": readable_script[:10000],
+        })
+    safe_update_record(token, tables["tasks"], record_id, filter_existing_fields(token, tables["tasks"], done_fields))
     summary.update({
         "status": "success",
         "batch_id": batch_id,
@@ -1003,16 +1128,17 @@ def parse_parent_record(record_id: str, *, dry_run: bool = False) -> Dict[str, A
     return summary
 
 
-def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
-    ensure_script_doc_tables(need_assets=True)
+def generate_reference_image(record_id: str, *, dry_run: bool = False, unified: bool = False) -> Dict[str, Any]:
+    tables = script_doc_tables(unified=unified)
+    ensure_script_doc_tables(need_assets=True, unified=unified)
     token = get_feishu_token()
-    fields = safe_get_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id)
+    fields = safe_get_record(token, tables["assets"], record_id)
     fields = apply_task_default_to_record(
         token,
-        TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+        tables["assets"],
         record_id,
         fields,
-        app_table=TASK_TABLES["script_doc_reference_assets"],
+        app_table=tables["asset_app_table"],
         stage="参考底图生成默认",
         model_field="参考图AI模型",
         size_field="参考图画面尺寸",
@@ -1071,7 +1197,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     }
     if not existing_task_id:
         start_fields["参考图原始响应JSON"] = ""
-    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, start_fields))
+    safe_update_record(token, tables["assets"], record_id, filter_existing_fields(token, tables["assets"], start_fields))
     work_dir = Path(WORKSPACE) / "script_doc_reference_work" / record_id
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / f"{record_id}_reference.png"
@@ -1089,9 +1215,9 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         otu_downloader=download_otu_image_result,
         on_task_submitted=lambda task_id: safe_update_record(
             token,
-            TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+            tables["assets"],
             record_id,
-            filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+            filter_existing_fields(token, tables["assets"], {
                 "参考图任务ID": task_id,
                 "参考图原始响应JSON": _compact_json({"submit": {"id": task_id}}),
                 "错误信息": f"已提交 {route.provider} 参考底图任务，正在轮询。task_id={task_id}",
@@ -1102,7 +1228,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
     submit_body = image_result.submit_body
     result = image_result.result_body
     file_token = upload_image_to_feishu(token, str(out_path), out_path.name)
-    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+    safe_update_record(token, tables["assets"], record_id, filter_existing_fields(token, tables["assets"], {
         **image_slot_field_patch("参考图", image_params),
         "参考图": [{"file_token": file_token}],
         "参考图file_token": file_token,
@@ -1113,7 +1239,7 @@ def generate_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[s
         "参考图审核状态": "待确认",
         "错误信息": "",
     }))
-    auto_review_summary = maybe_auto_approve_reference_image(token, record_id, fields, file_token=file_token)
+    auto_review_summary = maybe_auto_approve_reference_image(token, record_id, fields, file_token=file_token, unified=unified)
     summary.update({"status": "success", "file_token": file_token, "output_path": str(out_path), "task_id": submit_task_id})
     summary["auto_review"] = auto_review_summary
     return summary
@@ -1125,15 +1251,17 @@ def main() -> int:
     parse_cmd = sub.add_parser("parse", help="解析文档母记录并创建参考底图/分镜记录")
     parse_cmd.add_argument("record_id")
     parse_cmd.add_argument("--dry-run", action="store_true")
+    parse_cmd.add_argument("--unified", action="store_true", help="使用 003-脚本文档生产表新链路")
     ref_cmd = sub.add_parser("reference-image", help="生成一条参考底图记录")
     ref_cmd.add_argument("record_id")
     ref_cmd.add_argument("--dry-run", action="store_true")
+    ref_cmd.add_argument("--unified", action="store_true", help="使用 003-脚本文档生产表新链路")
     args = parser.parse_args()
     try:
         if args.command == "parse":
-            result = parse_parent_record(args.record_id, dry_run=args.dry_run)
+            result = parse_parent_record(args.record_id, dry_run=args.dry_run, unified=args.unified)
         else:
-            result = generate_reference_image(args.record_id, dry_run=args.dry_run)
+            result = generate_reference_image(args.record_id, dry_run=args.dry_run, unified=args.unified)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:
@@ -1142,13 +1270,14 @@ def main() -> int:
         if not args.dry_run:
             try:
                 token = get_feishu_token()
+                tables = script_doc_tables(unified=getattr(args, "unified", False))
                 if args.command == "parse":
-                    safe_update_record(token, TABLE_SCRIPT_DOC_TASKS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_TASKS, {
+                    safe_update_record(token, tables["tasks"], args.record_id, filter_existing_fields(token, tables["tasks"], {
                         "解析状态": "失败",
                         "解析错误信息": payload["message"],
                     }))
                 else:
-                    safe_update_record(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, args.record_id, filter_existing_fields(token, TABLE_SCRIPT_DOC_REFERENCE_ASSETS, {
+                    safe_update_record(token, tables["assets"], args.record_id, filter_existing_fields(token, tables["assets"], {
                         "参考图生成状态": "失败",
                         "错误信息": payload["message"],
                     }))

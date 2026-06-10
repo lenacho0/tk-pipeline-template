@@ -36,6 +36,7 @@ venv/
 **/launchd.*.log
 **/dispatcher*.pid
 **/dispatcher-runtime*.log
+**/dispatcher-runtime*.log*
 **/dispatcher*.log
 
 # TK runtime state snapshots
@@ -66,6 +67,7 @@ archive_from_autoclaw_*/
 
 # generated artifacts
 video_dedup.json
+lark_docs_media_download_auth_qr.png
 
 # OpenClaw local persona / memory files (not project source)
 .openclaw/
