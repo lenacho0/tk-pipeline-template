@@ -50,7 +50,7 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1280x720")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["reference_roles"], ["product:1"])
 
-    def test_run_image_generation_uses_otu_2k_model_size_over_stale_record_size(self):
+    def test_run_image_generation_preserves_explicit_size_for_otu_2k_model(self):
         submitter = Mock(return_value=("task_2k", {"id": "task_2k"}))
         poller = Mock(return_value={"result_url": "https://x.test/out.png"})
         downloader = Mock()
@@ -62,7 +62,7 @@ class ImageGenerationTests(unittest.TestCase):
             call_type="OTU /v1/videos",
             api_base="https://otuapi.com",
             api_key="sk-test",
-            params={"size": "720x1280", "aspect_ratio": "9:16"},
+            params={"size": "1280x720", "aspect_ratio": "16:9"},
         )
 
         result = image_generation.run_image_generation(
@@ -71,20 +71,39 @@ class ImageGenerationTests(unittest.TestCase):
             "/tmp/out.png",
             input_mode="text-to-image",
             metadata={"reference_roles": []},
-            size="720x1280",
-            aspect_ratio="9:16",
+            size="1280x720",
+            aspect_ratio="16:9",
             otu_submitter=submitter,
             otu_poller=poller,
             otu_downloader=downloader,
         )
 
         self.assertEqual(result.request_summary["model"], "gpt-image-2-2K")
-        self.assertEqual(result.request_summary["size"], "1080x1920")
-        self.assertEqual(result.request_summary["aspect_ratio"], "9:16")
+        self.assertEqual(result.request_summary["size"], "1280x720")
+        self.assertEqual(result.request_summary["aspect_ratio"], "16:9")
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
-        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
-        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "9:16")
-        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+
+    def test_run_image_generation_uses_default_size_when_otu_2k_has_no_explicit_size(self):
+        route = ai_routing.AiRoute(
+            provider="OTU",
+            capability="图片",
+            task_type="文生图",
+            model="OTU / gpt-image-2-2K",
+            call_type="OTU /v1/videos",
+            api_base="https://otuapi.com",
+            api_key="sk-test",
+            params={},
+        )
+
+        execution = image_generation.image_execution_params(route, size="", aspect_ratio="")
+
+        self.assertEqual(execution["model"], "gpt-image-2-2K")
+        self.assertEqual(execution["size"], image_generation.DEFAULT_OTU_IMAGE_SIZE)
+        self.assertEqual(execution["aspect_ratio"], "9:16")
 
     def test_run_image_generation_uses_reference_count_override_for_contact_sheet(self):
         submitter = Mock(return_value=("task_contact", {"id": "task_contact"}))

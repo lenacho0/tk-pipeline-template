@@ -41,12 +41,6 @@ AITGENNE_RETRYABLE_ERROR_MARKERS = (
     "ssl",
     "connection",
 )
-OTU_IMAGE_MODEL_SPEC_OVERRIDES = {
-    "gpt-image-2-2K": {"size": "1080x1920", "aspect_ratio": "9:16"},
-    "gpt-image-2-4K": {"size": "1440x2560", "aspect_ratio": "9:16"},
-}
-
-
 @dataclass
 class ImageGenerationResult:
     provider: str
@@ -144,11 +138,6 @@ def image_execution_params(route: ai_routing.AiRoute, *, size: str, aspect_ratio
     model_name = image_model_name(route)
     effective_size = str(size or route.params.get("size") or DEFAULT_OTU_IMAGE_SIZE).strip()
     effective_aspect_ratio = str(aspect_ratio or route.params.get("aspect_ratio") or "9:16").strip()
-    if route.provider == "OTU":
-        model_spec = OTU_IMAGE_MODEL_SPEC_OVERRIDES.get(model_name)
-        if model_spec:
-            effective_size = model_spec["size"]
-            effective_aspect_ratio = model_spec["aspect_ratio"]
     return {"model": model_name, "size": effective_size, "aspect_ratio": effective_aspect_ratio}
 
 

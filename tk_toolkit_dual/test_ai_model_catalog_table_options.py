@@ -85,6 +85,15 @@ class AiModelCatalogTableOptionsTests(unittest.TestCase):
         self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", nine_grid_options)
         self.assertNotIn("OTU / veo_3_1-fast-fl", nine_grid_options)
 
+    def test_nine_grid_image_dimension_options_include_landscape(self):
+        for size_field in ("参考图画面尺寸", "图片画面尺寸"):
+            self.assertIn("1280x720", field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, size_field))
+        for ratio_field in ("参考图画面比例", "图片画面比例"):
+            self.assertIn("16:9", field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, ratio_field))
+
+        self.assertIn("1280x720", field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频画面尺寸"))
+        self.assertIn("16:9", field_options(nine_grid_table.NINE_GRID_VIDEO_FIELDS, "视频画面比例"))
+
 
 if __name__ == "__main__":
     unittest.main()

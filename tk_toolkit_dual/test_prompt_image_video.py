@@ -260,14 +260,16 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
 
     def test_image_generation_accepts_model_config_dict_and_uses_status_only(self):
         updates = []
+        captured = {}
         fields = {
             "生图提示词": "raw image prompt",
             "图片AI模型": "OTU / gpt-image-2-2K",
-            "图片画面尺寸": "1080x1920",
-            "图片画面比例": "9:16",
+            "图片画面尺寸": "1280x720",
+            "图片画面比例": "16:9",
         }
 
         def fake_run_image(route, prompt, out_path, **kwargs):
+            captured.update(kwargs)
             Path(out_path).write_bytes(b"image")
             return Mock(
                 output_path=out_path,
@@ -294,8 +296,13 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             result = prompt_video.run_image("token", "rec008")
 
         self.assertEqual(result["status"], "success")
+        self.assertEqual(captured["size"], "1280x720")
+        self.assertEqual(captured["aspect_ratio"], "16:9")
         self.assertTrue(any(update.get("图片生成状态") == "生成中" for update in updates))
         self.assertTrue(any(update.get("图片生成状态") == "成功" for update in updates))
+        self.assertTrue(any(update.get("图片画面尺寸") == "1280x720" for update in updates))
+        self.assertTrue(any(update.get("图片画面比例") == "16:9" for update in updates))
+        self.assertFalse(any(update.get("图片画面比例") == "9:16" for update in updates))
         self.assertTrue(all("图片操作" not in update and "视频操作" not in update for update in updates))
 
     def test_image_generation_uses_original_image_path_for_single_otu_reference_and_locks_product(self):

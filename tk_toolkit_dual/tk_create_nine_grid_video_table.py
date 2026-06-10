@@ -46,8 +46,8 @@ ENVIRONMENT_SOURCE_OPTIONS = [opt("AI自动生成", "Green"), opt("手动上传"
 ASSET_TYPE_OPTIONS = [opt("human", "Blue"), opt("pet", "Green"), opt("environment", "Purple")]
 REFERENCE_OPERATION_OPTIONS = [opt("不触发", "Gray"), opt("重新生成参考图", "Orange")]
 
-IMAGE_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1024x1024", "Gray")]
-IMAGE_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("1:1", "Gray")]
+IMAGE_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1280x720", "Gray"), opt("1024x1024", "Gray")]
+IMAGE_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Gray"), opt("1:1", "Gray")]
 VIDEO_SIZE_OPTIONS = [opt("720x1280", "Green"), opt("1080x1920", "Blue"), opt("1280x720", "Gray")]
 VIDEO_ASPECT_RATIO_OPTIONS = [opt("9:16", "Green"), opt("16:9", "Gray")]
 

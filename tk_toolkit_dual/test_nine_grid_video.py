@@ -957,15 +957,15 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("PRODUCT REFERENCE LOCK", submitter.call_args.args[1])
         self.assertNotIn("exact_product_overlay_cells", result)
 
-    def test_render_nine_grid_image_otu_2k_overrides_stale_720_size(self):
+    def test_render_nine_grid_image_otu_2k_preserves_explicit_16_9_size(self):
         child_fields = {
             "父任务记录ID": "recParent",
             "九宫格图片提示词": "Show the selected spray product in the nine-grid.",
             "图片AI供应商": "OTU",
             "图片AI模型": "OTU / gpt-image-2-2K",
-            "图片AI参数JSON": '{"size":"720x1280","aspect_ratio":"9:16"}',
-            "图片画面尺寸": "720x1280",
-            "图片画面比例": "9:16",
+            "图片AI参数JSON": '{"size":"1280x720","aspect_ratio":"16:9"}',
+            "图片画面尺寸": "1280x720",
+            "图片画面比例": "16:9",
         }
         refs = [
             {"role": "product:1", "path": "/tmp/product.png", "file_token": "ft_product", "name": "odor spray"},
@@ -991,9 +991,12 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
-        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
-        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
-        self.assertTrue(any(update.get("图片画面尺寸") == "1080x1920" for update in updates))
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertTrue(any(update.get("图片画面尺寸") == "1280x720" for update in updates))
+        self.assertFalse(any(update.get("图片画面尺寸") == "1080x1920" for update in updates))
 
     def test_render_nine_grid_image_resumes_existing_otu_task_without_resubmitting(self):
         child_fields = {
@@ -1350,7 +1353,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
         self.assertEqual(submitter.call_args.kwargs["metadata"]["aspect_ratio"], "16:9")
 
-    def test_render_reference_asset_otu_2k_overrides_stale_720_size(self):
+    def test_render_reference_asset_otu_2k_preserves_explicit_16_9_size(self):
         fields = {
             "记录类型": "参考资产",
             "父任务记录ID": "recParent",
@@ -1359,9 +1362,9 @@ class NineGridVideoTests(unittest.TestCase):
             "参考图来源": "AI自动生成",
             "参考提示词": "Generate the owner reference.",
             "参考图AI模型": "OTU / gpt-image-2-2K",
-            "参考图AI参数JSON": '{"size":"720x1280","aspect_ratio":"9:16"}',
-            "参考图画面尺寸": "720x1280",
-            "参考图画面比例": "9:16",
+            "参考图AI参数JSON": '{"size":"1280x720","aspect_ratio":"16:9"}',
+            "参考图画面尺寸": "1280x720",
+            "参考图画面比例": "16:9",
         }
         updates = []
 
@@ -1385,9 +1388,12 @@ class NineGridVideoTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
-        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
-        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1080x1920")
-        self.assertTrue(any(update.get("参考图画面尺寸") == "1080x1920" for update in updates))
+        self.assertEqual(submitter.call_args.kwargs["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["aspect_ratio"], "16:9")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["size"], "1280x720")
+        self.assertEqual(submitter.call_args.kwargs["metadata"]["aspectRatio"], "16:9")
+        self.assertTrue(any(update.get("参考图画面尺寸") == "1280x720" for update in updates))
+        self.assertFalse(any(update.get("参考图画面尺寸") == "1080x1920" for update in updates))
 
     def test_render_reference_asset_resumes_existing_otu_task_without_resubmitting(self):
         fields = {
@@ -1429,7 +1435,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(poller.call_args.args[1], "task_existing_ref")
         self.assertIn("恢复轮询已有 OTU 参考图任务", updates[0]["参考图错误信息"])
 
-    def test_render_reference_asset_otu_2k_does_not_resume_stale_720_task(self):
+    def test_render_reference_asset_otu_2k_resumes_existing_task_when_size_matches_fields(self):
         fields = {
             "记录类型": "参考资产",
             "父任务记录ID": "recParent",
@@ -1454,7 +1460,7 @@ class NineGridVideoTests(unittest.TestCase):
                  "model": "gpt-image-2",
              })), \
              patch.object(nine_grid, "safe_list_records", return_value=[]), \
-             patch.object(nine_grid, "submit_otu_image_task", return_value=("task_2k", {"id": "task_2k"})) as submitter, \
+             patch.object(nine_grid, "submit_otu_image_task") as submitter, \
              patch.object(nine_grid, "poll_otu_image_task", return_value={"result_url": "https://x.test/out.png"}) as poller, \
              patch.object(nine_grid, "download_otu_image_result"), \
              patch.object(nine_grid, "upload_image_to_feishu", return_value="ft_out"), \
@@ -1463,11 +1469,9 @@ class NineGridVideoTests(unittest.TestCase):
             result = nine_grid.render_reference_asset("recAsset")
 
         self.assertEqual(result["status"], "success")
-        submitter.assert_called_once()
-        self.assertEqual(submitter.call_args.args[0]["model"], "gpt-image-2-2K")
-        self.assertEqual(submitter.call_args.kwargs["size"], "1080x1920")
+        submitter.assert_not_called()
         poller.assert_called_once()
-        self.assertEqual(poller.call_args.args[1], "task_2k")
+        self.assertEqual(poller.call_args.args[1], "task_stale_720")
 
     def test_render_reference_asset_submits_aitgenne_image_generation(self):
         fields = {

@@ -421,7 +421,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(result["status"], "unified_ai_dry_run_ready")
         self.assertTrue(result["unified_ai_route_enabled"])
         self.assertEqual(result["model"], "gpt-image-2-2K")
-        self.assertEqual(result["size"], "1080x1920")
+        self.assertEqual(result["size"], "2K")
         updater.assert_not_called()
         downloader.assert_not_called()
         submitter.assert_not_called()
@@ -451,7 +451,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(result["status"], "dry_run_ready")
         self.assertTrue(result["unified_ai_route_enabled"])
         self.assertEqual(result["model"], "gpt-image-2-4K")
-        self.assertEqual(result["size"], "1440x2560")
+        self.assertEqual(result["size"], "4K")
         updater.assert_not_called()
         submitter.assert_not_called()
 
