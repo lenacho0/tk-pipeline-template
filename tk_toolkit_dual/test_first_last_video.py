@@ -536,6 +536,21 @@ class FirstLastVideoWorkerTests(unittest.TestCase):
 
         self.assertEqual(records[0]["fields"]["使用统一AI路由"], "是")
 
+    def test_child_scene_video_defaults_fill_video_channel(self):
+        records = [{"fields": {
+            "视频通道": "AIHubMix",
+            "视频生成模型": f"OTU / {first_last.DEFAULT_OTU_MODEL}",
+        }}]
+
+        with patch.object(first_last, "apply_task_default_to_fields", side_effect=lambda token, fields, **kwargs: dict(fields)) as apply_default:
+            first_last.apply_child_scene_default_models("token", records)
+
+        video_call = next(
+            call for call in apply_default.call_args_list
+            if call.kwargs.get("stage") == "首尾帧视频生成默认"
+        )
+        self.assertEqual(video_call.kwargs["channel_field"], "视频通道")
+
     def test_parse_structured_markdown_scenes_extracts_three_prompts_per_scene(self):
         doc = """
 ## S01 浅瓷砖地板

@@ -1014,6 +1014,7 @@ def apply_child_default_models(token: str, records: List[Dict[str, Dict[str, Any
                 fields,
                 app_table=TASK_TABLES["multi_role_first_last"],
                 stage="视频片段生成默认",
+                channel_field="视频通道",
                 model_field="视频生成模型",
                 size_field="视频画面尺寸",
                 ratio_field="视频画面比例",
@@ -1184,6 +1185,9 @@ def is_legacy_aitgenne_video_payload_error(error_text: str) -> bool:
 
 def existing_video_task_matches_channel(fields: Dict[str, Any], channel: str, display_model: str, task_id: str) -> bool:
     if not task_id:
+        return False
+    status = extract_text(fields.get("视频生成状态")).strip()
+    if status != "生成中":
         return False
     error_text = extract_text(fields.get("视频错误信息")).strip()
     if channel == "Aitgenne" and is_legacy_aitgenne_video_payload_error(error_text):
@@ -1520,12 +1524,35 @@ def keyframe_dependencies_ready(records: List[Dict[str, Any]], parent_id: str, k
     return True
 
 
+def keyframe_dependency_wait_reason(records: List[Dict[str, Any]], parent_id: str, keyframe_fields: Dict[str, Any]) -> str:
+    dep_type = extract_text(keyframe_fields.get("依赖关键帧类型")).strip()
+    if not dep_type:
+        return ""
+    for rec in _active_child_records(records, parent_id, KEYFRAME_RECORD_TYPE):
+        fields = rec.get("fields", {})
+        if extract_text(fields.get("关键帧类型")).strip() != dep_type:
+            continue
+        if review_passed(fields.get("关键帧审核状态")) and latest_media_token(fields, "关键帧图", "关键帧图file_token"):
+            return ""
+        return f"等待依赖关键帧通过后自动触发: {dep_type}"
+    return f"等待依赖关键帧通过后自动触发: {dep_type}"
+
+
 def video_dependencies_ready(records: List[Dict[str, Any]], parent_id: str, video_fields: Dict[str, Any]) -> bool:
     keyframe_ready = _keyframe_ready_map(records, parent_id)
     return (
         bool(keyframe_ready.get(extract_text(video_fields.get("首关键帧类型")).strip()))
         and bool(keyframe_ready.get(extract_text(video_fields.get("尾关键帧类型")).strip()))
     )
+
+
+def video_dependency_wait_reason(records: List[Dict[str, Any]], parent_id: str, video_fields: Dict[str, Any]) -> str:
+    keyframe_ready = _keyframe_ready_map(records, parent_id)
+    for field_name in ("首关键帧类型", "尾关键帧类型"):
+        keyframe_type = extract_text(video_fields.get(field_name)).strip()
+        if keyframe_type and not keyframe_ready.get(keyframe_type):
+            return f"等待视频依赖关键帧通过后自动触发: {keyframe_type}"
+    return ""
 
 
 def trigger_ready_videos_for_parent(token: str, parent_id: str, records: List[Dict[str, Any]]) -> int:
@@ -1650,14 +1677,16 @@ def maybe_auto_advance_keyframe_review(token: str, record_id: str, fields: Dict[
         return {"status": "disabled"}
     if not file_token:
         return {"status": "skipped", "reason": "missing_file_token"}
-    if current_version(fields, "关键帧版本") != 1:
+    version = current_version(fields, "关键帧版本")
+    reapprove = version != 1 and keyframe_regeneration_reapprove_allowed(fields)
+    if version != 1 and not reapprove:
         return {"status": "manual_regeneration"}
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
         "关键帧审核状态": "通过",
         "错误信息": "",
     }))
     advance_summary = advance_keyframe_review(record_id)
-    return {"status": "auto_approved", "advance": advance_summary}
+    return {"status": "auto_reapproved" if reapprove else "auto_approved", "advance": advance_summary}
 
 
 def render_reference_image(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
@@ -1825,6 +1854,14 @@ def render_keyframe_image(record_id: str, *, dry_run: bool = False) -> Dict[str,
     parent_fields = _parent_fields(token, fields)
     parent_id = extract_text(fields.get("父任务记录ID")).strip()
     all_records = list_multi_role_records_for_parent(token, parent_id)
+    wait_reason = keyframe_dependency_wait_reason(all_records, parent_id, fields)
+    if wait_reason:
+        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "关键帧生成状态": "不触发",
+            "关键帧错误信息": wait_reason,
+            "错误信息": wait_reason,
+        }))
+        return {"record_id": record_id, "status": "waiting_dependency", "reason": wait_reason}
     refs = collect_keyframe_references(token, fields, parent_fields, all_records, work_dir)
     primary = _primary_base_reference(refs)
     _, cfg = get_stage_config(IMAGE_STAGE_NAME, default_model=DEFAULT_OTU_IMAGE_MODEL, default_api_base=DEFAULT_OTU_API_BASE, default_size=DEFAULT_OTU_IMAGE_SIZE)
@@ -2164,6 +2201,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         fields,
         app_table=TASK_TABLES["multi_role_first_last"],
         stage="视频片段生成默认",
+        channel_field="视频通道",
         model_field="视频生成模型",
         size_field="视频画面尺寸",
         ratio_field="视频画面比例",
@@ -2180,6 +2218,14 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     first_type = extract_text(fields.get("首关键帧类型")).strip()
     last_type = extract_text(fields.get("尾关键帧类型")).strip()
     all_records = list_multi_role_records_for_parent(token, parent_id)
+    wait_reason = video_dependency_wait_reason(all_records, parent_id, fields)
+    if wait_reason:
+        safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+            "视频生成状态": "不触发",
+            "视频错误信息": wait_reason,
+            "错误信息": wait_reason,
+        }))
+        return {"record_id": record_id, "status": "waiting_dependency", "reason": wait_reason}
     first = _find_keyframe_for_clip(all_records, parent_id, first_type)
     last = _find_keyframe_for_clip(all_records, parent_id, last_type)
     version = current_version(fields, "视频版本")
@@ -2388,7 +2434,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
     return summary
 
 
-def _append_history(fields: Dict[str, Any], stage: str) -> str:
+def _history_entries(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
     raw = extract_text(fields.get("历史生成记录JSON")).strip()
     try:
         history = json.loads(raw) if raw else []
@@ -2396,6 +2442,11 @@ def _append_history(fields: Dict[str, Any], stage: str) -> str:
         history = []
     if not isinstance(history, list):
         history = []
+    return [item for item in history if isinstance(item, dict)]
+
+
+def _append_history(fields: Dict[str, Any], stage: str, extra: Optional[Dict[str, Any]] = None) -> str:
+    history = _history_entries(fields)
     history.append({
         "stage": stage,
         "time": int(time.time() * 1000),
@@ -2403,7 +2454,17 @@ def _append_history(fields: Dict[str, Any], stage: str) -> str:
         "keyframe_file_token": latest_media_token(fields, "关键帧图", "关键帧图file_token"),
         "video_file_token": extract_text(fields.get("视频片段file_token")).strip(),
     })
+    if extra:
+        history[-1].update(extra)
     return compact_json(history[-20:], 12000)
+
+
+def keyframe_regeneration_reapprove_allowed(fields: Dict[str, Any]) -> bool:
+    for item in reversed(_history_entries(fields)):
+        if item.get("stage") != "keyframe_image":
+            continue
+        return bool(item.get("auto_reapprove_after_regen"))
+    return False
 
 
 def request_reference_regeneration(record_id: str) -> Dict[str, Any]:
@@ -2440,10 +2501,16 @@ def request_keyframe_regeneration(record_id: str) -> Dict[str, Any]:
     if record_type(fields) != KEYFRAME_RECORD_TYPE:
         raise ValueError("只有关键帧记录可以重新生成关键帧图")
     version = next_version(fields, "关键帧版本")
+    previous_review_status = extract_text(fields.get("关键帧审核状态")).strip()
+    parent_id = extract_text(fields.get("父任务记录ID")).strip()
+    wait_reason = ""
+    if parent_id:
+        wait_reason = keyframe_dependency_wait_reason(list_multi_role_records_for_parent(token, parent_id), parent_id, fields)
+    generation_status = "不触发" if wait_reason else "待生成"
     patch = {
         "关键帧操作": "不触发",
         "关键帧版本": version,
-        "关键帧生成状态": "待生成",
+        "关键帧生成状态": generation_status,
         "关键帧图": [],
         "关键帧图file_token": "",
         "关键帧图本地路径": "",
@@ -2452,12 +2519,15 @@ def request_keyframe_regeneration(record_id: str) -> Dict[str, Any]:
         "原始请求JSON": "",
         "参考图清单JSON": "",
         "关键帧审核状态": "待确认",
-        "关键帧错误信息": "",
-        "历史生成记录JSON": _append_history(fields, "keyframe_image"),
-        "错误信息": "",
+        "关键帧错误信息": wait_reason,
+        "历史生成记录JSON": _append_history(fields, "keyframe_image", {
+            "previous_keyframe_review_status": previous_review_status,
+            "auto_reapprove_after_regen": review_passed(previous_review_status),
+        }),
+        "错误信息": wait_reason,
     }
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, patch))
-    return {"record_id": record_id, "status": "triggered", "version": version}
+    return {"record_id": record_id, "status": "waiting_dependency" if wait_reason else "triggered", "version": version, "reason": wait_reason}
 
 
 def request_video_regeneration(record_id: str) -> Dict[str, Any]:
@@ -2468,22 +2538,27 @@ def request_video_regeneration(record_id: str) -> Dict[str, Any]:
     if record_type(fields) != VIDEO_RECORD_TYPE:
         raise ValueError("只有视频片段记录可以重新生成视频")
     version = next_version(fields, "视频版本")
+    parent_id = extract_text(fields.get("父任务记录ID")).strip()
+    wait_reason = ""
+    if parent_id:
+        wait_reason = video_dependency_wait_reason(list_multi_role_records_for_parent(token, parent_id), parent_id, fields)
+    generation_status = "不触发" if wait_reason else "待生成"
     patch = {
         "视频操作": "不触发",
         "视频版本": version,
-        "视频生成状态": "待生成",
+        "视频生成状态": generation_status,
         "视频片段": [],
         "视频任务ID": "",
         "视频本地路径": "",
         "视频片段URL": None,
         "视频片段file_token": "",
         "视频原始响应JSON": "",
-        "视频错误信息": "",
+        "视频错误信息": wait_reason,
         "历史生成记录JSON": _append_history(fields, "video"),
-        "错误信息": "",
+        "错误信息": wait_reason,
     }
     safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, patch))
-    return {"record_id": record_id, "status": "triggered", "version": version}
+    return {"record_id": record_id, "status": "waiting_dependency" if wait_reason else "triggered", "version": version, "reason": wait_reason}
 
 
 def _failure_update_for_action(action: str, message: str) -> Dict[str, Any]:

@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -365,6 +366,16 @@ def task_status(body: Dict[str, Any]) -> str:
     return extract_text(body.get("status") or nested.get("status") or result.get("status")).strip().lower()
 
 
+def task_number(body: Dict[str, Any], key: str) -> Optional[float]:
+    nested = body.get("data") if isinstance(body.get("data"), dict) else {}
+    result = body.get("result") if isinstance(body.get("result"), dict) else {}
+    value = body.get(key, nested.get(key, result.get(key)))
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def is_completed(body: Dict[str, Any], media_type: str) -> bool:
     return task_status(body) in COMPLETED_STATUSES or (media_type == "image" and bool(extract_otu_result_url(body)))
 
@@ -376,6 +387,16 @@ def is_failed(body: Dict[str, Any]) -> bool:
 def is_running_upstream(body: Dict[str, Any]) -> bool:
     status = task_status(body)
     return status in RUNNING_UPSTREAM_STATUSES or not status
+
+
+def is_stale_zero_progress_task(body: Dict[str, Any], *, now: Optional[float] = None, timeout_seconds: int = 600) -> bool:
+    status = task_status(body)
+    progress = task_number(body, "progress")
+    created_at = task_number(body, "created_at")
+    if status not in RUNNING_UPSTREAM_STATUSES or progress != 0 or created_at is None:
+        return False
+    current = time.time() if now is None else now
+    return current >= created_at and current - created_at >= timeout_seconds
 
 
 def fetch_json(url: str, api_key: str) -> Dict[str, Any]:
@@ -680,6 +701,15 @@ def repair_record(token: str, spec: MediaSpec, record: Dict[str, Any], write: bo
                     "status": status,
                     "task_id": task_id,
                     **mark_policy_blocked(token, spec, record_id, payload["message"], write),
+                }
+            if is_stale_zero_progress_task(body):
+                return {
+                    "record_id": record_id,
+                    "spec": spec.key,
+                    "label": spec.label,
+                    "status": status,
+                    "task_id": task_id,
+                    **reset_for_resubmit(token, spec, record_id, "上游任务 progress=0 排队超时，清空旧 task 等待重新提交。", write),
                 }
             if is_running_upstream(body):
                 return {

@@ -61,6 +61,30 @@ class RepairStuckMediaTasksTests(unittest.TestCase):
         self.assertIn("恢复轮询", action["payload"]["参考图错误信息"])
         self.assertEqual(action["dispatcher_state_cleanup"]["removed_retry_keys"], ["key"])
 
+    def test_stale_zero_progress_task_resets_for_resubmit(self):
+        spec = repair.MEDIA_SPECS["multi_role_video"]
+        record = {
+            "record_id": "rec_video",
+            "fields": {
+                "视频生成状态": "失败",
+                "视频任务ID": "task_stale",
+                "视频错误信息": "OTU 视频 progress=0 timeout",
+            },
+        }
+
+        with patch.object(repair, "has_live_process", return_value=False), \
+             patch.object(repair, "query_task", return_value=({"status": "queued", "progress": 0, "created_at": 1000}, "")), \
+             patch.object(repair.time, "time", return_value=1701), \
+             patch.object(repair, "filter_fields", side_effect=lambda token, spec, payload: payload), \
+             patch.object(repair, "clear_dispatcher_state_for_record", return_value={"removed_retry_keys": [], "removed_dead_letter_keys": ["dead"]}):
+            action = repair.repair_record("token", spec, record, write=False)
+
+        self.assertEqual(action["action"], "reset_for_resubmit")
+        self.assertEqual(action["payload"]["视频生成状态"], "待生成")
+        self.assertEqual(action["payload"]["视频任务ID"], "")
+        self.assertIn("progress=0 排队超时", action["payload"]["视频错误信息"])
+        self.assertEqual(action["dispatcher_state_cleanup"]["removed_dead_letter_keys"], ["dead"])
+
     def test_existing_attachment_success_does_not_fake_local_path(self):
         spec = repair.MEDIA_SPECS["multi_role_reference"]
         record = {

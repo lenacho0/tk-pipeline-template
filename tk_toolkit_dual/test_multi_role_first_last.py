@@ -181,6 +181,30 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         updater.assert_not_called()
         advance.assert_not_called()
 
+    def test_auto_advance_keyframe_review_reapproves_regeneration_when_history_allows(self):
+        updates = []
+        history = json.dumps([{
+            "stage": "keyframe_image",
+            "previous_keyframe_review_status": "已触发下游",
+            "auto_reapprove_after_regen": True,
+        }])
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "auto_review_enabled", return_value=True) as enabled, \
+             patch.object(multi_role, "advance_keyframe_review", return_value={"status": "advanced"}) as advance, \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
+            result = multi_role.maybe_auto_advance_keyframe_review(
+                "token",
+                "keyframe_rec",
+                {"关键帧版本": 2, "历史生成记录JSON": history},
+                file_token="ft_keyframe",
+            )
+
+        self.assertEqual(result["status"], "auto_reapproved")
+        enabled.assert_called_once_with("token", stage_name=multi_role.AUTO_REVIEW_STAGE_NAME)
+        self.assertIn(("keyframe_rec", {"关键帧审核状态": "通过", "错误信息": ""}), updates)
+        advance.assert_called_once_with("keyframe_rec")
+
     def test_list_multi_role_records_for_parent_filters_parent_and_deprecated_records(self):
         response = {
             "data": {
@@ -579,6 +603,22 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         for item in records:
             self.assertEqual(item["fields"]["使用统一AI路由"], "是")
 
+    def test_video_clip_defaults_fill_video_channel(self):
+        records = [{"fields": {
+            "记录类型": multi_role.VIDEO_RECORD_TYPE,
+            "视频通道": "AIHubMix",
+            "视频生成模型": f"OTU / {multi_role.DEFAULT_OTU_MODEL}",
+        }}]
+
+        with patch.object(multi_role, "apply_task_default_to_fields", side_effect=lambda token, fields, **kwargs: dict(fields)) as apply_default:
+            multi_role.apply_child_default_models("token", records)
+
+        video_call = next(
+            call for call in apply_default.call_args_list
+            if call.kwargs.get("stage") == "视频片段生成默认"
+        )
+        self.assertEqual(video_call.kwargs["channel_field"], "视频通道")
+
     def test_normalize_plan_filters_product_asset_and_keeps_product_reference_flag(self):
         payload = sample_plan(role_count=3)
         payload["assets"].append({
@@ -791,6 +831,49 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         ]
         result = multi_role._find_keyframe_for_clip(records, "parent", "S01_FIRST")
         self.assertEqual(result["file_token"], "new_first")
+
+    def test_video_clip_waits_when_keyframe_dependency_is_not_ready(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 3,
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+        }
+        records = [
+            {"record_id": "kf_shared", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+                "关键帧审核状态": "已触发下游",
+                "关键帧图file_token": "ft_shared",
+            }},
+            {"record_id": "kf_tail", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S02_TAIL",
+                "关键帧审核状态": "待确认",
+                "关键帧图file_token": "",
+            }},
+        ]
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "apply_task_default_to_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "get_stage_config", side_effect=AssertionError("should wait before model config")), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+
+        self.assertEqual(result["status"], "waiting_dependency")
+        self.assertEqual(updates[0]["视频生成状态"], "不触发")
+        self.assertIn("等待视频依赖关键帧通过后自动触发", updates[0]["视频错误信息"])
 
     def test_keyframe_reference_collection_fails_when_reference_url_missing(self):
         fields = {"记录类型": "关键帧", "父任务记录ID": "parent", "需要产品参考图": "是", "参考资产ID列表": ""}
@@ -1007,6 +1090,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "视频提示词": "animate between frames",
             "视频版本": 2,
             "视频任务ID": "task_existing",
+            "视频生成状态": "生成中",
             "父任务记录ID": "parent",
             "首关键帧类型": "S01_FIRST",
             "尾关键帧类型": "S02_TAIL",
@@ -1062,6 +1146,68 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertIn("恢复轮询已有 OTU 视频任务", updates[0]["视频错误信息"])
         self.assertTrue(any(update.get("视频生成状态") == "成功" for update in updates))
 
+    def test_video_clip_resubmits_stale_task_id_when_not_running(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "视频提示词": "animate between frames",
+            "视频版本": 3,
+            "视频任务ID": "task_stale",
+            "视频生成状态": "待生成",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "目标时长秒": 5,
+        }
+        records = [
+            {
+                "record_id": "kf_first",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S01_FIRST",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_first",
+                },
+            },
+            {
+                "record_id": "kf_tail",
+                "fields": {
+                    "记录类型": "关键帧",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "关键帧类型": "S02_TAIL",
+                    "关键帧审核状态": "通过",
+                    "关键帧图file_token": "ft_tail",
+                },
+            },
+        ]
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "ensure_stage_work_dir", return_value=Path(tmp)), \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"})), \
+             patch.object(multi_role, "get_table_field_types", return_value={}), \
+             patch.object(multi_role, "submit_otu_video_task", return_value=("task_new", {"id": "task_new"})) as submit, \
+             patch.object(multi_role, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
+             patch.object(multi_role, "poll_otu_video_task", return_value={"url": "https://example.com/out.mp4"}) as poll, \
+             patch.object(multi_role, "extract_video_url", return_value="https://example.com/out.mp4"), \
+             patch.object(multi_role, "download_video"), \
+             patch.object(multi_role, "upload_video_to_feishu", return_value="file_token"), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_video_clip("clip_rec")
+
+        submit.assert_called_once()
+        poll.assert_called_once_with({"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"}, "task_new")
+        self.assertEqual(result["task_id"], "task_new")
+        self.assertTrue(any(update.get("视频任务ID") == "" for update in updates))
+        self.assertFalse(any(update.get("视频错误信息", "").startswith("恢复轮询已有") for update in updates))
+
     def test_video_clip_downloads_completed_task_content_when_result_has_no_url(self):
         fields = {
             "记录类型": "视频片段",
@@ -1069,6 +1215,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "视频提示词": "animate between frames",
             "视频版本": 1,
             "视频任务ID": "task_done",
+            "视频生成状态": "生成中",
             "视频生成模型": "OTU / veo_3_1-fast-fl",
             "父任务记录ID": "parent",
             "首关键帧类型": "S01_FIRST",
@@ -1536,6 +1683,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
             "视频提示词": "animate between frames",
             "视频版本": 1,
             "视频任务ID": "task_existing",
+            "视频生成状态": "生成中",
             "视频生成模型": "OTU / veo_3_1-fast-fl",
             "父任务记录ID": "parent",
             "首关键帧类型": "S01_FIRST",
@@ -1594,7 +1742,8 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         updates = []
         with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
              patch.object(multi_role, "get_feishu_token", return_value="token"), \
-             patch.object(multi_role, "safe_get_record", return_value={"记录类型": "关键帧", "记录状态": "有效", "关键帧版本": 2}), \
+             patch.object(multi_role, "safe_get_record", return_value={"记录类型": "关键帧", "记录状态": "有效", "关键帧版本": 2, "关键帧审核状态": "已触发下游"}), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, fields: fields):
             result = multi_role.request_keyframe_regeneration("rec_keyframe")
@@ -1603,6 +1752,121 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertEqual(updates[0]["关键帧生成状态"], "待生成")
         self.assertEqual(updates[0]["关键帧图"], [])
         self.assertEqual(updates[0]["关键帧任务ID"], "")
+        history = json.loads(updates[0]["历史生成记录JSON"])
+        self.assertEqual(history[-1]["previous_keyframe_review_status"], "已触发下游")
+        self.assertTrue(history[-1]["auto_reapprove_after_regen"])
+
+    def test_keyframe_regeneration_waits_when_dependency_is_regenerating(self):
+        fields = {
+            "记录类型": "关键帧",
+            "记录状态": "有效",
+            "父任务记录ID": "parent",
+            "关键帧类型": "S02_TAIL",
+            "依赖关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+            "关键帧版本": 1,
+            "关键帧审核状态": "已触发下游",
+        }
+        records = [
+            {"record_id": "kf_shared", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+                "关键帧审核状态": "待确认",
+                "关键帧操作": "重新生成关键帧图",
+                "关键帧图file_token": "",
+            }},
+        ]
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.request_keyframe_regeneration("kf_tail")
+
+        self.assertEqual(result["status"], "waiting_dependency")
+        self.assertEqual(updates[0]["关键帧生成状态"], "不触发")
+        self.assertIn("等待依赖关键帧通过后自动触发", updates[0]["关键帧错误信息"])
+
+    def test_keyframe_image_waits_when_dependency_is_not_ready(self):
+        fields = {
+            "记录类型": "关键帧",
+            "记录状态": "有效",
+            "关键帧提示词": "continue scene",
+            "关键帧版本": 2,
+            "父任务记录ID": "parent",
+            "依赖关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+            "参考资产ID列表": "",
+        }
+        records = [
+            {"record_id": "kf_shared", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+                "关键帧审核状态": "待确认",
+                "关键帧图file_token": "",
+            }},
+        ]
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", side_effect=[fields, {}]), \
+             patch.object(multi_role, "apply_task_default_to_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "collect_keyframe_references") as collect_refs, \
+             patch.object(multi_role, "get_stage_config", return_value=("cfg", {"api_base": "https://otuapi.com", "api_key": "key"})), \
+             patch.object(multi_role, "run_image_generation", side_effect=AssertionError("should wait before generation")), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.render_keyframe_image("kf_tail")
+
+        self.assertEqual(result["status"], "waiting_dependency")
+        self.assertEqual(updates[0]["关键帧生成状态"], "不触发")
+        self.assertIn("等待依赖关键帧通过后自动触发", updates[0]["关键帧错误信息"])
+        collect_refs.assert_not_called()
+
+    def test_video_regeneration_waits_when_keyframe_dependency_is_not_ready(self):
+        fields = {
+            "记录类型": "视频片段",
+            "记录状态": "有效",
+            "父任务记录ID": "parent",
+            "首关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+            "尾关键帧类型": "S02_TAIL",
+            "视频版本": 2,
+        }
+        records = [
+            {"record_id": "kf_shared", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S01_TAIL_SHARED_S02_FIRST",
+                "关键帧审核状态": "已触发下游",
+                "关键帧图file_token": "ft_shared",
+            }},
+            {"record_id": "kf_tail", "fields": {
+                "记录类型": "关键帧",
+                "记录状态": "有效",
+                "父任务记录ID": "parent",
+                "关键帧类型": "S02_TAIL",
+                "关键帧审核状态": "待确认",
+                "关键帧图file_token": "",
+            }},
+        ]
+        updates = []
+        with patch.object(multi_role, "TABLE_MULTI_ROLE_FIRST_LAST", "tbl_multi"), \
+             patch.object(multi_role, "get_feishu_token", return_value="token"), \
+             patch.object(multi_role, "safe_get_record", return_value=fields), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=records), \
+             patch.object(multi_role, "safe_update_record", side_effect=lambda token, table, rid, update: updates.append(update)), \
+             patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, update: update):
+            result = multi_role.request_video_regeneration("clip_rec")
+
+        self.assertEqual(result["status"], "waiting_dependency")
+        self.assertEqual(updates[0]["视频生成状态"], "不触发")
+        self.assertIn("等待视频依赖关键帧通过后自动触发", updates[0]["视频错误信息"])
 
     def test_reference_review_advances_ready_keyframes(self):
         records = [
