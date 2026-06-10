@@ -8,6 +8,8 @@
       "script_doc_tasks": "脚本文档任务表的 table_id",
       "script_doc_reference_assets": "脚本文档参考资产表的 table_id",
       "script_doc_shots": "脚本文档分镜生产表的 table_id",
+      "script_doc_unified": "003-脚本文档生产表的 table_id（新单表并行链路）",
+      "storyboard_video": "004-故事板视频生成表的 table_id",
       "nine_grid_video": "多图九宫格视频生成表的 table_id",
       "prompt_image_video": "008-图生视频生成表的 table_id",
       "first_last_video": "首尾帧视频生成表的 table_id",
@@ -117,6 +119,30 @@
         "max_concurrency": 3
       },
       "脚本文档分镜视频生成": {
+        "max_concurrency": 3
+      },
+      "003新表脚本文档解析拆分": {
+        "max_concurrency": 1
+      },
+      "003新表脚本文档参考底图生成": {
+        "max_concurrency": 3
+      },
+      "003新表脚本文档分镜图生成": {
+        "max_concurrency": 3
+      },
+      "003新表脚本文档尾帧图生成": {
+        "max_concurrency": 3
+      },
+      "003新表脚本文档分镜视频生成": {
+        "max_concurrency": 3
+      },
+      "004故事板文档解析": {
+        "max_concurrency": 3
+      },
+      "004故事板图片生成": {
+        "max_concurrency": 3
+      },
+      "004故事板视频生成": {
         "max_concurrency": 3
       }
     }

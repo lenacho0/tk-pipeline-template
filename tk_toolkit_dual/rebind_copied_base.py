@@ -26,6 +26,7 @@ TABLE_ALIASES: Dict[str, List[str]] = {
     "script_doc_tasks": ["003-1脚本文档-任务表", "脚本文档-任务表"],
     "script_doc_reference_assets": ["003-2脚本文档-参考资产表", "脚本文档-参考资产表"],
     "script_doc_shots": ["003-3脚本文档-分镜生产表", "脚本文档-分镜生产表"],
+    "script_doc_unified": ["003-脚本文档生产表"],
     "first_last_video": ["002-首尾帧视频生成表", "首尾帧视频生成表"],
     "multi_role_first_last": ["001-多角色首尾帧生成表", "多角色首尾帧生成表"],
     "nine_grid_video": ["005-多图九宫格视频生成表", "多图九宫格视频生成表"],

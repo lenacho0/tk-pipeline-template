@@ -42,6 +42,7 @@ class RebindCopiedBaseTests(unittest.TestCase):
             "003-1脚本文档-任务表": "tbl_doc_tasks",
             "003-2脚本文档-参考资产表": "tbl_doc_assets",
             "003-3脚本文档-分镜生产表": "tbl_doc_shots",
+            "003-脚本文档生产表": "tbl_doc_unified",
             "002-首尾帧视频生成表": "tbl_first_last",
             "001-多角色首尾帧生成表": "tbl_multi_role",
             "005-多图九宫格视频生成表": "tbl_nine_grid",
@@ -59,6 +60,7 @@ class RebindCopiedBaseTests(unittest.TestCase):
         self.assertTrue(result["ready"])
         self.assertEqual(result["config"]["feishu"]["tables"]["config"], "tbl_config")
         self.assertEqual(result["config"]["feishu"]["tables"]["script_doc_tasks"], "tbl_doc_tasks")
+        self.assertEqual(result["config"]["feishu"]["tables"]["script_doc_unified"], "tbl_doc_unified")
         self.assertEqual(result["config"]["feishu"]["tables"]["nine_grid_video"], "tbl_nine_grid")
         self.assertEqual(result["config"]["feishu"]["tables"]["video_edit"], "tbl_video_edit")
         self.assertEqual(result["config"]["config_records"]["main_image_otu"], "rec_image_otu")

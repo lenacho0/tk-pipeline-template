@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tk_model_config_center as center
 import common
+import repair_script_doc_shot_video_otu_defaults as repair_video_defaults
 
 
 def rec(record_id, **fields):
@@ -194,6 +195,54 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(fields["画面尺寸"], "720x1280")
         self.assertEqual(fields["画面比例"], "9:16")
         self.assertEqual(fields["AI参数JSON"], '{"size":"720x1280"}')
+
+    def test_nine_grid_defaults_keep_legacy_name_aliases(self):
+        rows = [
+            rec("runtime_default", **{
+                "配置类型": "任务默认",
+                "应用表格": "005-多图九宫格视频生成表",
+                "任务环节": "九宫格图片生成默认",
+                "环节": "多图九宫格图片生成",
+                "模型名称": "OTU / gpt-image-2",
+                "供应商": "OTU",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "AI参数JSON": '{"size":"720x1280"}',
+                "生效来源": "线上配置",
+                "状态": "启用",
+            }),
+            rec("runtime_stage", **{
+                "配置类型": "运行环节",
+                "环节": "多图九宫格图片生成",
+                "模型名称": "gpt-image-2",
+                "供应商": "OTU",
+                "API Key": "sk-image",
+                "API 代理地址": "https://otuapi.com",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "生效来源": "线上配置",
+                "状态": "启用",
+            }),
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            default_fields = center.load_task_default_fields(
+                "real-token",
+                "005-多图宫格视频生成表",
+                "宫格图片生成默认",
+            )
+            record_id, cfg = center.load_stage_config_fields(
+                "real-token",
+                "多图宫格图片生成",
+                default_model="gpt-image-2",
+                default_api_base="https://fallback.example",
+            )
+
+        self.assertEqual(default_fields["默认模型显示名称"], "OTU / gpt-image-2")
+        self.assertEqual(default_fields["画面尺寸"], "720x1280")
+        self.assertEqual(record_id, "runtime_stage")
+        self.assertEqual(cfg["provider"], "OTU")
+        self.assertEqual(cfg["api_key"], "sk-image")
 
     def test_load_task_default_fields_ignores_code_default_rows(self):
         rows = [
@@ -472,13 +521,56 @@ class ModelConfigCenterTests(unittest.TestCase):
         default = {"默认模型显示名称": "OTU / veo_3_1-fast-fl"}
 
         patch = center.default_patch_for_fields(
-            {"视频生成模型": "默认（配置表）"},
+            {"视频生成模型": "OTU / 默认（配置表）"},
             default,
             model_field="视频生成模型",
             placeholder_values=("默认（配置表）",),
         )
 
         self.assertEqual(patch, {"视频生成模型": "OTU / veo_3_1-fast-fl"})
+
+    def test_video_defaults_can_fill_channel_from_default_provider(self):
+        default = {
+            "默认供应商": "OTU",
+            "默认模型显示名称": "OTU / veo_3_1-fast-fl",
+        }
+
+        patch = center.default_patch_for_fields(
+            {"视频通道": "", "视频生成模型": "默认（配置表）"},
+            default,
+            channel_field="视频通道",
+            model_field="视频生成模型",
+            placeholder_values=("默认（配置表）",),
+        )
+
+        self.assertEqual(patch, {
+            "视频通道": "OTU",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
+        })
+
+    def test_unified_repair_script_matches_prefixed_otu_default_placeholder(self):
+        self.assertTrue(repair_video_defaults.is_candidate({
+            "视频生成状态": "待生成",
+            "视频通道": "OTU",
+            "视频生成模型": "OTU / 默认（配置表）",
+        }))
+        self.assertFalse(repair_video_defaults.is_candidate({
+            "视频生成状态": "",
+            "视频通道": "",
+            "视频生成模型": "",
+        }))
+
+    def test_unified_repair_script_covers_all_video_channel_tables(self):
+        specs = {
+            (item.table_key, item.default_stage, item.table_name)
+            for item in repair_video_defaults.TABLE_REPAIR_SPECS
+        }
+
+        self.assertEqual(specs, {
+            ("first_last_video", "首尾帧视频生成默认", "002-首尾帧视频生成表"),
+            ("multi_role_first_last", "视频片段生成默认", "001-多角色首尾帧生成表"),
+            ("script_doc_shots", "分镜视频生成默认", "003-3脚本文档-分镜生产表"),
+        })
 
     def test_runtime_defaults_keep_script_doc_video_and_video_edit_slots(self):
         specs = {(item.table_key, item.stage): item for item in center.RUNTIME_DEFAULT_SPECS}
@@ -513,9 +605,15 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertIn("不触发", video_backfill.active_statuses)
 
         script_video = specs[("script_doc_shots", "分镜视频生成默认")]
-        self.assertEqual(script_video.source_config_stage, "分镜视频生成-Veo")
+        self.assertEqual(script_video.source_config_stage, "分镜视频生成-OTU")
         self.assertEqual(script_video.slot_name, "视频")
         self.assertIn(("script_doc_shots", "分镜视频生成默认"), backfill)
+        for key, stage in [
+            ("multi_role_first_last", "视频片段生成默认"),
+            ("first_last_video", "首尾帧视频生成默认"),
+            ("script_doc_shots", "分镜视频生成默认"),
+        ]:
+            self.assertEqual(backfill[(key, stage)].channel_field, "视频通道")
 
         video_edit = specs[("video_edit", "视频编辑默认")]
         self.assertEqual(video_edit.source_config_stage, center.VIDEO_EDIT_SOURCE_CONFIG_STAGE)
@@ -534,9 +632,64 @@ class ModelConfigCenterTests(unittest.TestCase):
         }
 
         self.assertEqual(by_stage["图片生成默认"]["调度环节名"], "008图生视频图片生成")
-        self.assertEqual(by_stage["图片生成默认"]["环节最大并发"], "10")
+        self.assertEqual(by_stage["图片生成默认"]["环节最大并发"], 10)
         self.assertEqual(by_stage["图生视频生成默认"]["调度环节名"], "008图生视频视频生成")
-        self.assertEqual(by_stage["图生视频生成默认"]["环节最大并发"], "10")
+        self.assertEqual(by_stage["图生视频生成默认"]["环节最大并发"], 10)
+
+    def test_media_regeneration_concurrency_rows_cover_dispatcher_entries(self):
+        rows = center.build_media_regeneration_concurrency_rows()
+        by_stage = {item["调度环节名"]: item for item in rows}
+
+        self.assertEqual(set(by_stage), {
+            "多图宫格参考图重生成",
+            "首尾帧首帧图重生成",
+            "首尾帧尾帧图重生成",
+            "首尾帧视频重生成",
+            "多角色参考图重生成",
+            "多角色关键帧重生成",
+            "多角色视频片段重生成",
+        })
+        self.assertNotIn("首尾帧场景重新拆分", by_stage)
+        for stage, row in by_stage.items():
+            self.assertEqual(row["配置类型"], "运行环节")
+            self.assertEqual(row["环节"], stage)
+            self.assertEqual(row["环节最大并发"], 20)
+            self.assertEqual(row["状态"], "启用")
+            self.assertEqual(row["生效来源"], "线上配置")
+            self.assertIn("dispatcher-only media regeneration entry", row["备注"])
+
+    def test_run_media_regeneration_concurrency_upsert_uses_dispatch_stage_key(self):
+        upserts = []
+
+        with mock.patch.object(center, "get_feishu_token", return_value="token"), \
+             mock.patch.object(center, "upsert_rows", side_effect=lambda token, base, table, rows, key_fields, dry_run: upserts.append((table, list(rows), tuple(key_fields), dry_run)) or [{"action": "dry_run_create"}]):
+            result = center.run_media_regeneration_concurrency_upsert(write=False)
+
+        self.assertEqual(result["mode"], "dry_run")
+        self.assertEqual(result["media_regeneration_concurrency_records"], [{"action": "dry_run_create"}])
+        self.assertEqual(len(upserts), 1)
+        self.assertEqual(upserts[0][0], center.TABLE_CONFIG)
+        self.assertEqual(upserts[0][2], ("配置类型", "调度环节名"))
+        self.assertTrue(upserts[0][3])
+        self.assertEqual(len(upserts[0][1]), 7)
+
+    def test_storyboard_image_default_uses_horizontal_16_9_without_affecting_008(self):
+        rows = center.build_task_default_rows([
+            rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2-2K", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
+            rec("vid", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
+        ])
+        by_table_stage = {
+            (item["应用表格"], item["任务环节"]): item
+            for item in rows
+        }
+
+        storyboard_image = by_table_stage[(center.TASK_TABLES["storyboard_video"], "图片生成默认")]
+        self.assertEqual(storyboard_image["画面尺寸"], "1280x720")
+        self.assertEqual(storyboard_image["画面比例"], "16:9")
+
+        prompt_image = by_table_stage[(center.TASK_TABLES["prompt_image_video"], "图片生成默认")]
+        self.assertEqual(prompt_image["画面尺寸"], "720x1280")
+        self.assertEqual(prompt_image["画面比例"], "9:16")
 
     def test_run_migration_writes_catalog_and_defaults_to_single_config_table(self):
         records = [

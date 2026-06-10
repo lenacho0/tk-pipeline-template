@@ -18,6 +18,8 @@ from common import (
     TABLE_MULTI_ROLE_FIRST_LAST,
     TABLE_NINE_GRID_VIDEO,
     TABLE_PROMPT_IMAGE_VIDEO,
+    TABLE_SCRIPT_DOC_UNIFIED,
+    TABLE_STORYBOARD_VIDEO,
     TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     TABLE_SCRIPT_DOC_SHOTS,
     TABLE_VIDEO_EDIT,
@@ -80,16 +82,16 @@ PRODUCTION_RUNTIME_STATUSES = {"启用", "测试中", ""}
 TEXT_STAGES = {
     "脚本文档结构化拆分-Gemini",
     "多角色首尾帧解析-Gemini",
-    "多图九宫格方案生成",
+    "多图宫格方案生成",
 }
 IMAGE_STAGES = {
     "图片生成-OTU",
-    "多图九宫格图片生成",
+    "多图宫格图片生成",
 }
 VIDEO_STAGES = {
     "分镜视频生成-Veo",
     "分镜视频生成-OTU",
-    "多图九宫格视频生成",
+    "多图宫格视频生成",
 }
 VIDEO_EDIT_STAGES = {"视频编辑-HappyHorse"}
 VOICE_STAGES = {"语音合成-MiniMax"}
@@ -101,7 +103,9 @@ TASK_TABLES = {
     "script_doc_tasks": "003-1脚本文档-任务表",
     "script_doc_reference_assets": "003-2脚本文档-参考资产表",
     "script_doc_shots": "003-3脚本文档-分镜生产表",
-    "nine_grid_video": "005-多图九宫格视频生成表",
+    "script_doc_unified": "003-脚本文档生产表",
+    "storyboard_video": "004-故事板视频生成表",
+    "nine_grid_video": "005-多图宫格视频生成表",
     "video_edit": "006-视频编辑任务表",
     "prompt_image_video": "008-图生视频生成表",
 }
@@ -115,6 +119,8 @@ class RuntimeDefaultSpec:
     slot_name: str = ""
     dispatch_stage_name: str = ""
     max_concurrency: str = ""
+    override_size: str = ""
+    override_aspect_ratio: str = ""
 
 
 RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
@@ -130,11 +136,18 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("script_doc_shots", "分镜图生成默认", "图片生成-OTU", "分镜图"),
     RuntimeDefaultSpec("script_doc_shots", "尾帧图生成默认", "图片生成-OTU", "尾帧图"),
     RuntimeDefaultSpec("script_doc_shots", "口播音频生成默认", "语音合成-MiniMax", "口播音频"),
-    RuntimeDefaultSpec("script_doc_shots", "分镜视频生成默认", "分镜视频生成-Veo", "视频"),
-    RuntimeDefaultSpec("nine_grid_video", "九宫格方案生成默认", "多图九宫格方案生成"),
-    RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图九宫格图片生成", "参考图"),
-    RuntimeDefaultSpec("nine_grid_video", "九宫格图片生成默认", "多图九宫格图片生成", "图片"),
-    RuntimeDefaultSpec("nine_grid_video", "九宫格视频生成默认", "多图九宫格视频生成", "视频"),
+    RuntimeDefaultSpec("script_doc_shots", "分镜视频生成默认", "分镜视频生成-OTU", "视频"),
+    RuntimeDefaultSpec("script_doc_unified", "脚本文档结构化拆分默认", "脚本文档结构化拆分-Gemini", "", "003新表脚本文档解析拆分", "1"),
+    RuntimeDefaultSpec("script_doc_unified", "参考底图生成默认", "图片生成-OTU", "参考图", "003新表脚本文档参考底图生成", "3"),
+    RuntimeDefaultSpec("script_doc_unified", "分镜图生成默认", "图片生成-OTU", "分镜图", "003新表脚本文档分镜图生成", "3"),
+    RuntimeDefaultSpec("script_doc_unified", "尾帧图生成默认", "图片生成-OTU", "尾帧图", "003新表脚本文档尾帧图生成", "3"),
+    RuntimeDefaultSpec("script_doc_unified", "分镜视频生成默认", "分镜视频生成-OTU", "视频", "003新表脚本文档分镜视频生成", "3"),
+    RuntimeDefaultSpec("storyboard_video", "图片生成默认", "图片生成-OTU", "图片", "004故事板图片生成", "10", "1280x720", "16:9"),
+    RuntimeDefaultSpec("storyboard_video", "图生视频生成默认", "分镜视频生成-OTU", "视频", "004故事板视频生成", "10"),
+    RuntimeDefaultSpec("nine_grid_video", "宫格方案生成默认", "多图宫格方案生成"),
+    RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图宫格图片生成", "参考图"),
+    RuntimeDefaultSpec("nine_grid_video", "宫格图片生成默认", "多图宫格图片生成", "图片"),
+    RuntimeDefaultSpec("nine_grid_video", "宫格视频生成默认", "多图宫格视频生成", "视频"),
     RuntimeDefaultSpec("video_edit", "视频编辑默认", VIDEO_EDIT_SOURCE_CONFIG_STAGE, "视频编辑"),
     RuntimeDefaultSpec("prompt_image_video", "图片生成默认", "图片生成-OTU", "图片", "008图生视频图片生成", "10"),
     RuntimeDefaultSpec("prompt_image_video", "图生视频生成默认", "分镜视频生成-OTU", "视频", "008图生视频视频生成", "10"),
@@ -161,6 +174,7 @@ class RuntimeDefaultBackfillSpec:
     params_field: str = ""
     placeholder_values: Tuple[str, ...] = ()
     active_statuses: Tuple[str, ...] = ()
+    channel_field: str = ""
 
 
 TABLE_IDS_BY_KEY: Dict[str, str] = {
@@ -168,6 +182,8 @@ TABLE_IDS_BY_KEY: Dict[str, str] = {
     "first_last_video": TABLE_FIRST_LAST_VIDEO,
     "script_doc_reference_assets": TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
     "script_doc_shots": TABLE_SCRIPT_DOC_SHOTS,
+    "script_doc_unified": TABLE_SCRIPT_DOC_UNIFIED,
+    "storyboard_video": TABLE_STORYBOARD_VIDEO,
     "nine_grid_video": TABLE_NINE_GRID_VIDEO,
     "video_edit": TABLE_VIDEO_EDIT,
     "prompt_image_video": TABLE_PROMPT_IMAGE_VIDEO,
@@ -180,21 +196,49 @@ ACTIVE_BACKFILL_STATUSES = {"待生成", "生成中", "成功"}
 RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
     RuntimeDefaultBackfillSpec("multi_role_first_last", TASK_TABLES["multi_role_first_last"], "参考图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
     RuntimeDefaultBackfillSpec("multi_role_first_last", TASK_TABLES["multi_role_first_last"], "关键帧生成默认", "关键帧生成状态", "关键帧AI模型", "关键帧画面尺寸", "关键帧画面比例", "关键帧AI参数JSON"),
-    RuntimeDefaultBackfillSpec("multi_role_first_last", TASK_TABLES["multi_role_first_last"], "视频片段生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
+    RuntimeDefaultBackfillSpec("multi_role_first_last", TASK_TABLES["multi_role_first_last"], "视频片段生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", channel_field="视频通道"),
     RuntimeDefaultBackfillSpec("first_last_video", TASK_TABLES["first_last_video"], "首帧图生成默认", "首帧图生成状态", "首帧图AI模型", "首帧图画面尺寸", "首帧图画面比例", "首帧图AI参数JSON"),
     RuntimeDefaultBackfillSpec("first_last_video", TASK_TABLES["first_last_video"], "尾帧图生成默认", "尾帧图生成状态", "尾帧图AI模型", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图AI参数JSON"),
-    RuntimeDefaultBackfillSpec("first_last_video", TASK_TABLES["first_last_video"], "首尾帧视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
+    RuntimeDefaultBackfillSpec("first_last_video", TASK_TABLES["first_last_video"], "首尾帧视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", channel_field="视频通道"),
     RuntimeDefaultBackfillSpec("script_doc_reference_assets", TASK_TABLES["script_doc_reference_assets"], "参考底图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
     RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "分镜图生成默认", "分镜图生成状态", "分镜图AI模型", "分镜图画面尺寸", "分镜图画面比例", "分镜图AI参数JSON"),
     RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "尾帧图生成默认", "尾帧图生成状态", "尾帧图AI模型", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图AI参数JSON"),
-    RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "分镜视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
+    RuntimeDefaultBackfillSpec("script_doc_shots", TASK_TABLES["script_doc_shots"], "分镜视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", channel_field="视频通道"),
+    RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "参考底图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "分镜图生成默认", "分镜图生成状态", "分镜图AI模型", "分镜图画面尺寸", "分镜图画面比例", "分镜图AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "尾帧图生成默认", "尾帧图生成状态", "尾帧图AI模型", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "分镜视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败"), channel_field="视频通道"),
+    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "图生视频生成默认", "视频生成状态", "视频AI模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "参考图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
-    RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
-    RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "九宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
+    RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
+    RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
     RuntimeDefaultBackfillSpec("video_edit", TASK_TABLES["video_edit"], "视频编辑默认", "编辑状态", "", "输出分辨率"),
     RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
     RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图生视频生成默认", "视频生成状态", "视频AI模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
 )
+
+MEDIA_REGENERATION_DISPATCH_STAGES: Tuple[str, ...] = (
+    "多图宫格参考图重生成",
+    "首尾帧首帧图重生成",
+    "首尾帧尾帧图重生成",
+    "首尾帧视频重生成",
+    "多角色参考图重生成",
+    "多角色关键帧重生成",
+    "多角色视频片段重生成",
+)
+MEDIA_REGENERATION_CONCURRENCY = 20
+
+ALIASES_BY_CANONICAL = {
+    "005-多图宫格视频生成表": ("005-多图九宫格视频生成表",),
+    "多图宫格方案生成": ("多图九宫格方案生成",),
+    "多图宫格图片生成": ("多图九宫格图片生成",),
+    "多图宫格视频生成": ("多图九宫格视频生成",),
+    "宫格方案生成默认": ("九宫格方案生成默认",),
+    "宫格图片生成默认": ("九宫格图片生成默认",),
+    "宫格视频生成默认": ("九宫格视频生成默认",),
+    "多图宫格参考图重生成": ("多图九宫格参考图重生成",),
+}
 
 
 def opt(name: str, hue: str = "Blue", lightness: str = "Lighter") -> Dict[str, str]:
@@ -459,7 +503,15 @@ def infer_provider(stage: str, api_base: str, model: str, explicit: str = "") ->
     if " / " in model:
         return model.split(" / ", 1)[0].strip()
     lower_base = (api_base or "").lower()
-    if "otuapi" in lower_base or stage in {"图片生成-OTU", "分镜视频生成-OTU", "多图九宫格图片生成", "多图九宫格视频生成"}:
+    otu_stages = {
+        "图片生成-OTU",
+        "分镜视频生成-OTU",
+        "多图宫格图片生成",
+        "多图宫格视频生成",
+        "多图九宫格图片生成",
+        "多图九宫格视频生成",
+    }
+    if "otuapi" in lower_base or stage in otu_stages:
         return "OTU"
     if "aitgenne" in lower_base or stage in {"语音合成-MiniMax", "视频编辑-HappyHorse"}:
         return "Aitgenne"
@@ -510,13 +562,22 @@ def model_display_from_fields(fields: Mapping[str, Any]) -> str:
 
 
 def runtime_stage_record_matches(fields: Mapping[str, Any], stage: str) -> bool:
-    if stage_text(fields) != stage:
+    if stage_text(fields) not in alias_candidates(stage):
         return False
     row_type = config_type(fields)
     return row_type in {"", CONFIG_TYPE_RUNTIME_STAGE}
 
 
 def task_default_record_matches(fields: Mapping[str, Any], app_table: str, stage: str) -> bool:
+    if config_type(fields) != CONFIG_TYPE_TASK_DEFAULT:
+        return False
+    if not cell_matches_any(fields.get("应用表格"), app_table):
+        return False
+    stages = set(alias_candidates(stage))
+    return text(fields, TASK_STAGE_FIELD) in stages or text(fields, "环节") in stages
+
+
+def task_default_record_exact_matches(fields: Mapping[str, Any], app_table: str, stage: str) -> bool:
     if config_type(fields) != CONFIG_TYPE_TASK_DEFAULT:
         return False
     if not cell_matches(fields.get("应用表格"), app_table):
@@ -656,11 +717,19 @@ def source_records_by_stage(records: Sequence[Mapping[str, Any]]) -> Dict[str, D
     return result
 
 
+def source_record_for_stage(sources: Mapping[str, Dict[str, Any]], stage: str) -> Optional[Dict[str, Any]]:
+    for candidate in alias_candidates(stage):
+        source = sources.get(candidate)
+        if source:
+            return source
+    return None
+
+
 def build_task_default_rows(records: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     sources = source_records_by_stage(records)
     rows: List[Dict[str, Any]] = []
     for spec in RUNTIME_DEFAULT_SPECS:
-        source = sources.get(spec.source_config_stage)
+        source = source_record_for_stage(sources, spec.source_config_stage)
         if not source:
             continue
         fields = source["fields"]
@@ -679,16 +748,31 @@ def build_task_default_rows(records: Sequence[Mapping[str, Any]]) -> List[Dict[s
             "显示名称": model_display,
             "默认供应商": provider,
             "默认模型显示名称": model_display,
-            "画面尺寸": text(fields, "画面尺寸"),
-            "画面比例": text(fields, "画面比例"),
+            "画面尺寸": spec.override_size or text(fields, "画面尺寸"),
+            "画面比例": spec.override_aspect_ratio or text(fields, "画面比例"),
             "AI参数JSON": text(fields, "AI参数JSON"),
             "系统提示词": text(fields, "提示词"),
             "调度环节名": spec.dispatch_stage_name,
-            "环节最大并发": spec.max_concurrency,
+            "环节最大并发": int(spec.max_concurrency) if str(spec.max_concurrency).isdigit() else spec.max_concurrency,
             "状态": "启用" if text(fields, "状态") != "停用" else "停用",
             "备注": f"source_config={spec.source_config_stage}; source_record_id={source['record_id']}; slot={spec.slot_name or 'stage'}",
         })
     return rows
+
+
+def build_media_regeneration_concurrency_rows() -> List[Dict[str, Any]]:
+    return [
+        {
+            "配置类型": CONFIG_TYPE_RUNTIME_STAGE,
+            "环节": stage,
+            "调度环节名": stage,
+            "生效来源": SOURCE_MODE_ONLINE,
+            "环节最大并发": MEDIA_REGENERATION_CONCURRENCY,
+            "状态": "启用",
+            "备注": "dispatcher-only media regeneration entry, no model defaults",
+        }
+        for stage in MEDIA_REGENERATION_DISPATCH_STAGES
+    ]
 
 
 def archive_legacy_preset_updates(records: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
@@ -754,6 +838,7 @@ def default_patch_for_fields(
     fields: Mapping[str, Any],
     default_fields: Mapping[str, Any],
     *,
+    channel_field: str = "",
     model_field: str = "",
     size_field: str = "",
     ratio_field: str = "",
@@ -763,6 +848,15 @@ def default_patch_for_fields(
 ) -> Dict[str, Any]:
     patch: Dict[str, Any] = {}
     placeholders = {item.strip() for item in placeholder_values if item.strip()}
+
+    def is_placeholder_value(value: str) -> bool:
+        if value in placeholders:
+            return True
+        if " / " in value:
+            _, rest = value.split(" / ", 1)
+            return rest.strip() in placeholders
+        return False
+
     mapping = {
         model_field: default_fields.get("默认模型显示名称"),
         size_field: default_fields.get("画面尺寸"),
@@ -774,8 +868,18 @@ def default_patch_for_fields(
         if not name:
             continue
         current = extract_text(fields.get(name)).strip()
-        if value and (not current or current in placeholders):
+        if value and (not current or is_placeholder_value(current)):
             patch[name] = value
+    if channel_field:
+        provider = text(default_fields, "默认供应商") or text(default_fields, "供应商")
+        current_channel = extract_text(fields.get(channel_field)).strip()
+        model_is_being_defaulted = bool(model_field and model_field in patch)
+        if provider and (
+            not current_channel
+            or is_placeholder_value(current_channel)
+            or (provider == "OTU" and current_channel == "AIHubMix" and model_is_being_defaulted)
+        ):
+            patch[channel_field] = provider
     return patch
 
 
@@ -803,6 +907,24 @@ def cell_matches(value: Any, expected: str) -> bool:
     return expected in cell_texts(value)
 
 
+def alias_candidates(value: str) -> Tuple[str, ...]:
+    value = str(value or "").strip()
+    if not value:
+        return tuple()
+    aliases = list(ALIASES_BY_CANONICAL.get(value, ()))
+    for canonical, canonical_aliases in ALIASES_BY_CANONICAL.items():
+        if value in canonical_aliases:
+            aliases.append(canonical)
+            aliases.extend(item for item in canonical_aliases if item != value)
+            break
+    return tuple(dict.fromkeys([value, *aliases]))
+
+
+def cell_matches_any(value: Any, expected: str) -> bool:
+    cells = set(cell_texts(value))
+    return any(item in cells for item in alias_candidates(expected))
+
+
 _TABLE_ID_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
 _TASK_DEFAULT_CACHE: Dict[Tuple[str, str, str], Optional[Dict[str, Any]]] = {}
 _STAGE_CONFIG_CACHE: Dict[Tuple[str, str, str, str, str, str], Tuple[str, Dict[str, str]]] = {}
@@ -828,7 +950,8 @@ def load_task_default_fields(token: str, app_table: str, stage: str) -> Optional
         cached = _TASK_DEFAULT_CACHE[cache_key]
         return dict(cached) if cached else None
 
-    config_matches: List[Dict[str, Any]] = []
+    exact_matches: List[Dict[str, Any]] = []
+    alias_matches: List[Dict[str, Any]] = []
     code_default_seen = False
     for record in safe_list_records(token, TABLE_CONFIG):
         fields = record.get("fields") or {}
@@ -839,7 +962,9 @@ def load_task_default_fields(token: str, app_table: str, stage: str) -> Optional
         if not is_online_config(fields):
             code_default_seen = True
             continue
-        config_matches.append(normalize_task_default_fields(fields))
+        target = exact_matches if task_default_record_exact_matches(fields, app_table, stage) else alias_matches
+        target.append(normalize_task_default_fields(fields))
+    config_matches = exact_matches or alias_matches
     if len(config_matches) == 1:
         _TASK_DEFAULT_CACHE[cache_key] = dict(config_matches[0])
         return dict(config_matches[0])
@@ -866,14 +991,17 @@ def load_stage_config_fields(
     if cache_key in _STAGE_CONFIG_CACHE:
         record_id, cached = _STAGE_CONFIG_CACHE[cache_key]
         return record_id, dict(cached)
-    matches: List[Tuple[str, Dict[str, Any]]] = []
+    exact_matches: List[Tuple[str, Dict[str, Any]]] = []
+    alias_matches: List[Tuple[str, Dict[str, Any]]] = []
     for record in safe_list_records(token, TABLE_CONFIG):
         fields = record.get("fields") or {}
         if not runtime_stage_record_matches(fields, stage):
             continue
         if not is_active_runtime_status(fields):
             continue
-        matches.append((str(record.get("record_id") or record.get("id") or ""), fields))
+        target = exact_matches if stage_text(fields) == stage else alias_matches
+        target.append((str(record.get("record_id") or record.get("id") or ""), fields))
+    matches = exact_matches or alias_matches
     if len(matches) > 1:
         online = [item for item in matches if is_online_config(item[1])]
         matches = online or matches
@@ -916,6 +1044,7 @@ def apply_task_default_to_record(
     ratio_field: str = "",
     params_field: str = "",
     prompt_field: str = "",
+    channel_field: str = "",
     placeholder_values: Sequence[str] = (),
     update_fn: Callable[[str, str, str, Dict[str, Any]], Any] = safe_update_record,
     field_filter: Optional[Callable[[str, str, Mapping[str, Any]], Dict[str, Any]]] = None,
@@ -927,6 +1056,7 @@ def apply_task_default_to_record(
         fields,
         default_fields,
         model_field=model_field,
+        channel_field=channel_field,
         size_field=size_field,
         ratio_field=ratio_field,
         params_field=params_field,
@@ -957,6 +1087,7 @@ def apply_task_default_to_fields(
     ratio_field: str = "",
     params_field: str = "",
     prompt_field: str = "",
+    channel_field: str = "",
     placeholder_values: Sequence[str] = (),
 ) -> Dict[str, Any]:
     default_fields = load_task_default_fields(token, app_table, stage)
@@ -966,6 +1097,7 @@ def apply_task_default_to_fields(
         fields,
         default_fields,
         model_field=model_field,
+        channel_field=channel_field,
         size_field=size_field,
         ratio_field=ratio_field,
         params_field=params_field,
@@ -1045,6 +1177,7 @@ def backfill_runtime_defaults(
             patch = default_patch_for_fields(
                 fields,
                 default_fields,
+                channel_field=spec.channel_field,
                 model_field=spec.model_field,
                 size_field=spec.size_field,
                 ratio_field=spec.ratio_field,
@@ -1201,6 +1334,25 @@ def apply_legacy_archive(token: str, updates: Sequence[Mapping[str, Any]], *, dr
     return results
 
 
+def run_media_regeneration_concurrency_upsert(*, write: bool) -> Dict[str, Any]:
+    token = get_feishu_token()
+    dry_run = not write
+    rows = build_media_regeneration_concurrency_rows()
+    results = upsert_rows(
+        token,
+        APP_TOKEN,
+        TABLE_CONFIG,
+        rows,
+        key_fields=[CONFIG_TYPE_FIELD, "调度环节名"],
+        dry_run=dry_run,
+    )
+    return {
+        "mode": "write" if write else "dry_run",
+        "config_table": {"table_name": "初始化-模型与API配置", "table_id": TABLE_CONFIG},
+        "media_regeneration_concurrency_records": results,
+    }
+
+
 def run_migration(*, write: bool, backup_path: Path = BACKUP_PATH) -> Dict[str, Any]:
     token = get_feishu_token()
     records = safe_list_records(token, TABLE_CONFIG)
@@ -1308,8 +1460,11 @@ def main() -> int:
     parser.add_argument("--backup-path", default=str(BACKUP_PATH), help="脱敏备份输出路径")
     parser.add_argument("--audit-runtime-default-backfill", action="store_true", help="审计任务表默认配置字段缺失情况，不写回")
     parser.add_argument("--backfill-runtime-defaults", action="store_true", help="回填任务表缺失的运行默认配置字段；需配合 --write 才实际写入")
+    parser.add_argument("--upsert-media-regeneration-concurrency", action="store_true", help="补齐媒体重生成 dispatcher 入口并发配置；需配合 --write 才实际写入")
     args = parser.parse_args()
-    if args.audit_runtime_default_backfill or args.backfill_runtime_defaults:
+    if args.upsert_media_regeneration_concurrency:
+        result = run_media_regeneration_concurrency_upsert(write=args.write)
+    elif args.audit_runtime_default_backfill or args.backfill_runtime_defaults:
         result = backfill_runtime_defaults(write=args.write if args.backfill_runtime_defaults else False)
     else:
         result = run_migration(write=args.write, backup_path=Path(args.backup_path))
