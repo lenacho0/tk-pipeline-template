@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -7,10 +8,48 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ai_routing
 import ai_model_catalog
+import common
 from common import extract_text
 
 
 class UnifiedAiRoutingTests(unittest.TestCase):
+    def test_aitgenne_request_disables_environment_proxy(self):
+        class FakeSession:
+            instances = []
+
+            def __init__(self):
+                self.trust_env = True
+                self.request_args = None
+                FakeSession.instances.append(self)
+
+            def request(self, *args, **kwargs):
+                self.request_args = (args, kwargs)
+                response = Mock()
+                response.status_code = 200
+                return response
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def close(self):
+                pass
+
+        with patch.dict(os.environ, {
+            "HTTPS_PROXY": "http://127.0.0.1:10808",
+            "HTTP_PROXY": "http://127.0.0.1:10808",
+            "ALL_PROXY": "socks5://127.0.0.1:10808",
+        }), patch.object(common.requests, "Session", FakeSession):
+            response = common.aitgenne_request("GET", "https://api.aitgenne.com/v1/video/query?id=task_1", timeout=45)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(FakeSession.instances), 1)
+        session = FakeSession.instances[0]
+        self.assertFalse(session.trust_env)
+        self.assertEqual(session.request_args[0][0], "GET")
+
     def test_extract_text_handles_empty_link_display_text(self):
         self.assertEqual(extract_text([{"record_ids": ["rec1"], "text": None}]), "")
 
@@ -133,6 +172,35 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(route.api_base, "https://api.aitgenne.com")
         self.assertEqual(route.api_key, "sk-aitgenne")
         self.assertEqual(ai_routing.build_dry_run_summary(route, "hello")["endpoint"], "https://api.aitgenne.com/v1/chat/completions")
+
+    def test_unified_text_model_field_uses_exact_aitgenne_key(self):
+        route = ai_routing.route_from_slot(
+            {
+                "AI供应商": "AIHubMix",
+                "文本AI模型": "Aitgenne / gemini-3.5-flash",
+            },
+            "拆解",
+            {
+                "provider": "AIHubMix",
+                "model": "AIHubMix / gemini-3.1-pro-preview",
+                "call_type": "Gemini 原生 SDK",
+                "api_key": "sk-aihubmix",
+                "api_base": "https://aihubmix.com/gemini",
+            },
+            capability="文本",
+            task_type="多角色首尾帧解析",
+            config_records=[
+                {"fields": {"供应商": "Aitgenne", "模型名称": "Aitgenne / claude-opus-4-8", "API 代理地址": "https://api.aitgenne.com/v1", "API Key": "sk-claude"}},
+                {"fields": {"供应商": "Aitgenne", "模型名称": "Aitgenne / gemini-3.5-flash", "API 代理地址": "https://api.aitgenne.com/v1", "API Key": "sk-flash"}},
+                {"fields": {"供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com/v1", "API Key": "sk-generic"}},
+            ],
+        )
+
+        self.assertEqual(route.provider, "Aitgenne")
+        self.assertEqual(route.model, "Aitgenne / gemini-3.5-flash")
+        self.assertEqual(route.call_type, "OpenAI兼容 chat/completions")
+        self.assertEqual(route.api_key, "sk-flash")
+        self.assertEqual(route.api_base, "https://api.aitgenne.com/v1")
 
     def test_explicit_model_refreshes_stale_api_base_even_when_config_provider_matches(self):
         route = ai_routing.route_from_record(
@@ -432,6 +500,165 @@ class UnifiedAiRoutingTests(unittest.TestCase):
         self.assertEqual(summary["adapter_payload_summary"]["input"], "payload.input")
         self.assertEqual(summary["adapter_payload_summary"]["parameters"], "payload.parameters")
         self.assertEqual(summary["reference_count"], 2)
+
+    def test_aitgenne_unified_video_models_use_create_query_and_images_schema(self):
+        for model in (
+            "Aitgenne / veo_3_1_lite_vip",
+            "Aitgenne / veo_3_1_fast_vip",
+            "Aitgenne / veo_3_1_vip",
+            "Aitgenne / veo_3_1_components_vip",
+        ):
+            with self.subTest(model=model):
+                route = ai_routing.AiRoute(
+                    provider="Aitgenne",
+                    capability="视频",
+                    task_type="参考图生视频",
+                    model=model,
+                    api_base="https://api.aitgenne.com/v1",
+                    api_key="sk-video",
+                    params={"aspect_ratio": "9:16", "enhance_prompt": True, "enable_upsample": True},
+                )
+
+                summary = ai_routing.build_media_request_summary(route, "video prompt", reference_count=3)
+
+                self.assertEqual(ai_routing.media_endpoint(route), "https://api.aitgenne.com/v1/video/create")
+                self.assertEqual(
+                    ai_routing.media_task_endpoint(route, "job:123"),
+                    "https://api.aitgenne.com/v1/video/query?id=job%3A123",
+                )
+                self.assertEqual(summary["endpoint"], "https://api.aitgenne.com/v1/video/create")
+                self.assertEqual(summary["payload"], {
+                    "model": ai_routing.parse_model_display(model)["model"],
+                    "prompt": "video prompt",
+                    "images": ["<reference_url>", "<reference_url>", "<reference_url>"],
+                    "enhance_prompt": True,
+                    "enable_upsample": True,
+                    "aspect_ratio": "9:16",
+                })
+                self.assertEqual(summary["adapter_payload_summary"]["images"], "payload.images")
+                self.assertNotIn("sk-video", str(summary))
+
+    def test_aitgenne_unified_video_payload_uses_explicit_reference_urls(self):
+        route = ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="参考图生视频",
+            model="Aitgenne / veo_3_1_components_vip",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-components",
+        )
+
+        payload = ai_routing.build_aitgenne_unified_video_payload(
+            route,
+            "video prompt",
+            ["https://x.test/a.png", "https://x.test/b.png"],
+            aspect_ratio="16:9",
+        )
+
+        self.assertEqual(payload, {
+            "model": "veo_3_1_components_vip",
+            "prompt": "video prompt",
+            "images": ["https://x.test/a.png", "https://x.test/b.png"],
+            "enhance_prompt": True,
+            "enable_upsample": True,
+            "aspect_ratio": "16:9",
+        })
+
+    def test_aitgenne_unified_video_extracts_detail_status_and_upsample_url(self):
+        body = {
+            "detail": {
+                "status": "completed",
+                "video_url": "https://x.test/plain.mp4",
+                "upsample_video_url": "https://x.test/up.mp4",
+            }
+        }
+
+        self.assertEqual(ai_routing.extract_video_status(body), "completed")
+        self.assertEqual(ai_routing.extract_video_result_url(body), "https://x.test/up.mp4")
+
+    def test_aitgenne_unified_video_exact_key_helper_does_not_fallback_to_provider_key(self):
+        records = [
+            {"fields": {
+                "AI供应商": "Aitgenne",
+                "模型名称": "Aitgenne / veo_3_1_lite_vip",
+                "API 代理地址": "https://api.aitgenne.com/v1",
+                "API Key": "sk-lite",
+            }},
+            {"fields": {
+                "AI供应商": "Aitgenne",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "API 代理地址": "https://api.aitgenne.com/v1",
+                "API Key": "",
+            }},
+            {"fields": {
+                "AI供应商": "Aitgenne",
+                "API 代理地址": "https://api.aitgenne.com/v1",
+                "API Key": "sk-provider",
+            }},
+        ]
+
+        lite = ai_routing.exact_model_runtime_config(records, "Aitgenne", "Aitgenne / veo_3_1_lite_vip")
+        self.assertEqual(lite["api_key"], "sk-lite")
+        with self.assertRaisesRegex(ValueError, "模型配置缺少 API Key: Aitgenne / veo_3_1_fast_vip"):
+            ai_routing.exact_model_runtime_config(records, "Aitgenne", "Aitgenne / veo_3_1_fast_vip")
+
+    def test_exact_model_config_prefers_callable_runtime_over_task_default(self):
+        records = [
+            {"fields": {
+                "配置类型": "任务默认",
+                "应用表格": "002-首尾帧视频生成表",
+                "任务环节": "首尾帧视频生成默认",
+                "供应商": "Aitgenne",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "API Key": "",
+            }},
+            {"fields": {
+                "配置类型": "运行环节",
+                "环节": "Aitgenne Fast VIP图生视频生成",
+                "供应商": "Aitgenne",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "API 代理地址": "https://api.aitgenne.com/v1",
+                "API Key": "sk-fast",
+                "状态": "启用",
+            }},
+        ]
+
+        cfg = ai_routing.exact_model_runtime_config(records, "Aitgenne", "Aitgenne / veo_3_1_fast_vip")
+
+        self.assertEqual(cfg["api_key"], "sk-fast")
+        self.assertEqual(cfg["api_base"], "https://api.aitgenne.com/v1")
+
+    def test_exact_model_config_prefers_keyed_runtime_record_over_task_default(self):
+        records = [
+            {"fields": {
+                "环节": "分镜视频生成-OTU",
+                "配置类型": "任务默认",
+                "供应商": "Aitgenne",
+                "能力类型": "视频",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "API 代理地址": "",
+                "API Key": "",
+                "状态": "启用",
+            }},
+            {"fields": {
+                "环节": "Aitgenne Fast VIP图生视频生成",
+                "配置类型": "运行环节",
+                "供应商": "Aitgenne",
+                "能力类型": "视频",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "API 代理地址": "https://api.aitgenne.com/v1",
+                "API Key": "sk-fast",
+                "状态": "启用",
+            }},
+        ]
+
+        fields = ai_routing.config_record_for_model(records, "Aitgenne", "Aitgenne / veo_3_1_fast_vip")
+        self.assertEqual(fields["环节"], "Aitgenne Fast VIP图生视频生成")
+        self.assertEqual(fields["配置类型"], "运行环节")
+
+        cfg = ai_routing.exact_model_runtime_config(records, "Aitgenne", "Aitgenne / veo_3_1_fast_vip")
+        self.assertEqual(cfg["api_key"], "sk-fast")
+        self.assertEqual(cfg["api_base"], "https://api.aitgenne.com/v1")
 
 
 if __name__ == "__main__":

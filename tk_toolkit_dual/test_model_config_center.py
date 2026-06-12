@@ -102,15 +102,15 @@ class ModelConfigCenterTests(unittest.TestCase):
         }
 
         patch = center.default_patch_for_fields(
-            {"视频AI模型": "", "Omni画面尺寸": "", "Omni画面比例": "", "视频AI参数JSON": ""},
+            {"视频生成模型": "", "Omni画面尺寸": "", "Omni画面比例": "", "视频AI参数JSON": ""},
             default,
-            model_field="视频AI模型",
+            model_field="视频生成模型",
             size_field="Omni画面尺寸",
             ratio_field="Omni画面比例",
             params_field="视频AI参数JSON",
         )
 
-        self.assertEqual(patch["视频AI模型"], "OTU / omni_flash-10s")
+        self.assertEqual(patch["视频生成模型"], "OTU / omni_flash-10s")
         self.assertEqual(patch["Omni画面尺寸"], "720x1280")
         self.assertEqual(patch["Omni画面比例"], "9:16")
         self.assertEqual(patch["视频AI参数JSON"], '{"seconds":"10"}')
@@ -195,6 +195,28 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(fields["画面尺寸"], "720x1280")
         self.assertEqual(fields["画面比例"], "9:16")
         self.assertEqual(fields["AI参数JSON"], '{"size":"720x1280"}')
+
+    def test_task_default_model_name_overrides_stale_display_name(self):
+        rows = [
+            rec("runtime_default", **{
+                "配置类型": "任务默认",
+                "应用表格": "001-多角色首尾帧生成表",
+                "任务环节": "视频片段生成默认",
+                "供应商": "Aitgenne",
+                "模型名称": "Aitgenne / veo_3_1_fast_vip",
+                "显示名称": "OTU / veo_3_1-fast-fl",
+                "画面尺寸": "720x1280",
+                "画面比例": "9:16",
+                "生效来源": "线上配置",
+                "状态": "启用",
+            })
+        ]
+
+        with mock.patch.object(center, "safe_list_records", return_value=rows):
+            fields = center.load_task_default_fields("real-token", "001-多角色首尾帧生成表", "视频片段生成默认")
+
+        self.assertEqual(fields["默认供应商"], "Aitgenne")
+        self.assertEqual(fields["默认模型显示名称"], "Aitgenne / veo_3_1_fast_vip")
 
     def test_nine_grid_defaults_keep_legacy_name_aliases(self):
         rows = [
@@ -548,6 +570,101 @@ class ModelConfigCenterTests(unittest.TestCase):
             "视频生成模型": "OTU / veo_3_1-fast-fl",
         })
 
+    def test_video_defaults_replace_legacy_otu_model_and_sync_channel(self):
+        default = {
+            "默认供应商": "Aitgenne",
+            "默认模型显示名称": "Aitgenne / veo_3_1_fast_vip",
+        }
+
+        patch = center.default_patch_for_fields(
+            {"视频通道": "OTU", "视频生成模型": "OTU / veo_3_1-fast-fl"},
+            default,
+            channel_field="视频通道",
+            model_field="视频生成模型",
+            placeholder_values=("OTU / veo_3_1-fast-fl", "默认（配置表）"),
+        )
+
+        self.assertEqual(patch, {
+            "视频通道": "Aitgenne",
+            "视频生成模型": "Aitgenne / veo_3_1_fast_vip",
+        })
+
+    def test_first_last_video_default_repair_only_updates_unfinished_records(self):
+        records = [
+            rec("success", 任务名称="done", 视频生成状态="成功", 视频任务ID="task_done", 视频通道="OTU", 视频生成模型="OTU / veo_3_1-fast-fl"),
+            rec("failed_with_task", 任务名称="failed with task", 视频生成状态="失败", 视频任务ID="task_old", 视频通道="OTU", 视频生成模型="OTU / veo_3_1-fast-fl"),
+            rec("failed_empty", 任务名称="failed empty", 视频生成状态="失败", 视频任务ID="", 视频通道="OTU", 视频生成模型="OTU / veo_3_1-fast-fl"),
+            rec("pending", 任务名称="pending", 视频生成状态="待生成", 视频任务ID="", 视频通道="OTU", 视频生成模型="OTU / veo_3_1-fast-fl"),
+        ]
+        updates = []
+
+        with mock.patch.object(center, "TABLE_IDS_BY_KEY", {"first_last_video": "tbl_first_last"}), \
+             mock.patch.object(center, "load_task_default_fields", return_value={
+                 "默认供应商": "Aitgenne",
+                 "默认模型显示名称": "Aitgenne / veo_3_1_fast_vip",
+                 "画面尺寸": "720x1280",
+                 "画面比例": "9:16",
+             }), \
+             mock.patch.object(center, "list_field_names_api", return_value={"视频通道", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"}), \
+             mock.patch.object(center, "safe_list_records", return_value=records):
+            result = center.backfill_runtime_defaults(
+                "token",
+                specs=[spec for spec in center.FIRST_LAST_VIDEO_DEFAULT_REPAIR_SPECS if spec.table_key == "first_last_video"],
+                write=True,
+                update_fn=lambda *args: updates.append(args),
+            )
+
+        self.assertEqual(updates, [
+            ("token", "tbl_first_last", "failed_empty", {
+                "视频通道": "Aitgenne",
+                "视频生成模型": "Aitgenne / veo_3_1_fast_vip",
+                "视频画面尺寸": "720x1280",
+                "视频画面比例": "9:16",
+            }),
+            ("token", "tbl_first_last", "pending", {
+                "视频通道": "Aitgenne",
+                "视频生成模型": "Aitgenne / veo_3_1_fast_vip",
+                "视频画面尺寸": "720x1280",
+                "视频画面比例": "9:16",
+            }),
+        ])
+        self.assertEqual(result["stages"][0]["skipped_status"], 1)
+        self.assertEqual(result["stages"][0]["skipped_existing_task"], 1)
+        self.assertEqual(result["totals"]["updated"], 2)
+
+    def test_multi_role_video_default_repair_only_updates_video_clip_records(self):
+        records = [
+            rec("parent", 任务名称="parent", 记录类型="母任务", 记录状态="有效", 视频生成状态="", 视频任务ID="", 视频通道="", 视频生成模型=""),
+            rec("asset", 任务名称="asset", 记录类型="参考资产", 记录状态="有效", 视频生成状态="", 视频任务ID="", 视频通道="", 视频生成模型=""),
+            rec("clip", 任务名称="clip", 记录类型="视频片段", 记录状态="有效", 视频生成状态="不触发", 视频任务ID="", 视频通道="OTU", 视频生成模型="OTU / veo_3_1-fast-fl"),
+        ]
+        updates = []
+
+        with mock.patch.object(center, "TABLE_IDS_BY_KEY", {"multi_role_first_last": "tbl_multi"}), \
+             mock.patch.object(center, "load_task_default_fields", return_value={
+                 "默认供应商": "Aitgenne",
+                 "默认模型显示名称": "Aitgenne / veo_3_1_fast_vip",
+                 "画面尺寸": "720x1280",
+                 "画面比例": "9:16",
+             }), \
+             mock.patch.object(center, "list_field_names_api", return_value={"视频通道", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"}), \
+             mock.patch.object(center, "safe_list_records", return_value=records):
+            result = center.backfill_runtime_defaults(
+                "token",
+                specs=[spec for spec in center.FIRST_LAST_VIDEO_DEFAULT_REPAIR_SPECS if spec.table_key == "multi_role_first_last"],
+                write=True,
+                update_fn=lambda *args: updates.append(args),
+            )
+
+        self.assertEqual(updates, [("token", "tbl_multi", "clip", {
+            "视频通道": "Aitgenne",
+            "视频生成模型": "Aitgenne / veo_3_1_fast_vip",
+            "视频画面尺寸": "720x1280",
+            "视频画面比例": "9:16",
+        })])
+        self.assertEqual(result["stages"][0]["skipped_record_type"], 2)
+        self.assertEqual(result["totals"]["updated"], 1)
+
     def test_unified_repair_script_matches_prefixed_otu_default_placeholder(self):
         self.assertTrue(repair_video_defaults.is_candidate({
             "视频生成状态": "待生成",
@@ -595,7 +712,7 @@ class ModelConfigCenterTests(unittest.TestCase):
         self.assertEqual(image_backfill.params_field, "图片AI参数JSON")
         video_backfill = backfill[("prompt_image_video", "图生视频生成默认")]
         self.assertEqual(video_backfill.status_field, "视频生成状态")
-        self.assertEqual(video_backfill.model_field, "视频AI模型")
+        self.assertEqual(video_backfill.model_field, "视频生成模型")
         self.assertEqual(video_backfill.size_field, "视频画面尺寸")
         self.assertEqual(video_backfill.ratio_field, "视频画面比例")
         self.assertEqual(video_backfill.params_field, "视频AI参数JSON")
@@ -677,6 +794,7 @@ class ModelConfigCenterTests(unittest.TestCase):
         rows = center.build_task_default_rows([
             rec("img", 环节="图片生成-OTU", 模型名称="gpt-image-2-2K", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
             rec("vid", 环节="分镜视频生成-OTU", 模型名称="veo_3_1-fast-fl", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
+            rec("omni", 环节="多图宫格视频生成", 模型名称="omni_flash-10s", 状态="启用", **{"API 代理地址": "https://otuapi.com", "画面尺寸": "720x1280", "画面比例": "9:16"}),
         ])
         by_table_stage = {
             (item["应用表格"], item["任务环节"]): item
@@ -690,6 +808,16 @@ class ModelConfigCenterTests(unittest.TestCase):
         prompt_image = by_table_stage[(center.TASK_TABLES["prompt_image_video"], "图片生成默认")]
         self.assertEqual(prompt_image["画面尺寸"], "720x1280")
         self.assertEqual(prompt_image["画面比例"], "9:16")
+
+        storyboard_video = by_table_stage[(center.TASK_TABLES["storyboard_video"], "图生视频生成默认")]
+        self.assertEqual(storyboard_video["默认模型显示名称"], "OTU / omni_flash-10s")
+        self.assertEqual(storyboard_video["模型名称"], "OTU / omni_flash-10s")
+        self.assertEqual(storyboard_video["画面尺寸"], "720x1280")
+        self.assertEqual(storyboard_video["画面比例"], "9:16")
+        self.assertEqual(storyboard_video["调度环节名"], "004故事板视频生成")
+
+        prompt_video = by_table_stage[(center.TASK_TABLES["prompt_image_video"], "图生视频生成默认")]
+        self.assertEqual(prompt_video["默认模型显示名称"], "OTU / veo_3_1-fast-fl")
 
     def test_run_migration_writes_catalog_and_defaults_to_single_config_table(self):
         records = [

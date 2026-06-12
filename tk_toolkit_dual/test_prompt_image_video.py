@@ -22,8 +22,8 @@ class PromptImageVideoTableTests(unittest.TestCase):
         self.assertEqual(fields["选择模特"]["type"], "link")
         self.assertEqual(fields["上传参考图"]["type"], "attachment")
         self.assertEqual(fields["图片AI模型"]["options"], ai_model_catalog.IMAGE_MODEL_OPTIONS)
-        self.assertEqual(fields["视频AI模型"]["options"], ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS)
-        self.assertIn("OTU / omni_flash-10s", [item["name"] for item in fields["视频AI模型"]["options"]])
+        self.assertEqual(fields["视频生成模型"]["options"], ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS)
+        self.assertIn("OTU / omni_flash-10s", [item["name"] for item in fields["视频生成模型"]["options"]])
         self.assertNotIn("图片操作", fields)
         self.assertNotIn("视频操作", fields)
 
@@ -40,7 +40,7 @@ class PromptImageVideoTableTests(unittest.TestCase):
                 "任务名称", "生图提示词", "图生视频提示词", "关联产品记录", "选择模特",
                 "上传产品图", "上传模特图", "上传参考图", "图片AI模型", "图片画面尺寸", "图片画面比例",
                 "图片生成状态", "图片审核状态",
-                "视频AI模型", "视频时长秒", "视频画面尺寸", "视频画面比例",
+                "视频生成模型", "视频时长秒", "视频画面尺寸", "视频画面比例",
                 "视频生成状态",
             ],
         )
@@ -607,7 +607,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         with patch.object(prompt_video, "TABLE_CONFIG", "tbl_config"), \
              patch.object(prompt_video, "safe_list_records", return_value=config_records):
             route = prompt_video.resolve_video_route({
-                "视频AI模型": "OTU / veo_3_1-fast-fl-hd",
+                "视频生成模型": "OTU / veo_3_1-fast-fl-hd",
                 "视频画面尺寸": "720x1280",
                 "视频画面比例": "9:16",
                 "视频时长秒": "8",
@@ -627,7 +627,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "图生视频提示词": "raw video prompt",
             "图片审核状态": "通过",
             "生成图片": [{"file_token": "ft_image"}],
-            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
             "视频画面尺寸": "720x1280",
             "视频画面比例": "9:16",
         }
@@ -677,7 +677,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "图片审核状态": "通过",
             "生成图片": [{"file_token": "ft_image"}],
             "图片版本": 2,
-            "视频AI模型": "OTU / omni_flash-10s",
+            "视频生成模型": "OTU / omni_flash-10s",
             "视频画面尺寸": "720x1280",
             "视频画面比例": "9:16",
             "上传产品图": [{"file_token": "ft_product_upload"}],
@@ -741,12 +741,128 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         self.assertEqual(response_json["request_summary"]["reference_count"], 5)
         self.assertEqual(response_json["request_summary"]["reference_roles"][0], "generated_image")
 
+    def test_video_generation_uses_aitgenne_components_references_in_order(self):
+        captured = {}
+        fields = {
+            "图生视频提示词": "raw video prompt",
+            "图片审核状态": "通过",
+            "生成图片": [{"file_token": "ft_image"}],
+            "图片版本": 1,
+            "视频生成模型": "Aitgenne / veo_3_1_components_vip",
+            "上传参考图": [{"file_token": "ft_ref"}],
+        }
+        source_refs = [
+            {"role": "uploaded_reference:1", "file_token": "ft_ref", "name": "", "path": "/tmp/ref.png"},
+        ]
+
+        def fake_run_video(route, prompt, image_path, out_path, *, refs=None, image_url="", **kwargs):
+            captured["route"] = route
+            captured["image_url"] = image_url
+            captured["refs"] = refs
+            Path(out_path).write_bytes(b"video")
+            return prompt_video.VideoGenerationResult(
+                provider="Aitgenne",
+                task_id="task_components",
+                submit_body={"id": "task_components"},
+                result_body={"detail": {"status": "completed", "upsample_video_url": "https://example.test/components.mp4"}},
+                output_path=out_path,
+                request_summary={
+                    "mode": "aitgenne_components_reference_video",
+                    "reference_count": len(refs or []),
+                    "reference_urls": [ref.get("url") for ref in refs or []],
+                },
+                video_url="https://example.test/components.mp4",
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "TABLE_PROMPT_IMAGE_VIDEO", "tbl_008"), \
+             patch.object(prompt_video, "safe_get_record", return_value=fields), \
+             patch.object(prompt_video, "safe_update_record"), \
+             patch.object(prompt_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
+             patch.object(prompt_video, "download_feishu_attachment_raw", side_effect=lambda token, file_token, save_path: Path(save_path).write_bytes(b"image") or save_path), \
+             patch.object(prompt_video, "collect_image_references", return_value=source_refs), \
+             patch.object(prompt_video, "prepare_product_reference_images", side_effect=lambda refs, work_dir: refs), \
+             patch.object(prompt_video, "get_tmp_download_url_for_attachment", side_effect=lambda token, file_token: f"https://x.test/{file_token}.png"), \
+             patch.object(prompt_video, "upload_video_to_feishu", return_value="ft_video"), \
+             patch.object(prompt_video, "resolve_video_route", return_value=prompt_video.ai_routing.AiRoute(
+                 provider="Aitgenne",
+                 capability="视频",
+                 task_type="参考图生视频",
+                 model="Aitgenne / veo_3_1_components_vip",
+                 api_base="https://api.aitgenne.com/v1",
+                 api_key="sk-components",
+             )), \
+             patch.object(prompt_video, "run_video_generation", side_effect=fake_run_video), \
+             patch.object(prompt_video, "get_table_field_types", return_value={"视频URL": 15}, create=True), \
+             patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
+            result = prompt_video.run_video("token", "rec008")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(captured["image_url"], "https://x.test/ft_image.png")
+        self.assertEqual([ref["role"] for ref in captured["refs"]], ["generated_image", "uploaded_reference:1"])
+        self.assertEqual([ref["url"] for ref in captured["refs"]], ["https://x.test/ft_image.png", "https://x.test/ft_ref.png"])
+
+    def test_run_video_generation_submits_aitgenne_unified_video_schema(self):
+        route = prompt_video.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="参考图生视频",
+            model="Aitgenne / veo_3_1_components_vip",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-components",
+            params={"aspect_ratio": "9:16"},
+        )
+        submit_response = Mock(status_code=200)
+        submit_response.json.return_value = {"id": "task_components", "status": "queued"}
+        submit_response.text = '{"id":"task_components"}'
+        query_response = Mock(status_code=200)
+        query_response.json.return_value = {
+            "detail": {
+                "status": "completed",
+                "video_url": "https://x.test/plain.mp4",
+                "upsample_video_url": "https://x.test/up.mp4",
+            }
+        }
+        query_response.text = '{"detail":{"status":"completed"}}'
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "aitgenne_post", return_value=submit_response) as post, \
+             patch.object(prompt_video, "aitgenne_get", return_value=query_response) as get, \
+             patch.object(prompt_video, "download_video_without_env_proxy", side_effect=lambda url, out_path: Path(out_path).write_bytes(b"video") or out_path) as download:
+            result = prompt_video.run_video_generation(
+                route,
+                "video prompt",
+                str(Path(tmpdir) / "image.png"),
+                str(Path(tmpdir) / "out.mp4"),
+                refs=[
+                    {"role": "generated_image", "url": "https://x.test/generated.png"},
+                    {"role": "uploaded_reference:1", "url": "https://x.test/ref.png"},
+                ],
+            )
+
+        self.assertEqual(result.task_id, "task_components")
+        self.assertEqual(result.video_url, "https://x.test/up.mp4")
+        self.assertEqual(result.request_summary["mode"], "aitgenne_unified_video")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.aitgenne.com/v1/video/create")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk-components")
+        self.assertEqual(kwargs["json"], {
+            "model": "veo_3_1_components_vip",
+            "prompt": "video prompt",
+            "images": ["https://x.test/generated.png", "https://x.test/ref.png"],
+            "enhance_prompt": True,
+            "enable_upsample": True,
+            "aspect_ratio": "9:16",
+        })
+        self.assertEqual(get.call_args.args[0], "https://api.aitgenne.com/v1/video/query?id=task_components")
+        download.assert_called_once_with("https://x.test/up.mp4", result.output_path)
+
     def test_video_generation_keeps_regular_otu_veo_on_single_first_frame_path(self):
         fields = {
             "图生视频提示词": "raw video prompt",
             "图片审核状态": "通过",
             "生成图片": [{"file_token": "ft_image"}],
-            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
         }
 
         def fake_run_video(route, prompt, image_path, out_path, **kwargs):
@@ -782,7 +898,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "图生视频提示词": "raw video prompt",
             "图片审核状态": "通过",
             "生成图片": [{"file_token": "ft_image"}],
-            "视频AI模型": "OTU / omni_flash-10s",
+            "视频生成模型": "OTU / omni_flash-10s",
         }
         refs = [
             {"role": f"uploaded_reference:{idx}", "file_token": f"ft_{idx}", "name": "", "path": f"/tmp/ref_{idx}.png"}
@@ -811,7 +927,7 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "生成图片": [{"file_token": "ft_image"}],
             "生成视频": [{"file_token": "ft_old_video"}],
             "视频版本": 2,
-            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
             "视频画面尺寸": "720x1280",
             "视频画面比例": "9:16",
         }
@@ -848,13 +964,13 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
             "图生视频提示词": "raw video prompt",
             "图片审核状态": "通过",
             "生成图片": [{"file_token": "ft_image"}],
-            "视频AI模型": "",
+            "视频生成模型": "",
             "视频画面尺寸": "",
             "视频画面比例": "",
         }
         defaulted_fields = {
             **fields,
-            "视频AI模型": "OTU / veo_3_1-fast-fl",
+            "视频生成模型": "OTU / veo_3_1-fast-fl",
             "视频画面尺寸": "720x1280",
             "视频画面比例": "9:16",
         }

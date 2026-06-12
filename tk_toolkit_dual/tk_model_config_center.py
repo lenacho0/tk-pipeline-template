@@ -143,7 +143,7 @@ RUNTIME_DEFAULT_SPECS: Tuple[RuntimeDefaultSpec, ...] = (
     RuntimeDefaultSpec("script_doc_unified", "尾帧图生成默认", "图片生成-OTU", "尾帧图", "003新表脚本文档尾帧图生成", "3"),
     RuntimeDefaultSpec("script_doc_unified", "分镜视频生成默认", "分镜视频生成-OTU", "视频", "003新表脚本文档分镜视频生成", "3"),
     RuntimeDefaultSpec("storyboard_video", "图片生成默认", "图片生成-OTU", "图片", "004故事板图片生成", "10", "1280x720", "16:9"),
-    RuntimeDefaultSpec("storyboard_video", "图生视频生成默认", "分镜视频生成-OTU", "视频", "004故事板视频生成", "10"),
+    RuntimeDefaultSpec("storyboard_video", "图生视频生成默认", "多图宫格视频生成", "视频", "004故事板视频生成", "10"),
     RuntimeDefaultSpec("nine_grid_video", "宫格方案生成默认", "多图宫格方案生成"),
     RuntimeDefaultSpec("nine_grid_video", "参考图生成默认", "多图宫格图片生成", "参考图"),
     RuntimeDefaultSpec("nine_grid_video", "宫格图片生成默认", "多图宫格图片生成", "图片"),
@@ -175,6 +175,8 @@ class RuntimeDefaultBackfillSpec:
     placeholder_values: Tuple[str, ...] = ()
     active_statuses: Tuple[str, ...] = ()
     channel_field: str = ""
+    task_id_field: str = ""
+    record_types: Tuple[str, ...] = ()
 
 
 TABLE_IDS_BY_KEY: Dict[str, str] = {
@@ -191,6 +193,7 @@ TABLE_IDS_BY_KEY: Dict[str, str] = {
 
 
 ACTIVE_BACKFILL_STATUSES = {"待生成", "生成中", "成功"}
+LEGACY_FIRST_LAST_VIDEO_PLACEHOLDERS = ("OTU / veo_3_1-fast-fl", "veo_3_1-fast-fl", "默认（配置表）")
 
 
 RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
@@ -209,13 +212,46 @@ RUNTIME_DEFAULT_BACKFILL_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
     RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "尾帧图生成默认", "尾帧图生成状态", "尾帧图AI模型", "尾帧图画面尺寸", "尾帧图画面比例", "尾帧图AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
     RuntimeDefaultBackfillSpec("script_doc_unified", TASK_TABLES["script_doc_unified"], "分镜视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败"), channel_field="视频通道"),
     RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
-    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "图生视频生成默认", "视频生成状态", "视频AI模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("storyboard_video", TASK_TABLES["storyboard_video"], "图生视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "参考图生成默认", "参考图生成状态", "参考图AI模型", "参考图画面尺寸", "参考图画面比例", "参考图AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "宫格图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON"),
     RuntimeDefaultBackfillSpec("nine_grid_video", TASK_TABLES["nine_grid_video"], "宫格视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON"),
     RuntimeDefaultBackfillSpec("video_edit", TASK_TABLES["video_edit"], "视频编辑默认", "编辑状态", "", "输出分辨率"),
     RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图片生成默认", "图片生成状态", "图片AI模型", "图片画面尺寸", "图片画面比例", "图片AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
-    RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图生视频生成默认", "视频生成状态", "视频AI模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+    RuntimeDefaultBackfillSpec("prompt_image_video", TASK_TABLES["prompt_image_video"], "图生视频生成默认", "视频生成状态", "视频生成模型", "视频画面尺寸", "视频画面比例", "视频AI参数JSON", active_statuses=("", "不触发", "待生成", "生成中", "成功", "失败")),
+)
+
+FIRST_LAST_VIDEO_DEFAULT_REPAIR_SPECS: Tuple[RuntimeDefaultBackfillSpec, ...] = (
+    RuntimeDefaultBackfillSpec(
+        "multi_role_first_last",
+        TASK_TABLES["multi_role_first_last"],
+        "视频片段生成默认",
+        "视频生成状态",
+        "视频生成模型",
+        "视频画面尺寸",
+        "视频画面比例",
+        "视频AI参数JSON",
+        placeholder_values=LEGACY_FIRST_LAST_VIDEO_PLACEHOLDERS,
+        active_statuses=("", "不触发", "待生成", "失败"),
+        channel_field="视频通道",
+        task_id_field="视频任务ID",
+        record_types=("视频片段",),
+    ),
+    RuntimeDefaultBackfillSpec(
+        "first_last_video",
+        TASK_TABLES["first_last_video"],
+        "首尾帧视频生成默认",
+        "视频生成状态",
+        "视频生成模型",
+        "视频画面尺寸",
+        "视频画面比例",
+        "视频AI参数JSON",
+        placeholder_values=LEGACY_FIRST_LAST_VIDEO_PLACEHOLDERS,
+        active_statuses=("", "不触发", "待生成", "失败"),
+        channel_field="视频通道",
+        task_id_field="视频任务ID",
+        record_types=("场景子任务", ""),
+    ),
 )
 
 MEDIA_REGENERATION_DISPATCH_STAGES: Tuple[str, ...] = (
@@ -561,6 +597,14 @@ def model_display_from_fields(fields: Mapping[str, Any]) -> str:
     return display_name(provider, text(fields, "模型名称"))
 
 
+def task_default_model_display_from_fields(fields: Mapping[str, Any]) -> str:
+    model = text(fields, "模型名称")
+    if model:
+        provider = provider_text(fields) or infer_provider(stage_text(fields), text(fields, "API 代理地址"), model, "")
+        return display_name(provider, model)
+    return model_display_from_fields(fields)
+
+
 def runtime_stage_record_matches(fields: Mapping[str, Any], stage: str) -> bool:
     if stage_text(fields) not in alias_candidates(stage):
         return False
@@ -588,7 +632,7 @@ def task_default_record_exact_matches(fields: Mapping[str, Any], app_table: str,
 def normalize_task_default_fields(fields: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "默认供应商": provider_text(fields),
-        "默认模型显示名称": model_display_from_fields(fields),
+        "默认模型显示名称": task_default_model_display_from_fields(fields),
         "画面尺寸": text(fields, "画面尺寸"),
         "画面比例": text(fields, "画面比例"),
         "AI参数JSON": text(fields, "AI参数JSON"),
@@ -877,6 +921,7 @@ def default_patch_for_fields(
         if provider and (
             not current_channel
             or is_placeholder_value(current_channel)
+            or (model_is_being_defaulted and current_channel != provider)
             or (provider == "OTU" and current_channel == "AIHubMix" and model_is_being_defaulted)
         ):
             patch[channel_field] = provider
@@ -1146,6 +1191,8 @@ def backfill_runtime_defaults(
             "would_update": 0,
             "updated": 0,
             "skipped_status": 0,
+            "skipped_existing_task": 0,
+            "skipped_record_type": 0,
             "skipped_deprecated": 0,
             "skipped_no_patch": 0,
             "skipped_schema_missing": 0,
@@ -1171,6 +1218,12 @@ def backfill_runtime_defaults(
             status = text(fields, spec.status_field)
             if status not in active_statuses:
                 stage_result["skipped_status"] += 1
+                continue
+            if spec.task_id_field and text(fields, spec.task_id_field):
+                stage_result["skipped_existing_task"] += 1
+                continue
+            if spec.record_types and text(fields, "记录类型") not in set(spec.record_types):
+                stage_result["skipped_record_type"] += 1
                 continue
             stage_result["active"] += 1
             result["totals"]["active"] += 1
@@ -1460,10 +1513,13 @@ def main() -> int:
     parser.add_argument("--backup-path", default=str(BACKUP_PATH), help="脱敏备份输出路径")
     parser.add_argument("--audit-runtime-default-backfill", action="store_true", help="审计任务表默认配置字段缺失情况，不写回")
     parser.add_argument("--backfill-runtime-defaults", action="store_true", help="回填任务表缺失的运行默认配置字段；需配合 --write 才实际写入")
+    parser.add_argument("--repair-first-last-video-defaults", action="store_true", help="只修复 001/002 未完成视频记录的默认模型/通道；需配合 --write 才实际写入")
     parser.add_argument("--upsert-media-regeneration-concurrency", action="store_true", help="补齐媒体重生成 dispatcher 入口并发配置；需配合 --write 才实际写入")
     args = parser.parse_args()
     if args.upsert_media_regeneration_concurrency:
         result = run_media_regeneration_concurrency_upsert(write=args.write)
+    elif args.repair_first_last_video_defaults:
+        result = backfill_runtime_defaults(specs=FIRST_LAST_VIDEO_DEFAULT_REPAIR_SPECS, write=args.write)
     elif args.audit_runtime_default_backfill or args.backfill_runtime_defaults:
         result = backfill_runtime_defaults(write=args.write if args.backfill_runtime_defaults else False)
     else:

@@ -168,7 +168,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "首尾帧文档",
             "首尾帧文档附件",
             "目标时长秒",
-            "拆分AI模型",
+            "文本AI模型",
             "拆分AI参数JSON",
             "拆分状态",
             "场景拆分操作",
@@ -204,7 +204,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
             self.assertIn(field_name, views["02-场景子任务"])
             self.assertIn(field_name, views["99-排错"])
         self.assertIn("视频生成模型", views["99-排错"])
-        self.assertIn("视频AI模型", views["99-排错"])
+        self.assertNotIn("视频AI模型", views["99-排错"])
         self.assertNotIn("视频AI模型", views["02-场景子任务"])
         self.assertNotIn("视频AI参数JSON", views["02-场景子任务"])
         self.assertIn("视频通道", views["02-场景子任务"])
@@ -264,11 +264,11 @@ class FirstLastVideoTableTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "首尾帧视频模型不支持参考图视频模型"):
                 first_last.maybe_unified_media_summary(
                     "token",
-                    {"使用统一AI路由": "是", "视频AI模型": "Aitgenne / happyhorse-1.0-r2v"},
+                    {"使用统一AI路由": "是", "视频生成模型": "Aitgenne / happyhorse-1.0-r2v"},
                     {"provider": "OTU", "api_key": "sk-otu", "api_base": "https://otuapi.com", "model": "veo_3_1-fast-fl"},
                     capability="视频",
                     task_type="首帧图生视频",
-                    model="veo_3_1-fast-fl",
+                    model="Aitgenne / happyhorse-1.0-r2v",
                     slot_name="视频",
                     prompt="video prompt",
                     params={"size": "720x1280", "aspect_ratio": "9:16"},
@@ -1143,6 +1143,7 @@ video prompt exactly
         self.assertNotIn("Pet Care", args[1])
         self.assertEqual(kwargs["input_mode"], "image-to-image")
         self.assertEqual(kwargs["image_path"], str(first_path))
+        self.assertEqual(kwargs["reference_image_paths"], [str(product_path)])
         self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/first.png", "https://x.test/product.png"])
         self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame", "product:1"])
         self.assertEqual(kwargs["metadata"]["product_record_id"], "recProduct")
@@ -1160,6 +1161,49 @@ video prompt exactly
         self.assertEqual(updates[-1]["尾帧审核状态"], "待确认")
         self.assertEqual(updates[-1]["尾帧图file_token"], "ft_last")
         self.assertEqual(updates[-1]["尾帧图版本"], 3)
+
+    def test_render_last_frame_passes_product_reference_paths_to_image_generation(self):
+        updates = []
+        with tempfile.TemporaryDirectory() as tmp:
+            first_path = Path(tmp) / "first.png"
+            first_path.write_bytes(b"x" * 2000)
+            product_path = Path(tmp) / "product.png"
+            product_path.write_bytes(b"x" * 2000)
+            image_result = Mock()
+            image_result.task_id = ""
+            image_result.submit_body = {"data": [{"url": "https://x.test/last.png"}]}
+            image_result.result_body = {"data": [{"url": "https://x.test/last.png"}]}
+            image_result.request_summary = {"reference_count": 2, "submitted_reference_count": 2}
+            with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+                 patch.object(first_last, "get_feishu_token", return_value="token"), \
+                 patch.object(first_last, "safe_get_record", side_effect=[
+                     {"记录类型": "场景子任务", "记录状态": "有效", "尾帧生图提示词": "last prompt", "首帧图": [{"file_token": "ft_first"}], "尾帧图版本": 1, "关联产品记录": [{"record_ids": ["recProduct"]}], "尾帧图AI模型": "Aitgenne / gpt-image-2"},
+                     {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
+                     {"记录状态": "有效", "尾帧图生成状态": "生成中", "尾帧图版本": 1, "尾帧图任务ID": ""},
+                 ]), \
+                 patch.object(first_last, "safe_list_records", return_value=[{
+                     "fields": {"配置类型": "模型目录", "模型名称": "Aitgenne / gpt-image-2", "AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "状态": "启用"}
+                 }]), \
+                 patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
+                 patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+                 patch.object(first_last, "ensure_work_dir", return_value=Path(tmp)), \
+                 patch.object(first_last, "download_feishu_media", side_effect=[first_path, product_path]), \
+                 patch.object(first_last, "get_tmp_download_url_for_attachment", side_effect=["https://x.test/first.png", "https://x.test/product.png"]), \
+                 patch.object(first_last, "get_stage_config", return_value=("cfg_img", {"api_key": "sk", "api_base": "https://api.aitgenne.com", "model": "gpt-image-2", "size": "1024x1024"})), \
+                 patch.object(first_last, "run_image_generation", return_value=image_result) as runner, \
+                 patch.object(first_last, "upload_image_to_feishu", return_value="ft_last"):
+                result = first_last.render_last_frame("rec1")
+
+        self.assertEqual(result["status"], "success")
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], str(first_path))
+        self.assertEqual(kwargs["reference_image_paths"], [str(product_path)])
+        self.assertEqual(kwargs["reference_count_override"], 2)
+        self.assertEqual(kwargs["metadata"]["urls"], ["https://x.test/first.png", "https://x.test/product.png"])
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame", "product:1"])
+        raw_response = json.loads(updates[-1]["尾帧图原始响应JSON"])
+        self.assertEqual(raw_response["request_summary"]["reference_count"], 2)
 
     def test_render_last_frame_resumes_existing_otu_task_without_resubmitting(self):
         updates = []
@@ -1250,7 +1294,7 @@ video prompt exactly
         response.text = '{"id":"task_aitgenne"}'
 
         with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last, \
-             patch.object(first_last.requests, "post", return_value=response) as post:
+             patch.object(first_last, "aitgenne_post", return_value=response) as post:
             task_id, body = first_last.submit_reference_video_task(
                 route,
                 "video prompt",
@@ -1279,6 +1323,47 @@ video prompt exactly
                 "resolution": "720P",
                 "duration": 6,
             },
+        })
+
+    def test_submit_aitgenne_unified_video_uses_images_json_schema(self):
+        route = first_last.ai_routing.AiRoute(
+            provider="Aitgenne",
+            capability="视频",
+            task_type="首尾帧视频",
+            model="Aitgenne / veo_3_1_fast_vip",
+            api_base="https://api.aitgenne.com/v1",
+            api_key="sk-aitgenne",
+        )
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"id": "task_aitgenne", "status": "queued"}
+        response.text = '{"id":"task_aitgenne"}'
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as first, tempfile.NamedTemporaryFile(suffix=".png") as last, \
+             patch.object(first_last, "aitgenne_post", return_value=response) as post:
+            task_id, body = first_last.submit_reference_video_task(
+                route,
+                "video prompt",
+                first.name,
+                last.name,
+                seconds="6",
+                size="720x1280",
+                aspect_ratio="9:16",
+                reference_urls=["https://x.test/first.png", "https://x.test/last.png"],
+            )
+
+        self.assertEqual(task_id, "task_aitgenne")
+        self.assertEqual(body["status"], "queued")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.aitgenne.com/v1/video/create")
+        self.assertNotIn("files", kwargs)
+        self.assertEqual(kwargs["json"], {
+            "model": "veo_3_1_fast_vip",
+            "prompt": "video prompt",
+            "images": ["https://x.test/first.png", "https://x.test/last.png"],
+            "enhance_prompt": True,
+            "enable_upsample": True,
+            "aspect_ratio": "9:16",
         })
 
     def test_old_aitgenne_input_media_failure_task_is_not_resumed(self):
@@ -1524,7 +1609,7 @@ video prompt exactly
              patch.object(first_last, "call_native_veo_first_frame_task") as native_submitter, \
              patch.object(first_last, "download_feishu_media", side_effect=lambda token, file_token, path: str(path)), \
              patch.object(first_last, "get_tmp_download_url_for_attachment", side_effect=lambda token, file_token: f"https://x.test/{file_token}.png"), \
-             patch.object(first_last, "download_video", return_value="/tmp/video.mp4"), \
+             patch.object(first_last, "download_video_without_env_proxy", return_value="/tmp/video.mp4"), \
              patch.object(first_last, "upload_video_to_feishu", return_value="ft_video"), \
              patch.object(first_last, "ensure_current_generation"), \
              patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \

@@ -17,6 +17,14 @@ import ai_routing
 
 
 CONFIG_PRESET_PREFIX = "统一AI预设"
+RUNTIME_KEY_PRESET_STAGES = {
+    "Aitgenne / gemini-3.5-flash": "Aitgenne Gemini 3.5 Flash文本拆解",
+    "Aitgenne / claude-opus-4-8": "Aitgenne Claude Opus 4.8文本拆解",
+    "Aitgenne / veo_3_1_lite_vip": "Aitgenne Lite VIP图生视频生成",
+    "Aitgenne / veo_3_1_fast_vip": "Aitgenne Fast VIP图生视频生成",
+    "Aitgenne / veo_3_1_vip": "Aitgenne VIP图生视频生成",
+    "Aitgenne / veo_3_1_components_vip": "Aitgenne Components VIP参考图生视频生成",
+}
 
 DEFAULT_PROVIDER_BASES = {
     "AIHubMix": {
@@ -47,6 +55,14 @@ DEFAULT_PARAMS_BY_CAPABILITY = {
     "图片": {"size": "720x1280", "aspect_ratio": "9:16"},
     "视频": {"size": "720x1280", "aspect_ratio": "9:16", "seconds": "8"},
     "语音": {},
+}
+
+LEGACY_TEXT_MODEL_FIELDS = {
+    "nine_grid_video": ("方案AI模型",),
+    "first_last_video": ("拆分AI模型",),
+    "script_doc_tasks": ("解析AI模型",),
+    "script_doc_unified": ("解析AI模型",),
+    "multi_role_first_last": ("拆解AI模型",),
 }
 
 
@@ -95,19 +111,25 @@ def build_config_presets(entries: Optional[Sequence[ai_model_catalog.ModelCatalo
     ]
     for entry in source_entries:
         params = default_params(entry)
+        runtime_stage = RUNTIME_KEY_PRESET_STAGES.get(entry.display_name)
         notes = [
-            "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。",
+            "运行环节配置：API/提示词/兜底源；任务记录自己的模型/参数优先。"
+            if runtime_stage
+            else "统一 AI 模型 Catalog 预设；不复制密钥，真实调用复用正式环节密钥。",
             f"source={entry.source}",
         ]
+        if runtime_stage:
+            notes.append("该模型使用独立密钥，请在本记录密钥字段填写。")
         if entry.notes:
             notes.append(entry.notes)
         if entry.nine_grid_fit:
             notes.append(f"fit={entry.nine_grid_fit}")
         fields = {
-            "环节": f"{CONFIG_PRESET_PREFIX}-{entry.display_name}",
+            "环节": runtime_stage or f"{CONFIG_PRESET_PREFIX}-{entry.display_name}",
+            "配置类型": "运行环节" if runtime_stage else "模型目录",
             "模型名称": entry.display_name,
-            "AI供应商": entry.provider,
-            "AI能力类型": entry.capability,
+            "供应商": entry.provider,
+            "能力类型": entry.capability,
             "AI任务类型": default_task(entry),
             "AI参数JSON": json.dumps(params, ensure_ascii=False, sort_keys=True),
             "API 代理地址": provider_base(entry),
@@ -127,35 +149,26 @@ def build_field_option_updates(config: Dict[str, Any]) -> List[FieldOptionUpdate
         ai_model_catalog.opt("Aitgenne", "Purple"),
     ]
     target_specs = [
-        ("nine_grid_video", "方案AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("nine_grid_video", "文本AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("nine_grid_video", "参考图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("nine_grid_video", "图片AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("nine_grid_video", "视频AI模型", ai_model_catalog.REFERENCE_VIDEO_MODEL_OPTIONS),
         ("nine_grid_video", "视频生成模型", ai_model_catalog.REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
-        ("first_last_video", "拆分AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("first_last_video", "文本AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("first_last_video", "首帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("first_last_video", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("first_last_video", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
         ("first_last_video", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
         ("first_last_video", "视频通道", video_channel_options),
-        ("script_doc_tasks", "解析AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
-        ("script_doc_tasks", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("script_doc_tasks", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("script_doc_tasks", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
-        ("script_doc_tasks", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
-        ("script_doc_shots", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("script_doc_shots", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("script_doc_shots", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
-        ("script_doc_shots", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
-        ("script_doc_unified", "解析AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("script_doc_tasks", "文本AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("script_doc_unified", "文本AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("script_doc_unified", "分镜图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("script_doc_unified", "尾帧图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("script_doc_unified", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
         ("script_doc_unified", "视频通道", video_channel_options),
-        ("multi_role_first_last", "拆解AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
+        ("storyboard_video", "视频生成模型", ai_model_catalog.STORYBOARD_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+        ("prompt_image_video", "视频生成模型", ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+        ("multi_role_first_last", "文本AI模型", ai_model_catalog.TEXT_MODEL_OPTIONS),
         ("multi_role_first_last", "参考图AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
         ("multi_role_first_last", "关键帧AI模型", ai_model_catalog.IMAGE_MODEL_OPTIONS),
-        ("multi_role_first_last", "视频AI模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_OPTIONS),
         ("multi_role_first_last", "视频生成模型", ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
         ("multi_role_first_last", "视频通道", video_channel_options),
     ]
@@ -359,6 +372,8 @@ def backup_target_fields(base_token: str, updates: Sequence[FieldOptionUpdate]) 
     for table_id, table_updates in by_table.items():
         items = list_field_items(base_token, table_id)
         wanted = {item.field_name for item in table_updates}
+        for update in table_updates:
+            wanted.update(LEGACY_TEXT_MODEL_FIELDS.get(update.table_key, ()))
         backups.append({
             "table_key": table_updates[0].table_key,
             "table_id": table_id,
@@ -376,11 +391,22 @@ def apply_field_option_updates(base_token: str, updates: Sequence[FieldOptionUpd
         items = list_field_items(base_token, table_id)
         by_name = {field_name(item): item for item in items}
         for update in table_updates:
+            legacy_aliases = LEGACY_TEXT_MODEL_FIELDS.get(update.table_key, ()) if update.field_name == "文本AI模型" else ()
             existing = by_name.get(update.field_name)
             if not existing:
-                status = "would_create_field" if dry_run else "created_field"
+                legacy_existing = next((by_name.get(name) for name in legacy_aliases if by_name.get(name)), None)
+                if legacy_existing:
+                    status = "would_rename_field" if dry_run else "renamed_field"
+                    if not dry_run:
+                        write_field_options(base_token, update, legacy_existing)
+                else:
+                    status = "would_create_field" if dry_run else "created_field"
+                    if not dry_run:
+                        create_select_field(base_token, update)
+            elif any(by_name.get(name) for name in legacy_aliases):
+                status = "duplicate_legacy_field_present"
                 if not dry_run:
-                    create_select_field(base_token, update)
+                    write_field_options(base_token, update, existing)
             else:
                 status = "dry_run" if dry_run else "updated"
                 if not dry_run:
@@ -474,11 +500,30 @@ def upsert_config_presets(
         ai_routing._norm((record.get("fields") or {}).get("环节")): record
         for record in records
     }
+    legacy_preset_by_model = {}
+    for record in records:
+        fields = record.get("fields") or {}
+        stage = ai_routing._norm(fields.get("环节"))
+        model = ai_routing._norm(fields.get("模型名称"))
+        config_type = ai_routing._norm(fields.get("配置类型"))
+        if model and stage.startswith(f"{CONFIG_PRESET_PREFIX}-") and config_type == "模型目录":
+            legacy_preset_by_model.setdefault(model, record)
+
     results = []
     for preset in presets:
         desired = filter_existing_fields(preset["fields"], allowed_names)
         stage = ai_routing._norm(desired.get("环节"))
+        model = ai_routing._norm(desired.get("模型名称"))
         existing = by_stage.get(stage)
+        migrated_from = ""
+        if (
+            not existing
+            and ai_routing._norm(desired.get("配置类型")) == "运行环节"
+            and model
+        ):
+            existing = legacy_preset_by_model.get(model)
+            if existing:
+                migrated_from = ai_routing._norm((existing.get("fields") or {}).get("环节"))
         action = "update" if existing else "create"
         if not dry_run:
             if existing:
@@ -492,6 +537,8 @@ def upsert_config_presets(
             "model": preset["key"],
             "action": "dry_run_" + action if dry_run else action,
             "field_count": len(desired),
+            "record_id": existing.get("record_id") if existing else "",
+            "migrated_from": migrated_from,
         })
     return results
 

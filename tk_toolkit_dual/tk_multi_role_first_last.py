@@ -901,15 +901,9 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "关键帧画面尺寸",
             "关键帧画面比例",
             "视频生成模型",
-            "视频AI模型",
             "视频AI参数JSON",
             "视频画面尺寸",
             "视频画面比例",
-            "AI供应商",
-            "AI能力类型",
-            "AI任务类型",
-            "AI模型",
-            "AI参数JSON",
         )
         if parent_fields.get(name)
     }
@@ -1090,14 +1084,11 @@ def _usable_model_choice(value: Any) -> str:
 def resolve_video_generation_model(fields: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, str]:
     raw = (
         _usable_model_choice(fields.get("视频生成模型"))
-        or _usable_model_choice(fields.get("视频AI模型"))
         or _usable_model_choice(cfg.get("model"))
         or DEFAULT_OTU_MODEL
     )
     source = "视频生成模型" if _usable_model_choice(fields.get("视频生成模型")) else (
-        "视频AI模型" if _usable_model_choice(fields.get("视频AI模型")) else (
-            "配置表" if _usable_model_choice(cfg.get("model")) else "代码默认值"
-        )
+        "配置表" if _usable_model_choice(cfg.get("model")) else "代码默认值"
     )
     bits = ai_routing.parse_model_display(raw)
     provider = bits["provider"] or "OTU"
@@ -1109,7 +1100,7 @@ def resolve_video_generation_model(fields: Dict[str, Any], cfg: Dict[str, Any]) 
 
 
 def selected_video_provider_hint(fields: Dict[str, Any]) -> str:
-    raw = _usable_model_choice(fields.get("视频生成模型")) or _usable_model_choice(fields.get("视频AI模型"))
+    raw = _usable_model_choice(fields.get("视频生成模型"))
     bits = ai_routing.parse_model_display(raw)
     return bits["provider"] or "OTU"
 
@@ -1159,7 +1150,7 @@ def reference_video_route_for_model(
         capability="视频",
         task_type=task_type,
         model=display_model,
-        call_type="happyhorse视频" if provider == "Aitgenne" else "",
+        call_type="",
         api_base=api_base,
         api_key=api_key,
         params=dict(params or {}),
@@ -1204,6 +1195,19 @@ def existing_video_task_matches_channel(fields: Dict[str, Any], channel: str, di
     return False
 
 
+def current_video_task_still_matches(token: str, record_id: str, expected_version: int, expected_task_id: str) -> Tuple[bool, Dict[str, Any]]:
+    current = safe_get_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id)
+    current_task_id = extract_text(current.get("视频任务ID")).strip()
+    try:
+        current_version_value = int(float(extract_text(current.get("视频版本")).strip() or current.get("视频版本") or 1))
+    except Exception:
+        current_version_value = 1
+    return (
+        current_version_value == expected_version and (not current_task_id or current_task_id == expected_task_id),
+        {"视频任务ID": current_task_id, "视频版本": current_version_value},
+    )
+
+
 def maybe_unified_media_summary(
     token: str,
     fields: Dict[str, Any],
@@ -1222,12 +1226,16 @@ def maybe_unified_media_summary(
     config_records = config_records_for_image_slot(fields, slot_name, lambda: safe_list_records(token, TABLE_CONFIG))
     if not ai_routing.unified_route_enabled(fields, config_records):
         return None
-    route = ai_routing.route_from_slot(fields, slot_name, {
+    model_bits = ai_routing.parse_model_display(model)
+    provider = model_bits["provider"] or ai_routing.parse_model_display(cfg.get("model"))["provider"] or cfg.get("provider") or "OTU"
+    route_fields = dict(fields)
+    route_fields[ai_routing.slot_model_field(slot_name)] = model
+    route = ai_routing.route_from_slot(route_fields, slot_name, {
         **cfg,
-        "provider": "OTU",
+        "provider": provider,
         "capability": capability,
         "task_type": task_type,
-        "model": f"OTU / {model}",
+        "model": model if model_bits["provider"] else f"{provider} / {model}",
         "params": params,
     }, capability=capability, task_type=task_type, config_records=config_records)
     if capability == "视频" and not ai_model_catalog.is_first_last_video_model(route.model, route.provider):
@@ -2099,19 +2107,17 @@ def submit_reference_video_task(
         urls = [extract_text(url).strip() for url in (reference_urls or []) if extract_text(url).strip()]
         if len(urls) < 2:
             raise ValueError("Aitgenne 多角色视频缺少参考图 URL")
-        payload: Dict[str, Any] = {
-            "model": model_name,
-            "prompt": prompt,
-            "input.media": [{"type": "image", "url": url} for url in urls[:2]],
-            "parameters.resolution": aitgenne_video_resolution(size),
-            "parameters.aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
-            "parameters.seconds": str(seconds or "8"),
-        }
+        payload = ai_routing.build_aitgenne_unified_video_payload(
+            route,
+            prompt,
+            urls[:2],
+            aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO,
+        )
 
         def _submit_aitgenne_once() -> Tuple[str, Dict[str, Any]]:
             resp = requests.post(
                 endpoint,
-                headers={"Authorization": f"Bearer {route.api_key}"},
+                headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
                 json=payload,
                 timeout=SUBMIT_TIMEOUT,
             )
@@ -2206,6 +2212,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         size_field="视频画面尺寸",
         ratio_field="视频画面比例",
         params_field="视频AI参数JSON",
+        placeholder_values=(f"OTU / {DEFAULT_OTU_MODEL}", DEFAULT_OTU_MODEL, "默认（配置表）"),
         field_filter=filter_existing_fields,
     )
     ensure_active_record(fields)
@@ -2276,7 +2283,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         runtime_cfg,
         capability="视频",
         task_type="首尾帧视频",
-        model=video_model["model"],
+        model=video_model["display"],
         slot_name="视频",
         prompt=prompt,
         params={"size": size, "seconds": seconds, "aspect_ratio": aspect_ratio},
@@ -2400,6 +2407,15 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         result = operation_to_dict(completed_operation)
         video_url = native_generated_video_uri(generated_video)
         download_native_veo_video(client, generated_video, output_path)
+    still_current, current_marker = current_video_task_still_matches(token, record_id, version, task_id)
+    if not still_current:
+        summary.update({
+            "status": "stale_writeback_skipped",
+            "task_id": task_id,
+            "current_task_id": current_marker.get("视频任务ID"),
+            "current_version": current_marker.get("视频版本"),
+        })
+        return summary
     repair_fields: Dict[str, Any] = {
         "视频生成状态": "生成中",
         "视频任务ID": task_id,

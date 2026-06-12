@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from ai_model_catalog import IMAGE_MODEL_OPTIONS, PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS
+from ai_model_catalog import IMAGE_MODEL_OPTIONS, STORYBOARD_VIDEO_MODEL_WITH_DEFAULT_OPTIONS
 from tk_create_script_doc_shots_table import (
     attachment,
     create_missing_fields,
@@ -91,7 +91,7 @@ STORYBOARD_VIDEO_FIELDS = [
     select("图片审核状态", REVIEW_STATUS_OPTIONS),
     text("图片错误信息"),
     datetime_field("图片生成时间"),
-    select("视频AI模型", PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
+    select("视频生成模型", STORYBOARD_VIDEO_MODEL_WITH_DEFAULT_OPTIONS),
     text("视频AI参数JSON"),
     number("视频时长秒"),
     select("视频画面尺寸", VIDEO_SIZE_OPTIONS),
@@ -133,7 +133,7 @@ TABLE_DEFINITION = {
         ],
         "03-故事板视频结果": [
             "任务名称", "记录状态", "父任务记录ID", "Storyboard编号", "Time Range", "生成图片",
-            "图生视频提示词", "图片审核状态", "视频AI模型", "视频时长秒",
+            "图生视频提示词", "图片审核状态", "视频生成模型", "视频时长秒",
             "视频画面尺寸", "视频画面比例", "视频生成状态", "生成视频", "视频URL", "视频错误信息",
         ],
         "98-失败处理": [

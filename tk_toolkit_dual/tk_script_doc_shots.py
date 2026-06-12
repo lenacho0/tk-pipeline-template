@@ -605,18 +605,18 @@ def build_child_shot_records(
             "尾帧图AI参数JSON",
             "尾帧图画面尺寸",
             "尾帧图画面比例",
-            "视频AI模型",
+            "视频生成模型",
             "视频AI参数JSON",
             "视频画面尺寸",
             "视频画面比例",
-            "AI供应商",
-            "AI能力类型",
-            "AI任务类型",
-            "AI模型",
-            "AI参数JSON",
         )
         if parent_fields.get(name)
     }
+    if inherited_route_fields.get("视频生成模型"):
+        inherited_route_fields["视频生成模型"] = _prefixed_video_model_value(
+            extract_text(parent_fields.get("视频通道")).strip() or "OTU",
+            extract_text(parent_fields.get("视频生成模型")).strip(),
+        )
     inherited_route_fields.setdefault("使用统一AI路由", "是")
     records = []
     for shot in payload.get("shots", []):

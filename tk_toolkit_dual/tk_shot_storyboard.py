@@ -928,6 +928,8 @@ def build_script_doc_last_frame_prompt(fields, first_frame_prompt=''):
 def render_script_doc_last_frame(token, record_id, *, dry_run=False, table='script_doc'):
     tables = script_doc_table_context(table)
 
+    from tk_script_doc_shots import collect_reference_images_for_shot
+
     fields = safe_get_record(token, tables['shots'], record_id)
     fields = apply_task_default_to_record(
         token,
@@ -1003,6 +1005,34 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False, table='scri
     task_dir = ensure_task_dir(record_id)
     first_frame_path = download_feishu_media(token, first_frame_token, Path(task_dir) / f'{record_id}_first_frame.png')
     first_frame_tmp_url = get_tmp_download_url_for_attachment(token, first_frame_token)
+    product_refs = []
+    needs_product_ref = extract_text(fields.get('需要产品参考图')).strip().lower() in {'是', 'yes', 'true', '1'}
+    if needs_product_ref and not existing_task_id:
+        parent_record_id = extract_text(fields.get('父文档记录ID', '')).strip()
+        parent_fields = safe_get_record(token, tables['tasks'], parent_record_id) if parent_record_id else {}
+        product_ref_fields = dict(fields)
+        product_ref_fields['参考资产ID列表'] = ''
+        product_refs = [
+            ref for ref in collect_reference_images_for_shot(
+                token,
+                product_ref_fields,
+                parent_fields,
+                [],
+                Path(task_dir),
+            )
+            if extract_text(ref.get('role')).startswith('product:')
+        ]
+    product_ref_paths = [ref.get('path') for ref in product_refs if ref.get('path')]
+    product_ref_urls = build_reference_urls(token, product_refs) if product_refs else []
+    reference_urls = ([first_frame_tmp_url] if first_frame_tmp_url else []) + product_ref_urls
+    reference_roles = ['first_frame'] + [ref.get('role', 'product') for ref in product_refs]
+    if product_refs:
+        product_note = "\n".join([
+            "Additional product reference images are uploaded after the first-frame image.",
+            "Treat those product reference images as hard identity anchors for the product.",
+            "Keep the product packaging, bottle shape, label, color, specification, logo, text layout, and proportions unchanged.",
+        ])
+        prompt = f"{product_note}\n\n{prompt}".strip()
     api_key = config['api_key']
     api_base = config['api_base'] or DEFAULT_OTU_API_BASE
     if not api_key:
@@ -1023,7 +1053,9 @@ def render_script_doc_last_frame(token, record_id, *, dry_run=False, table='scri
         out_path,
         input_mode='image-to-image',
         image_path=str(first_frame_path),
-        metadata={'urls': [first_frame_tmp_url] if first_frame_tmp_url else [], 'reference_roles': ['first_frame'], 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
+        reference_image_paths=product_ref_paths if product_ref_paths else None,
+        reference_count_override=1 + len(product_refs),
+        metadata={'urls': reference_urls, 'reference_roles': reference_roles, 'aspectRatio': image_params.get('aspect_ratio') or '9:16'},
         size=image_params.get('size') or DEFAULT_OTU_IMAGE_SIZE,
         aspect_ratio=image_params.get('aspect_ratio') or '9:16',
         otu_submitter=submit_otu_image_task,

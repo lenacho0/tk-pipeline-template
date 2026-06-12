@@ -80,6 +80,30 @@ def get_feishu_token():
 def feishu_headers(token):
     return {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
 
+
+def aitgenne_request(method, url, **kwargs):
+    """Call Aitgenne directly, ignoring process-wide proxy env vars."""
+    session = requests.Session()
+    session.trust_env = False
+    try:
+        resp = session.request(method, url, **kwargs)
+        if kwargs.get("stream"):
+            setattr(resp, "_aitgenne_session", session)
+        else:
+            session.close()
+        return resp
+    except Exception:
+        session.close()
+        raise
+
+
+def aitgenne_get(url, **kwargs):
+    return aitgenne_request("GET", url, **kwargs)
+
+
+def aitgenne_post(url, **kwargs):
+    return aitgenne_request("POST", url, **kwargs)
+
 def get_record(token, table_id, record_id):
     resp = requests.get(
         f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/records/{record_id}',
@@ -355,13 +379,15 @@ def build_error_payload(error, stage='unknown'):
         '违规' in msg
         or '请立即修改' in msg
         or '可能违规内容' in msg
+        or 'unsafe' in lower
+        or 'considered unsafe' in lower
         or 'policy' in lower
         or 'safety' in lower
     ):
         error_code = 'UPSTREAM_POLICY_BLOCKED'
         retryable = False
         failure_status = 'failed_terminal'
-    elif 'no available channel' in lower or 'model_not_found' in lower:
+    elif ('no available channel' in lower or 'model_not_found' in lower) and 'http 502' not in lower and 'http 503' not in lower:
         error_code = 'CONFIG_INVALID'
         retryable = False
         failure_status = 'failed_terminal'

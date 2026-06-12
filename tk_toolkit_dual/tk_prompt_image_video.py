@@ -23,6 +23,8 @@ from common import (  # noqa: E402
     TABLE_PROMPT_IMAGE_VIDEO,
     TABLE_STORYBOARD_VIDEO,
     WORKSPACE,
+    aitgenne_get,
+    aitgenne_post,
     build_error_payload,
     extract_attachment_tokens,
     extract_linked_record_ids,
@@ -60,6 +62,7 @@ from tk_shot_video import (  # noqa: E402
     call_native_veo_first_frame_task,
     download_native_veo_video,
     download_video,
+    download_video_without_env_proxy,
     extract_native_generated_video,
     extract_video_url,
     format_url_field_value,
@@ -559,7 +562,7 @@ def config_fields_to_runtime(fields: Mapping[str, Any], *, default_model: str = 
 
 def resolve_video_route(fields: Dict[str, Any], token: Optional[str] = None) -> ai_routing.AiRoute:
     token = token or get_feishu_token()
-    model_choice = extract_text(fields.get("视频AI模型")).strip()
+    model_choice = extract_text(fields.get("视频生成模型")).strip()
     params = parse_json_object(fields.get("视频AI参数JSON"), field_name="视频AI参数JSON")
     size = extract_text(fields.get("视频画面尺寸")).strip()
     aspect_ratio = extract_text(fields.get("视频画面比例")).strip()
@@ -628,15 +631,19 @@ def collect_omni_video_references(
 
 
 def _extract_result_url(data: Mapping[str, Any]) -> str:
+    routed_url = ai_routing.extract_video_result_url(data)
+    if routed_url:
+        return routed_url
     candidates = [
+        data.get("upsample_video_url"),
         data.get("video_url"),
         data.get("result_url"),
         data.get("url"),
         data.get("download_url"),
     ]
-    for key in ("data", "result", "output"):
+    for key in ("detail", "data", "result", "output"):
         nested = data.get(key) if isinstance(data.get(key), Mapping) else {}
-        candidates.extend([nested.get("video_url"), nested.get("result_url"), nested.get("url"), nested.get("download_url")])
+        candidates.extend([nested.get("upsample_video_url"), nested.get("video_url"), nested.get("result_url"), nested.get("url"), nested.get("download_url")])
     for key in ("result_urls", "urls", "videos"):
         value = data.get(key)
         if isinstance(value, list) and value:
@@ -658,7 +665,7 @@ def poll_happyhorse_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[
     start = time.time()
     last_body: Dict[str, Any] = {}
     while time.time() - start < MAX_POLL_SECONDS:
-        resp = requests.get(url, headers=headers, timeout=POLL_TIMEOUT)
+        resp = aitgenne_get(url, headers=headers, timeout=POLL_TIMEOUT)
         try:
             body = resp.json()
         except Exception:
@@ -734,11 +741,15 @@ def run_video_generation(
             request_summary={"reference_count": 1, "size": size, "aspect_ratio": aspect_ratio, "seconds": seconds},
             video_url=video_url,
         )
-    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_happyhorse_model(route):
-        if not image_url:
-            raise ValueError("Aitgenne HappyHorse 图生视频需要生成图片的临时下载 URL")
-        payload = ai_routing.build_happyhorse_video_payload(route, prompt, [image_url], size=size, aspect_ratio=aspect_ratio, seconds=seconds)
-        resp = requests.post(
+    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_unified_video_model(route):
+        submitted_refs = refs or []
+        reference_urls = [extract_text(ref.get("url")).strip() for ref in submitted_refs if extract_text(ref.get("url")).strip()]
+        if not reference_urls and image_url:
+            reference_urls = [image_url]
+        if not reference_urls:
+            raise ValueError("Aitgenne unified 图生视频需要至少 1 张参考图 URL")
+        payload = ai_routing.build_aitgenne_unified_video_payload(route, prompt, reference_urls, aspect_ratio=aspect_ratio)
+        resp = aitgenne_post(
             ai_routing.media_endpoint(route),
             headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
             json=payload,
@@ -757,7 +768,46 @@ def run_video_generation(
         video_url = _extract_result_url(result_body)
         if not video_url:
             raise RuntimeError(f"Aitgenne 生成完成但未返回可下载视频 URL: {compact_json(result_body, 1200)}")
-        download_video(video_url, out_path)
+        download_video_without_env_proxy(video_url, out_path)
+        return VideoGenerationResult(
+            provider=route.provider,
+            task_id=task_id,
+            submit_body=submit_body,
+            result_body=result_body,
+            output_path=out_path,
+            request_summary={
+                "mode": "aitgenne_unified_video",
+                "reference_count": len(reference_urls),
+                "reference_urls": reference_urls,
+                "size": size,
+                "aspect_ratio": aspect_ratio,
+            },
+            video_url=video_url,
+        )
+    if route.provider == "Aitgenne" and ai_routing.is_aitgenne_happyhorse_model(route):
+        if not image_url:
+            raise ValueError("Aitgenne HappyHorse 图生视频需要生成图片的临时下载 URL")
+        payload = ai_routing.build_happyhorse_video_payload(route, prompt, [image_url], size=size, aspect_ratio=aspect_ratio, seconds=seconds)
+        resp = aitgenne_post(
+            ai_routing.media_endpoint(route),
+            headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=SUBMIT_TIMEOUT,
+        )
+        try:
+            submit_body = resp.json()
+        except Exception:
+            submit_body = {"raw_text": resp.text[:1000]}
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Aitgenne 视频任务提交失败: HTTP {resp.status_code}, body={str(submit_body)[:1200]}")
+        task_id = ai_routing.extract_video_task_id(submit_body)
+        if not task_id:
+            raise RuntimeError(f"Aitgenne 视频任务提交未返回任务 ID: {str(submit_body)[:1200]}")
+        result_body = poll_happyhorse_video_task(route, task_id)
+        video_url = _extract_result_url(result_body)
+        if not video_url:
+            raise RuntimeError(f"Aitgenne 生成完成但未返回可下载视频 URL: {compact_json(result_body, 1200)}")
+        download_video_without_env_proxy(video_url, out_path)
         return VideoGenerationResult(
             provider=route.provider,
             task_id=task_id,
@@ -867,7 +917,7 @@ def apply_prompt_video_default_to_record(
         fields,
         app_table=app_table_for_key(table_key),
         stage="图生视频生成默认",
-        model_field="视频AI模型",
+        model_field="视频生成模型",
         size_field="视频画面尺寸",
         ratio_field="视频画面比例",
         params_field="视频AI参数JSON",
@@ -1016,17 +1066,22 @@ def run_video(
     image_path = Path(_downloaded_path(download_feishu_attachment_raw(token, image_token, image_save_path), image_save_path))
     route = resolve_video_route(fields, token)
     image_url = get_tmp_download_url_for_attachment(token, image_token) if route.provider == "Aitgenne" else ""
-    refs = (
-        collect_omni_video_references(
+    refs = None
+    if is_otu_omni_video_route(route) or ai_routing.is_aitgenne_unified_components_model(route):
+        refs = collect_omni_video_references(
             token,
             fields,
             work_dir,
             generated_image_token=image_token,
             generated_image_path=str(image_path),
         )
-        if is_otu_omni_video_route(route)
-        else None
-    )
+        if ai_routing.is_aitgenne_unified_components_model(route):
+            if len(refs) > 3:
+                raise ValueError(f"Aitgenne components 参考图数量超过上限：当前 {len(refs)} 张，最多 3 张")
+            for ref in refs:
+                file_token = extract_text(ref.get("file_token")).strip()
+                if file_token:
+                    ref["url"] = get_tmp_download_url_for_attachment(token, file_token)
     out_path = str(work_dir / f"{record_id}_video_v{version}.mp4")
     summary = {
         "record_id": record_id,

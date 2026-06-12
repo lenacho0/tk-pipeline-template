@@ -248,7 +248,7 @@ def apply_storyboard_default_models(token: str, records: List[Dict[str, Dict[str
             fields,
             app_table=app_table,
             stage="图生视频生成默认",
-            model_field="视频AI模型",
+            model_field="视频生成模型",
             size_field="视频画面尺寸",
             ratio_field="视频画面比例",
             params_field="视频AI参数JSON",

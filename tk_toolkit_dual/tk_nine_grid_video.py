@@ -28,6 +28,8 @@ from common import (  # noqa: E402
     TABLE_NINE_GRID_VIDEO,
     TABLE_PRODUCT,
     WORKSPACE,
+    aitgenne_get,
+    aitgenne_post,
     build_error_payload,
     extract_linked_record_ids,
     extract_text,
@@ -63,6 +65,7 @@ from tk_reference_media import (  # noqa: E402
 from tk_shot_storyboard import build_reference_urls, filter_existing_fields  # noqa: E402
 from tk_shot_video import (  # noqa: E402
     download_video,
+    download_video_without_env_proxy,
     extract_video_url,
     format_url_field_value,
     get_table_field_types,
@@ -824,6 +827,16 @@ def _is_aitgenne_omni_flash(route: ai_routing.AiRoute, model_name: Optional[str]
     return route.provider == "Aitgenne" and parsed_model == "omni-flash"
 
 
+def _aitgenne_reference_limit(route: ai_routing.AiRoute) -> int:
+    if route.provider != "Aitgenne" or ai_routing.is_aitgenne_happyhorse_model(route):
+        return REFERENCE_VIDEO_MAX_IMAGES
+    if ai_routing.is_aitgenne_unified_components_model(route):
+        return 3
+    if ai_routing.is_aitgenne_unified_video_model(route):
+        return 2
+    return REFERENCE_VIDEO_MAX_IMAGES
+
+
 def _reference_roles_summary(refs: List[Dict[str, str]]) -> str:
     return ",".join(ref.get("role", "") for ref in refs if ref.get("role"))
 
@@ -898,7 +911,7 @@ def submit_reference_video_task(
             aspect_ratio=aspect_ratio,
             seconds=seconds,
         )
-        resp = requests.post(
+        resp = aitgenne_post(
             ai_routing.media_endpoint(route),
             headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
             json=payload,
@@ -916,20 +929,19 @@ def submit_reference_video_task(
         return task_id, body
 
     if route.provider == "Aitgenne":
-        urls = [extract_text(ref.get("url")).strip() for ref in refs[:REFERENCE_VIDEO_MAX_IMAGES] if extract_text(ref.get("url")).strip()]
+        limit = _aitgenne_reference_limit(route)
+        urls = [extract_text(ref.get("url")).strip() for ref in refs[:limit] if extract_text(ref.get("url")).strip()]
         if not urls:
             raise ValueError("Aitgenne 参考图生视频缺少参考图 URL")
-        payload: Dict[str, Any] = {
-            "model": model_name,
-            "prompt": prompt,
-            "input.media": [{"type": "image", "url": url} for url in urls],
-            "parameters.resolution": aitgenne_video_resolution(size),
-            "parameters.aspect_ratio": aspect_ratio or DEFAULT_ASPECT_RATIO,
-            "parameters.seconds": str(seconds or "10"),
-        }
-        resp = requests.post(
+        payload = ai_routing.build_aitgenne_unified_video_payload(
+            route,
+            prompt,
+            urls,
+            aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO,
+        )
+        resp = aitgenne_post(
             ai_routing.media_endpoint(route),
-            headers={"Authorization": f"Bearer {route.api_key}"},
+            headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
             json=payload,
             timeout=180,
         )
@@ -990,7 +1002,7 @@ def poll_reference_video_task(route: ai_routing.AiRoute, task_id: str) -> Dict[s
     start = time.time()
     last_body: Dict[str, Any] = {}
     while time.time() - start < 2400:
-        resp = requests.get(url, headers=headers, timeout=45)
+        resp = aitgenne_get(url, headers=headers, timeout=45)
         try:
             body = resp.json()
         except Exception:
@@ -1090,9 +1102,10 @@ def _prefixed_route_fields(fields: Dict[str, Any], prefix: str, *, default_provi
     if prefix == "视频":
         model = (
             _usable_model_choice(fields.get("视频生成模型"))
-            or _usable_model_choice(fields.get("视频AI模型"))
             or default_model
         )
+    elif prefix == "方案":
+        model = _field_with_default(fields, "文本AI模型", _field_with_default(fields, f"{prefix}AI模型", default_model))
     else:
         model = _field_with_default(fields, f"{prefix}AI模型", default_model)
     model_provider = ai_routing.parse_model_display(model)["provider"]
@@ -1478,11 +1491,8 @@ def build_child_board_records(
             "图片画面比例": DEFAULT_ASPECT_RATIO,
             "图片生成状态": "不触发" if await_reference_assets else "待生成",
             "视频提示词": video_prompt,
-            "视频AI供应商": _field_with_default(parent_fields, "视频AI供应商", DEFAULT_VIDEO_PROVIDER),
-            "视频AI模型": _field_with_default(parent_fields, "视频AI模型", DEFAULT_VIDEO_MODEL),
             "视频生成模型": (
                 _usable_model_choice(parent_fields.get("视频生成模型"))
-                or _usable_model_choice(parent_fields.get("视频AI模型"))
                 or DEFAULT_VIDEO_MODEL
             ),
             "视频AI参数JSON": extract_text(parent_fields.get("视频AI参数JSON")).strip(),
@@ -2627,8 +2637,8 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             **product_item,
             "type": "product",
         }, *human_items]
-        if _is_aitgenne_omni_flash(route, model_name):
-            prompt_refs = prompt_refs[:2]
+        if route.provider == "Aitgenne" and not ai_routing.is_aitgenne_happyhorse_model(route):
+            prompt_refs = prompt_refs[:_aitgenne_reference_limit(route)]
         model_prompt = build_video_model_prompt_for_route(prompt, route, prompt_refs)
     summary = {
         "record_id": record_id,
@@ -2682,8 +2692,8 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
             download_fn=safe_download_attachment,
         ))
         submitted_refs = omni_refs
-        if _is_aitgenne_omni_flash(route, model_name):
-            submitted_refs = omni_refs[:2]
+        if route.provider == "Aitgenne" and not ai_routing.is_aitgenne_happyhorse_model(route):
+            submitted_refs = omni_refs[:_aitgenne_reference_limit(route)]
         if route.provider == "Aitgenne":
             urls = build_reference_urls(token, submitted_refs)
             submitted_refs = [dict(ref, url=url) for ref, url in zip(submitted_refs, urls)]
@@ -2729,7 +2739,10 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     video_url = extract_video_url(result)
     if not video_url:
         raise RuntimeError(f"宫格视频生成完成但未返回 video_url: {compact_json(result, 1200)}")
-    download_video(video_url, output_path)
+    if route.provider == "Aitgenne":
+        download_video_without_env_proxy(video_url, output_path)
+    else:
+        download_video(video_url, output_path)
     repair_fields = {
         "视频生成状态": "生成中",
         "视频任务ID": task_id,
@@ -2742,8 +2755,6 @@ def render_nine_grid_video(record_id: str, *, dry_run: bool = False) -> Dict[str
     file_token = upload_video_to_feishu(token, output_path, f"{record_id}_nine_grid_video.mp4")
     ensure_nine_grid_record_current_generation(token, record_id, "视频生成状态", "生成中", "视频任务ID", task_id)
     success_fields = {
-        "视频AI供应商": route.provider,
-        "视频AI模型": route.model,
         "视频生成模型": route.model,
         "视频生成状态": "成功",
         "分镜视频": [{"file_token": file_token, "name": Path(output_path).name}],

@@ -413,7 +413,7 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertNotIn("发布平台", views["04-发布素材"])
         self.assertIn("发布平台", views["99-排错"])
         self.assertIn("视频生成模型", views["99-排错"])
-        self.assertIn("视频AI模型", views["99-排错"])
+        self.assertNotIn("视频AI模型", views["99-排错"])
         self.assertIn("分镜图任务ID", views["99-排错"])
         self.assertIn("分镜图原始响应JSON", views["99-排错"])
         self.assertIn("尾帧图任务ID", views["99-排错"])
@@ -444,7 +444,6 @@ class ScriptDocShotsTests(unittest.TestCase):
             "尾帧图AI模型",
             "尾帧图画面尺寸",
             "尾帧图画面比例",
-            "视频AI模型",
             "视频AI参数JSON",
             "视频生成模型",
             "视频画面尺寸",
@@ -475,7 +474,7 @@ class ScriptDocShotsTests(unittest.TestCase):
         self.assertNotIn("视频AI模型", task_views["高级AI参数"])
         self.assertNotIn("视频AI参数JSON", task_views["高级AI参数"])
         self.assertIn("视频生成模型", task_views["99-解析排错"])
-        self.assertIn("视频AI模型", task_views["99-解析排错"])
+        self.assertNotIn("视频AI模型", task_views["99-解析排错"])
 
     def test_split_table_records_omit_mixed_record_type_field(self):
         payload = doc_shots.validate_and_normalize_payload(self.sample_payload(), target_seconds=8)
@@ -680,6 +679,8 @@ class ScriptDocShotsTests(unittest.TestCase):
             self.assertEqual(watch["required_field_values"], {"记录类型": record_types})
             self.assertEqual(watch["args"][:len(args_prefix)], args_prefix)
             self.assertTrue(watch["keep_when_table_missing"])
+            if name == "003新表脚本文档解析拆分":
+                self.assertEqual(watch["trigger_values"], ["待解析", "解析中"])
             clear_fields = set(watch.get("claim_clear_fields") or [])
             for clear_values in (watch.get("claim_clear_values_by_trigger_value") or {}).values():
                 clear_fields.update(clear_values)

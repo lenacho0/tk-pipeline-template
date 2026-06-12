@@ -765,7 +765,7 @@ class ShotVideoTest(unittest.TestCase):
                     get_record_fn=lambda token, table, rid: fields,
                 )
 
-    def test_video_ai_model_is_legacy_fallback_when_video_generation_model_is_empty(self):
+    def test_legacy_video_ai_model_is_ignored_when_video_generation_model_is_empty(self):
         fields = sample_fields()
         fields["视频通道"] = "AIHubMix"
         fields["视频生成模型"] = ""
@@ -793,14 +793,13 @@ class ShotVideoTest(unittest.TestCase):
         self.assertFalse(result["unified_ai_route_enabled"])
         self.assertEqual(result["video_channel"], "AIHubMix")
         self.assertEqual(result["model"], "veo-3.1-fast-generate-preview")
-        self.assertEqual(result["model_source"], "视频AI模型")
+        self.assertEqual(result["model_source"], "配置表")
 
-    def test_video_ai_model_is_blocked_by_global_dry_run_switch(self):
+    def test_video_generation_model_is_blocked_by_global_dry_run_switch(self):
         fields = sample_fields()
         fields["使用统一AI路由"] = "是"
-        fields["视频通道"] = "AIHubMix"
-        fields["视频生成模型"] = ""
-        fields["视频AI模型"] = "OTU / veo_3_1-fast-fl"
+        fields["视频通道"] = "OTU"
+        fields["视频生成模型"] = "OTU / veo_3_1-fast-fl"
         submitter = Mock()
         with patch("tk_shot_video.safe_list_records", return_value=[{
                 "fields": {"环节": "统一AI路由启用状态", "模型名称": "仅dry-run"}
@@ -834,7 +833,7 @@ class ShotVideoTest(unittest.TestCase):
     def test_script_doc_rejects_reference_video_model_for_first_last_mode(self):
         fields = sample_fields()
         fields["使用统一AI路由"] = "是"
-        fields["视频AI模型"] = "Aitgenne / happyhorse-1.0-r2v"
+        fields["视频生成模型"] = "Aitgenne / happyhorse-1.0-r2v"
         with patch("tk_shot_video.safe_list_records", return_value=[
                 {"fields": {"环节": "统一AI路由启用状态", "模型名称": "指定记录启用"}},
                 {"fields": {"AI供应商": "Aitgenne", "API 代理地址": "https://api.aitgenne.com", "API Key": "sk-aitgenne"}},

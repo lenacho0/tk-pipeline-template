@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import requests
 from media_specs import adapt_image_metadata, media_spec_from_values
@@ -25,8 +25,15 @@ AI_CAPABILITY_FIELD = "AI能力类型"
 AI_TASK_TYPE_FIELD = "AI任务类型"
 AI_MODEL_FIELD = "AI模型"
 AI_PARAMS_FIELD = "AI参数JSON"
+TEXT_MODEL_FIELD = "文本AI模型"
 AI_SLOT_MODEL_SUFFIX = "AI模型"
 AI_SLOT_PARAMS_SUFFIX = "AI参数JSON"
+TEXT_SLOT_LEGACY_MODEL_FIELDS = {
+    "方案": ("方案AI模型",),
+    "拆分": ("拆分AI模型",),
+    "解析": ("解析AI模型",),
+    "拆解": ("拆解AI模型",),
+}
 
 YES_VALUES = {"是", "yes", "true", "1", "启用", "开启", "使用"}
 NO_VALUES = {"否", "no", "false", "0", "关闭", "不使用", ""}
@@ -35,6 +42,14 @@ PROVIDER_API_BASE_MARKERS = {
     "Aitgenne": "aitgenne",
     "OTU": "otuapi",
 }
+AITGENNE_UNIFIED_VIDEO_MODELS = {
+    "omni-flash",
+    "veo_3_1_lite_vip",
+    "veo_3_1_fast_vip",
+    "veo_3_1_vip",
+    "veo_3_1_components_vip",
+}
+AITGENNE_COMPONENTS_VIDEO_MODELS = {"veo_3_1_components_vip"}
 
 
 @dataclass
@@ -194,13 +209,62 @@ def config_record_for_model(
     provider: str,
     display_model: str,
 ) -> Optional[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
     for rec in config_records or []:
         fields = rec.get("fields") if isinstance(rec, dict) else {}
         if not isinstance(fields, dict):
             continue
         if config_record_matches_model(fields, provider, display_model):
-            return fields
-    return None
+            matches.append(fields)
+    if not matches:
+        return None
+    api_config_matches = [
+        fields for fields in matches
+        if _norm(fields.get("配置类型")) in {"", "运行环节", "模型目录"}
+    ]
+    if not api_config_matches:
+        return None
+
+    def priority(fields: Dict[str, Any]) -> tuple[int, int, int]:
+        active = _norm(fields.get("状态")) != "停用"
+        has_key = bool(_norm(fields.get("API Key") or fields.get("api_key")))
+        config_type = _norm(fields.get("配置类型"))
+        is_runtime = config_type == "运行环节"
+        is_catalog = config_type == "模型目录"
+        if active and is_runtime and has_key:
+            return (0, 0, 0)
+        if active and has_key:
+            return (1, 0 if is_catalog else 1, 0)
+        if active and is_runtime:
+            return (2, 0, 0)
+        if is_runtime:
+            return (3, 0, 0)
+        return (4, 0 if active else 1, 0 if has_key else 1)
+
+    return min(api_config_matches, key=priority)
+
+
+def exact_model_runtime_config(
+    config_records: Iterable[Dict[str, Any]],
+    provider: str,
+    display_model: str,
+    *,
+    require_api_key: bool = True,
+) -> Dict[str, str]:
+    fields = config_record_for_model(config_records, provider, display_model)
+    if not fields:
+        raise ValueError(f"模型配置缺失或停用: {display_model}")
+    cfg = {
+        "model": _norm(fields.get("模型名称") or fields.get("默认模型") or fields.get(AI_MODEL_FIELD) or fields.get("model")) or display_model,
+        "provider": _norm(fields.get(AI_PROVIDER_FIELD) or fields.get("供应商")) or provider,
+        "api_key": _norm(fields.get("API Key") or fields.get("api_key")),
+        "api_base": _norm(fields.get("API 代理地址") or fields.get("api_base")),
+        "call_type": _norm(fields.get("调用方式") or fields.get("call_type")),
+        "params": _norm(fields.get(AI_PARAMS_FIELD) or fields.get("AI参数JSON") or fields.get("params")),
+    }
+    if require_api_key and not cfg["api_key"]:
+        raise ValueError(f"模型配置缺少 API Key: {display_model}")
+    return cfg
 
 
 def api_key_for_provider(config_records: Iterable[Dict[str, Any]], provider: str) -> str:
@@ -236,23 +300,36 @@ def route_from_record(
     config_records: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> AiRoute:
     config = config or {}
+    capability = _norm(fields.get(AI_CAPABILITY_FIELD)) or _norm(config.get("capability")) or "文本"
     explicit_model = _norm(fields.get(AI_MODEL_FIELD))
+    if capability == "文本" and not explicit_model:
+        explicit_model = _norm(fields.get(TEXT_MODEL_FIELD))
     raw_model = explicit_model or _norm(config.get("model"))
     model_bits = parse_model_display(raw_model)
     provider = model_bits["provider"] or _norm(fields.get(AI_PROVIDER_FIELD)) or _norm(config.get("provider"))
-    capability = _norm(fields.get(AI_CAPABILITY_FIELD)) or _norm(config.get("capability")) or "文本"
     task_type = _norm(fields.get(AI_TASK_TYPE_FIELD)) or _norm(config.get("task_type"))
     model = raw_model
     call_type = "" if explicit_model else _norm(config.get("call_type") or config.get("调用方式"))
     if capability == "文本" and (not call_type or explicit_model):
-        call_type = "Gemini 原生 SDK" if "gemini" in model.lower() else "OpenAI兼容 chat/completions"
+        catalog_entry = ai_model_catalog.find_model(provider, capability, parse_model_display(model)["model"] or model)
+        if catalog_entry and catalog_entry.call_types:
+            call_type = catalog_entry.call_types[0]
+        else:
+            call_type = "Gemini 原生 SDK" if "gemini" in model.lower() and provider == "AIHubMix" else "OpenAI兼容 chat/completions"
     params: Dict[str, Any] = _config_params(config)
     params.update(_parse_params_json(fields.get(AI_PARAMS_FIELD), field_name=AI_PARAMS_FIELD))
     config_provider = _norm(config.get("provider"))
     api_base = _norm(config.get("api_base"))
     api_key = _norm(config.get("api_key"))
     provider_config_records = list(config_records or [])
-    if explicit_model and (
+    exact_model_config_preferred = explicit_model and provider == "Aitgenne" and capability in {"文本", "视频"}
+    exact_fields = config_record_for_model(provider_config_records, provider, explicit_model) if exact_model_config_preferred else None
+    if exact_fields:
+        api_base = _norm(exact_fields.get("API 代理地址") or exact_fields.get("api_base")) or api_base
+        api_key = _norm(exact_fields.get("API Key") or exact_fields.get("api_key"))
+    elif exact_model_config_preferred and capability == "视频" and not config_record_matches_model({"模型名称": config.get("model"), "供应商": config_provider}, provider, explicit_model):
+        api_key = ""
+    elif explicit_model and (
         (config_provider and config_provider != provider)
         or (api_base and not api_base_matches_provider(api_base, provider))
     ):
@@ -284,6 +361,18 @@ def slot_params_field(slot_name: str) -> str:
     return f"{slot_name}{AI_SLOT_PARAMS_SUFFIX}"
 
 
+def text_slot_model_value(fields: Dict[str, Any], slot_name: str) -> str:
+    unified = _norm(fields.get(TEXT_MODEL_FIELD))
+    if unified:
+        return unified
+    legacy_names = (*TEXT_SLOT_LEGACY_MODEL_FIELDS.get(slot_name, ()), slot_model_field(slot_name))
+    for name in legacy_names:
+        value = _norm(fields.get(name))
+        if value:
+            return value
+    return ""
+
+
 def route_from_slot(
     fields: Dict[str, Any],
     slot_name: str,
@@ -299,7 +388,7 @@ def route_from_slot(
     config["task_type"] = task_type
     model_field = slot_model_field(slot_name)
     params_field = slot_params_field(slot_name)
-    slot_model = _norm(fields.get(model_field))
+    slot_model = text_slot_model_value(fields, slot_name) if capability == "文本" else _norm(fields.get(model_field))
     slot_params = fields.get(params_field)
     legacy_model = _norm(fields.get(AI_MODEL_FIELD))
     legacy_params = fields.get(AI_PARAMS_FIELD)
@@ -461,6 +550,16 @@ def is_aitgenne_happyhorse_model(route: AiRoute) -> bool:
     return route.provider == "Aitgenne" and model_name.startswith("happyhorse-1.0-")
 
 
+def is_aitgenne_unified_video_model(route: AiRoute) -> bool:
+    model_name = parse_model_display(route.model)["model"] or route.model
+    return route.provider == "Aitgenne" and route.capability == "视频" and model_name in AITGENNE_UNIFIED_VIDEO_MODELS
+
+
+def is_aitgenne_unified_components_model(route: AiRoute) -> bool:
+    model_name = parse_model_display(route.model)["model"] or route.model
+    return is_aitgenne_unified_video_model(route) and model_name in AITGENNE_COMPONENTS_VIDEO_MODELS
+
+
 def aitgenne_video_synthesis_endpoint(api_base: str = "") -> str:
     origin = _api_origin(api_base, "https://api.aitgenne.com")
     if origin.endswith("/alibailian/api/v1/services/aigc/video-generation/video-synthesis"):
@@ -472,9 +571,22 @@ def aitgenne_task_endpoint(api_base: str, task_id: str) -> str:
     return f"{_api_origin(api_base, 'https://api.aitgenne.com')}/alibailian/api/v1/tasks/{task_id}"
 
 
+def aitgenne_video_create_endpoint(api_base: str = "") -> str:
+    return f"{_api_origin(api_base, 'https://api.aitgenne.com')}/v1/video/create"
+
+
+def aitgenne_video_query_endpoint(api_base: str = "", task_id: str = "") -> str:
+    base = f"{_api_origin(api_base, 'https://api.aitgenne.com')}/v1/video/query"
+    if not task_id:
+        return base
+    return f"{base}?{urlencode({'id': task_id})}"
+
+
 def media_task_endpoint(route: AiRoute, task_id: str) -> str:
     if is_aitgenne_happyhorse_model(route):
         return aitgenne_task_endpoint(route.api_base, task_id)
+    if is_aitgenne_unified_video_model(route):
+        return aitgenne_video_query_endpoint(route.api_base, task_id)
     return f"{media_endpoint(route).rstrip('/')}/{task_id}"
 
 
@@ -542,6 +654,29 @@ def build_happyhorse_video_payload(
     }
 
 
+def build_aitgenne_unified_video_payload(
+    route: AiRoute,
+    prompt: str,
+    reference_urls: Sequence[str],
+    *,
+    aspect_ratio: Any = "",
+) -> Dict[str, Any]:
+    model_name = parse_model_display(route.model)["model"] or route.model
+    urls = [_norm(url) for url in reference_urls if _norm(url)]
+    if not urls:
+        raise ValueError(f"{route.model} 需要至少 1 张参考图 URL")
+    params = dict(route.params or {})
+    ratio = _norm(aspect_ratio) or _norm(params.get("aspect_ratio") or params.get("画面比例")) or "9:16"
+    return {
+        "model": model_name,
+        "prompt": prompt,
+        "images": urls,
+        "enhance_prompt": bool(params.get("enhance_prompt", True)),
+        "enable_upsample": bool(params.get("enable_upsample", True)),
+        "aspect_ratio": ratio,
+    }
+
+
 def extract_video_task_id(data: Mapping[str, Any]) -> str:
     candidates = [
         data.get("id"),
@@ -565,10 +700,48 @@ def extract_video_status(data: Mapping[str, Any]) -> str:
         (data.get("data") or {}).get("state") if isinstance(data.get("data"), dict) else None,
         (data.get("result") or {}).get("status") if isinstance(data.get("result"), dict) else None,
         (data.get("output") or {}).get("task_status") if isinstance(data.get("output"), dict) else None,
+        (data.get("detail") or {}).get("status") if isinstance(data.get("detail"), dict) else None,
     ]
     for item in candidates:
         text = _norm(item).lower()
         if text:
+            return text
+    return ""
+
+
+def extract_video_result_url(data: Mapping[str, Any]) -> str:
+    containers: List[Mapping[str, Any]] = [data]
+    for key in ("detail", "data", "result", "output"):
+        nested = data.get(key) if isinstance(data.get(key), Mapping) else {}
+        if nested:
+            containers.append(nested)
+    candidates: List[Any] = []
+    for item in containers:
+        candidates.extend([
+            item.get("upsample_video_url"),
+            item.get("video_url"),
+            item.get("result_url"),
+            item.get("download_url"),
+            item.get("url"),
+        ])
+    for list_key in ("result_urls", "urls", "videos"):
+        for item in containers:
+            value = item.get(list_key)
+            if isinstance(value, list) and value:
+                first = value[0]
+                if isinstance(first, str):
+                    candidates.append(first)
+                elif isinstance(first, Mapping):
+                    candidates.extend([
+                        first.get("upsample_video_url"),
+                        first.get("video_url"),
+                        first.get("result_url"),
+                        first.get("download_url"),
+                        first.get("url"),
+                    ])
+    for value in candidates:
+        text = _norm(value)
+        if text.startswith("http"):
             return text
     return ""
 
@@ -592,6 +765,8 @@ def media_endpoint(route: AiRoute) -> str:
         if capability == "视频":
             if model_name.startswith("happyhorse-1.0-"):
                 return aitgenne_video_synthesis_endpoint(route.api_base)
+            if is_aitgenne_unified_video_model(route):
+                return aitgenne_video_create_endpoint(route.api_base)
             return _videos_endpoint(route.api_base, "https://api.aitgenne.com")
         if capability == "图片":
             return _images_endpoint(route.api_base, "https://api.aitgenne.com")
@@ -657,6 +832,13 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
                 aspect_ratio=aspect_ratio,
                 seconds=seconds,
             )
+        elif is_aitgenne_unified_video_model(route):
+            payload = build_aitgenne_unified_video_payload(
+                route,
+                prompt,
+                ["<reference_url>"] * int(reference_count or 0),
+                aspect_ratio=aspect_ratio,
+            )
         else:
             payload["size"] = size
             payload["seconds"] = seconds
@@ -665,6 +847,8 @@ def build_media_request_summary(route: AiRoute, prompt: str, *, reference_count:
         adapter_payload_summary = (
             {"input": "payload.input", "parameters": "payload.parameters"}
             if is_aitgenne_happyhorse_model(route)
+            else {"images": "payload.images", "aspect_ratio": "payload.aspect_ratio"}
+            if is_aitgenne_unified_video_model(route)
             else {
                 "size": "payload.size",
                 "aspect_ratio": "payload.aspect_ratio",

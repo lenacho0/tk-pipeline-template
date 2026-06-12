@@ -35,6 +35,8 @@ from common import (  # noqa: E402
     TABLE_SCRIPT_DOC_SHOTS,
     TABLE_SCRIPT_DOC_UNIFIED,
     WORKSPACE,
+    aitgenne_get,
+    aitgenne_post,
     build_error_payload,
     extract_text,
     feishu_headers,
@@ -47,7 +49,7 @@ from common import (  # noqa: E402
     safe_update_record,
     with_retry,
 )
-from tk_shot_storyboard import build_image_to_video_prompt  # noqa: E402
+from tk_shot_storyboard import build_image_to_video_prompt, get_tmp_download_url_for_attachment  # noqa: E402
 from otu_image import (  # noqa: E402
     DEFAULT_ASPECT_RATIO as OTU_DEFAULT_ASPECT_RATIO,
     DEFAULT_OTU_API_BASE,
@@ -145,6 +147,8 @@ def normalize_video_channel(value: Any) -> str:
     raw = extract_text(value).strip().lower().replace("_", "-").replace(" ", "")
     if raw in {"otu", "otuapi", "otu-api", "outapi", "out-api", "便宜通道"}:
         return "OTU"
+    if raw in {"aitgenne", "aitgen", "爱特", "爱特基因"}:
+        return "Aitgenne"
     return "AIHubMix"
 
 
@@ -168,7 +172,10 @@ def normalize_native_veo_resolution(value: Any) -> str:
 
 
 def video_channel_write_value(channel: str) -> str:
-    return "OTU" if normalize_video_channel(channel) == "OTU" else "AIHubMix"
+    normalized = normalize_video_channel(channel)
+    if normalized in {"OTU", "Aitgenne"}:
+        return normalized
+    return "AIHubMix"
 
 
 def split_prefixed_model_choice(value: Any) -> Tuple[str, str]:
@@ -190,8 +197,10 @@ def infer_model_channel(model_choice: Any) -> str:
     normalized = extract_text(raw).strip().lower().replace("_", "-").replace(" ", "")
     if normalized in {"gpt-image-2", "gpt-image-2-2k", "gpt-image-2-4k"}:
         return "OTU"
-    if normalized == "veo_3_1-fast-fl":
+    if normalized in {"veo_3_1-fast-fl", "veo-3-1-fast-fl"}:
         return "OTU"
+    if normalized in {"veo-3-1-lite-vip", "veo-3-1-fast-vip", "veo-3-1-vip", "veo-3-1-components-vip", "omni-flash"}:
+        return "Aitgenne"
     if normalized in {"veo3.1", "seeddance2.0", "veo-3.1-fast-generate-preview"}:
         return "AIHubMix"
     return ""
@@ -608,15 +617,18 @@ def poll_otu_video_task(
     config: Dict[str, str],
     task_id: str,
     *,
+    task_url_fn: Optional[Callable[[Dict[str, str], str], str]] = None,
     queued_zero_progress_timeout_seconds: int = OTU_ZERO_PROGRESS_TIMEOUT_SECONDS,
     max_poll_seconds: int = MAX_POLL_SECONDS,
     poll_interval: int = POLL_INTERVAL,
     poll_timeout: int = POLL_TIMEOUT,
     now_fn: Callable[[], float] = time.time,
     sleep_fn: Callable[[float], None] = time.sleep,
+    request_get_fn: Optional[Callable[..., requests.Response]] = None,
 ) -> Dict[str, Any]:
-    url = video_item_url(config.get("api_base") or DEFAULT_OTU_API_BASE, task_id)
+    url = task_url_fn(config, task_id) if task_url_fn else video_item_url(config.get("api_base") or DEFAULT_OTU_API_BASE, task_id)
     headers = {"Authorization": f"Bearer {config['api_key']}"}
+    get_fn = request_get_fn or requests.get
     start = now_fn()
     zero_progress_started_at: Optional[float] = None
     last_body: Dict[str, Any] = {}
@@ -625,7 +637,7 @@ def poll_otu_video_task(
         if now - start >= max_poll_seconds:
             raise TimeoutError(f"OTU 视频任务超时: task_id={task_id}, last={_compact_json(last_body)}")
         resp = with_retry(
-            lambda: requests.get(url, headers=headers, timeout=poll_timeout),
+            lambda: get_fn(url, headers=headers, timeout=poll_timeout),
             max_attempts=4,
             label=f"poll OTU video {task_id}",
         )
@@ -638,7 +650,7 @@ def poll_otu_video_task(
             raise RuntimeError(f"OTU 视频任务轮询失败: HTTP {resp.status_code}, body={str(last_body)[:1200]}")
         nested = last_body.get("data") if isinstance(last_body.get("data"), dict) else {}
         result = last_body.get("result") if isinstance(last_body.get("result"), dict) else {}
-        status = extract_text(last_body.get("status") or nested.get("status") or result.get("status")).lower()
+        status = ai_routing.extract_video_status(last_body) or extract_text(last_body.get("status") or nested.get("status") or result.get("status")).lower()
         progress = _progress_number(last_body.get("progress", nested.get("progress", result.get("progress"))))
         if status in {"completed", "succeeded", "success", "done"}:
             return last_body
@@ -675,6 +687,9 @@ def iter_strings(value: Any):
 
 
 def extract_video_url(result: Dict[str, Any]) -> str:
+    routed_url = ai_routing.extract_video_result_url(result)
+    if routed_url:
+        return routed_url
     preferred_keys = ("video_url", "result_url", "download_url", "url")
     stack = [result]
     while stack:
@@ -711,6 +726,32 @@ def download_video(video_url: str, save_path: str) -> str:
         return save_path
 
     return with_retry(_download_once, max_attempts=4, label=f"download video {video_url[:120]}")
+
+
+def download_video_without_env_proxy(video_url: str, save_path: str) -> str:
+    def _assert_playable_video_file() -> None:
+        assert_playable_video_file(save_path)
+
+    def _download_once() -> str:
+        resp = aitgenne_get(video_url, timeout=DOWNLOAD_REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        try:
+            if resp.status_code != 200:
+                raise RuntimeError(f"视频下载失败: HTTP {resp.status_code}, url={video_url[:300]}")
+            with open(save_path, "wb") as f:
+                for chunk in resp.iter_content(8192):
+                    if chunk:
+                        f.write(chunk)
+            if os.path.getsize(save_path) < 10000:
+                raise RuntimeError(f"视频下载成功但文件过小: {save_path}")
+            _assert_playable_video_file()
+            return save_path
+        finally:
+            resp.close()
+            session = getattr(resp, "_aitgenne_session", None)
+            if session is not None:
+                session.close()
+
+    return with_retry(_download_once, max_attempts=4, label=f"download Aitgenne video {video_url[:120]}")
 
 
 def download_video_content(config: Dict[str, str], task_id: str, save_path: str) -> str:
@@ -1212,12 +1253,8 @@ def run_shot_video_generation(
     force_new_task = status == "待生成"
 
     route_enabled, route_dry_run_only = unified_route_state(fields, token)
-    legacy_model_choice = extract_text(fields.get("视频生成模型")).strip()
-    route_model_choice = extract_text(fields.get("视频AI模型")).strip()
-    model_choice = legacy_model_choice if not is_default_model_choice(legacy_model_choice) else route_model_choice
-    model_source = "视频生成模型" if model_choice == legacy_model_choice and model_choice else (
-        "视频AI模型" if model_choice == route_model_choice and model_choice else "配置表"
-    )
+    model_choice = extract_text(fields.get("视频生成模型")).strip()
+    model_source = "视频生成模型" if model_choice and not is_default_model_choice(model_choice) else "配置表"
     choice_channel, _ = split_prefixed_model_choice(model_choice)
     _, raw_model_choice = split_prefixed_model_choice(model_choice)
     model_bits_for_validation = ai_routing.parse_model_display(model_choice)
@@ -1236,6 +1273,16 @@ def run_shot_video_generation(
     cfg_record_id, config = get_model_config(resolve_model_config_stage(channel, provider))
     runtime_config = dict(config)
     runtime_config["model"] = resolve_selected_model(model_choice, config, channel)
+    if channel == "Aitgenne":
+        display_model = format_model_choice_for_display(channel, runtime_config["model"])
+        config_records = safe_list_records(token, TABLE_CONFIG) if TABLE_CONFIG else []
+        exact_cfg = ai_routing.exact_model_runtime_config(config_records, "Aitgenne", display_model)
+        runtime_config.update({
+            "provider": "Aitgenne",
+            "model": ai_routing.parse_model_display(exact_cfg["model"])["model"] or runtime_config["model"],
+            "api_key": exact_cfg["api_key"],
+            "api_base": exact_cfg["api_base"] or "https://api.aitgenne.com/v1",
+        })
     work_dir = ensure_work_dir(record_id)
     image_path = resolve_reference_image(token, record_id, fields, work_dir)
     last_frame_path = resolve_last_frame_image(token, record_id, fields, work_dir)
@@ -1319,6 +1366,84 @@ def run_shot_video_generation(
             otu_downloader(video_url, output_path)
             video_file_token = uploader(token, output_path, output_filename)
             success_fields = build_success_fields(config, task_id, result, video_url, output_path, video_file_token, provider=provider, channel=channel, table_id=table_id, field_types=field_types)
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
+            summary.update({
+                "status": "success",
+                "task_id": task_id,
+                "video_url": video_url,
+                "video_file_token": video_file_token,
+                "output_size": os.path.getsize(output_path),
+            })
+            return summary
+
+        if channel == "Aitgenne":
+            route = ai_routing.AiRoute(
+                provider="Aitgenne",
+                capability="视频",
+                task_type="首帧图生视频",
+                model=format_model_choice_for_display("Aitgenne", runtime_config["model"]),
+                api_base=runtime_config.get("api_base") or "https://api.aitgenne.com/v1",
+                api_key=runtime_config.get("api_key") or "",
+                params={"aspect_ratio": aspect_ratio},
+            )
+            ai_routing.validate_route(route)
+            first_token = get_attachment_token(fields.get("分镜图"))
+            reference_urls = [get_tmp_download_url_for_attachment(token, first_token)] if first_token else []
+            if last_frame_path:
+                last_token = get_attachment_token(fields.get("尾帧图"))
+                if last_token:
+                    reference_urls.append(get_tmp_download_url_for_attachment(token, last_token))
+            update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频通道": video_channel_write_value(channel),
+                "视频生成模型": video_model_write_value(runtime_config, provider, table_id, channel),
+                "视频生成状态": "生成中",
+                "视频错误信息": "准备提交 Aitgenne 图生视频任务...",
+            }))
+            if existing_task_id:
+                task_id = existing_task_id
+                result = poll_otu_video_task(
+                    runtime_config,
+                    task_id,
+                    task_url_fn=lambda cfg, tid: ai_routing.media_task_endpoint(route, tid),
+                    request_get_fn=aitgenne_get,
+                )
+            else:
+                payload = ai_routing.build_aitgenne_unified_video_payload(route, prompt, reference_urls, aspect_ratio=aspect_ratio)
+                resp = aitgenne_post(
+                    ai_routing.media_endpoint(route),
+                    headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=SUBMIT_TIMEOUT,
+                )
+                try:
+                    submit_body = resp.json()
+                except Exception:
+                    submit_body = {"raw_text": resp.text[:1000]}
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"Aitgenne 视频任务提交失败: HTTP {resp.status_code}, body={compact_json(submit_body, 1200)}")
+                task_id = ai_routing.extract_video_task_id(submit_body)
+                if not task_id:
+                    raise RuntimeError(f"Aitgenne 视频任务提交未返回任务 ID: {compact_json(submit_body, 1200)}")
+                update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                    "视频任务ID": task_id,
+                    "视频生成原始响应JSON": compact_json({"submit": submit_body}),
+                    "视频错误信息": f"已提交 Aitgenne 图生视频任务，正在轮询。task_id={task_id}",
+                }))
+                result = poll_otu_video_task(
+                    runtime_config,
+                    task_id,
+                    task_url_fn=lambda cfg, tid: ai_routing.media_task_endpoint(route, tid),
+                    request_get_fn=aitgenne_get,
+                )
+            video_url = extract_video_url(result)
+            if not video_url:
+                raise RuntimeError(f"Aitgenne 生成完成但未返回可下载视频 URL: {compact_json(result, 1200)}")
+            if otu_downloader is download_video:
+                download_video_without_env_proxy(video_url, output_path)
+            else:
+                otu_downloader(video_url, output_path)
+            video_file_token = uploader(token, output_path, output_filename)
+            success_fields = build_success_fields(runtime_config, task_id, result, video_url, output_path, video_file_token, provider=provider, channel=channel, table_id=table_id, field_types=field_types)
             update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, success_fields))
             summary.update({
                 "status": "success",

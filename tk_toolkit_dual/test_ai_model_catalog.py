@@ -14,9 +14,15 @@ class AiModelCatalogTests(unittest.TestCase):
         video_options = ai_model_catalog.select_options_for_capability("视频")
 
         self.assertIn("AIHubMix / gemini-3.1-pro-preview", [item["name"] for item in text_options])
+        self.assertIn("Aitgenne / gemini-3.5-flash", [item["name"] for item in text_options])
+        self.assertIn("Aitgenne / claude-opus-4-8", [item["name"] for item in text_options])
         self.assertIn("OTU / gpt-image-2-4K", [item["name"] for item in image_options])
         self.assertIn("Aitgenne / gpt-image-2", [item["name"] for item in image_options])
         self.assertIn("OTU / veo_3_1-fast-fl-hd", [item["name"] for item in video_options])
+        self.assertIn("Aitgenne / veo_3_1_lite_vip", [item["name"] for item in video_options])
+        self.assertIn("Aitgenne / veo_3_1_fast_vip", [item["name"] for item in video_options])
+        self.assertIn("Aitgenne / veo_3_1_vip", [item["name"] for item in video_options])
+        self.assertIn("Aitgenne / veo_3_1_components_vip", [item["name"] for item in video_options])
         self.assertNotIn("OTU / gpt-image-2", [item["name"] for item in text_options])
         self.assertNotIn("Aitgenne / gpt-5.5", [item["name"] for item in image_options])
 
@@ -57,12 +63,17 @@ class AiModelCatalogTests(unittest.TestCase):
         first_last_with_default = [item["name"] for item in ai_model_catalog.FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS]
         prompt_image_video_names = [item["name"] for item in ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_OPTIONS]
         prompt_image_video_with_default = [item["name"] for item in ai_model_catalog.PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS]
+        storyboard_video_names = [item["name"] for item in ai_model_catalog.STORYBOARD_VIDEO_MODEL_OPTIONS]
         video_edit_names = [item["name"] for item in ai_model_catalog.VIDEO_EDIT_MODEL_OPTIONS]
 
         self.assertEqual(reference_names, [
             "OTU / omni_flash-10s",
             "Aitgenne / happyhorse-1.0-r2v",
             "Aitgenne / omni-flash",
+            "Aitgenne / veo_3_1_lite_vip",
+            "Aitgenne / veo_3_1_fast_vip",
+            "Aitgenne / veo_3_1_vip",
+            "Aitgenne / veo_3_1_components_vip",
         ])
         self.assertEqual(first_last_names, [
             "AIHubMix / veo-3.1-fast-generate-preview",
@@ -71,20 +82,31 @@ class AiModelCatalogTests(unittest.TestCase):
             "OTU / veo_3_1-fl",
             "OTU / veo_3_1-hd-fl",
             "Aitgenne / happyhorse-1.0-i2v",
+            "Aitgenne / veo_3_1_lite_vip",
+            "Aitgenne / veo_3_1_fast_vip",
+            "Aitgenne / veo_3_1_vip",
         ])
         self.assertEqual(prompt_image_video_names, [
+            *first_last_names,
+            "OTU / omni_flash-10s",
+            "Aitgenne / veo_3_1_components_vip",
+        ])
+        self.assertEqual(storyboard_video_names, [
             *first_last_names,
             "OTU / omni_flash-10s",
         ])
         self.assertNotIn("Aitgenne / happyhorse-1.0-i2v", reference_names)
         self.assertNotIn("Aitgenne / happyhorse-1.0-r2v", first_last_names)
         self.assertNotIn("OTU / omni_flash-10s", first_last_names)
+        self.assertNotIn("Aitgenne / veo_3_1_components_vip", first_last_names)
+        self.assertNotIn("Aitgenne / veo_3_1_components_vip", storyboard_video_names)
         self.assertEqual(video_edit_names, ["Aitgenne / happyhorse-1.0-video-edit"])
         self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", reference_names)
         self.assertNotIn("Aitgenne / happyhorse-1.0-video-edit", first_last_names)
         self.assertEqual(first_last_with_default[0], "默认（配置表）")
         self.assertEqual(prompt_image_video_with_default[0], "默认（配置表）")
         self.assertIn("OTU / omni_flash-10s", prompt_image_video_with_default)
+        self.assertIn("Aitgenne / veo_3_1_components_vip", prompt_image_video_with_default)
 
 
 if __name__ == "__main__":

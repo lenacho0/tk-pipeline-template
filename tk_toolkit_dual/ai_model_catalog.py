@@ -101,6 +101,28 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
     _entry(
         "Aitgenne",
         "文本",
+        "gemini-3.5-flash",
+        "OpenAI兼容 chat/completions",
+        STATUS_ENABLED,
+        "用户提供/待填模型级密钥",
+        call_types=("OpenAI兼容 chat/completions",),
+        supports_structured_json=True,
+        nine_grid_fit="适合文本拆解/方案生成",
+    ),
+    _entry(
+        "Aitgenne",
+        "文本",
+        "claude-opus-4-8",
+        "OpenAI兼容 chat/completions",
+        STATUS_ENABLED,
+        "用户提供/待填模型级密钥",
+        call_types=("OpenAI兼容 chat/completions",),
+        supports_structured_json=True,
+        nine_grid_fit="适合文本拆解/高质量推理",
+    ),
+    _entry(
+        "Aitgenne",
+        "文本",
         "gemini-3.1-pro-preview",
         "待验证文本接口",
         STATUS_CANDIDATE,
@@ -179,6 +201,10 @@ MODEL_CATALOG: Tuple[ModelCatalogEntry, ...] = (
     _entry("Aitgenne", "视频", "happyhorse-1.0-r2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合多参考图九宫格"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-i2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合单张九宫格图转视频"),
     _entry("Aitgenne", "视频", "omni-flash", "视频统一格式", STATUS_ENABLED, "官网模型广场/用户确认", nine_grid_fit="适合 Omni 视频候选"),
+    _entry("Aitgenne", "视频", "veo_3_1_lite_vip", "视频统一格式", STATUS_ENABLED, "用户提供/Apifox", nine_grid_fit="Aitgenne Veo 3.1 Lite VIP 图生视频"),
+    _entry("Aitgenne", "视频", "veo_3_1_fast_vip", "视频统一格式", STATUS_ENABLED, "用户提供/Apifox", nine_grid_fit="Aitgenne Veo 3.1 Fast VIP 图生视频"),
+    _entry("Aitgenne", "视频", "veo_3_1_vip", "视频统一格式", STATUS_ENABLED, "用户提供/Apifox", nine_grid_fit="Aitgenne Veo 3.1 VIP 图生视频"),
+    _entry("Aitgenne", "视频", "veo_3_1_components_vip", "视频统一格式", STATUS_ENABLED, "用户提供/Apifox", nine_grid_fit="Aitgenne Veo 3.1 Components VIP 参考图生视频"),
     _entry("Aitgenne", "视频", "happyhorse-1.0-t2v", "happyhorse视频", STATUS_ENABLED, "官网模型广场", notes="文生视频，使用 HappyHorse alibailian 原生端点；不作为图生视频链路默认模型。"),
     _entry(
         "Aitgenne",
@@ -272,6 +298,10 @@ REFERENCE_VIDEO_MODEL_NAMES = (
     "OTU / omni_flash-10s",
     "Aitgenne / happyhorse-1.0-r2v",
     "Aitgenne / omni-flash",
+    "Aitgenne / veo_3_1_lite_vip",
+    "Aitgenne / veo_3_1_fast_vip",
+    "Aitgenne / veo_3_1_vip",
+    "Aitgenne / veo_3_1_components_vip",
 )
 
 FIRST_LAST_VIDEO_MODEL_NAMES = (
@@ -281,9 +311,18 @@ FIRST_LAST_VIDEO_MODEL_NAMES = (
     "OTU / veo_3_1-fl",
     "OTU / veo_3_1-hd-fl",
     "Aitgenne / happyhorse-1.0-i2v",
+    "Aitgenne / veo_3_1_lite_vip",
+    "Aitgenne / veo_3_1_fast_vip",
+    "Aitgenne / veo_3_1_vip",
 )
 
 PROMPT_IMAGE_VIDEO_MODEL_NAMES = (
+    *FIRST_LAST_VIDEO_MODEL_NAMES,
+    "OTU / omni_flash-10s",
+    "Aitgenne / veo_3_1_components_vip",
+)
+
+STORYBOARD_VIDEO_MODEL_NAMES = (
     *FIRST_LAST_VIDEO_MODEL_NAMES,
     "OTU / omni_flash-10s",
 )
@@ -343,9 +382,11 @@ VIDEO_AI_MODEL_OPTIONS = select_options_for_capability("视频")
 REFERENCE_VIDEO_MODEL_OPTIONS = _options_for_display_names(REFERENCE_VIDEO_MODEL_NAMES)
 FIRST_LAST_VIDEO_MODEL_OPTIONS = _options_for_display_names(FIRST_LAST_VIDEO_MODEL_NAMES)
 PROMPT_IMAGE_VIDEO_MODEL_OPTIONS = _options_for_display_names(PROMPT_IMAGE_VIDEO_MODEL_NAMES)
+STORYBOARD_VIDEO_MODEL_OPTIONS = _options_for_display_names(STORYBOARD_VIDEO_MODEL_NAMES)
 VIDEO_EDIT_MODEL_OPTIONS = _options_for_display_names(VIDEO_EDIT_MODEL_NAMES, "视频编辑")
 VOICE_MODEL_OPTIONS = select_options_for_capability("语音")
 VIDEO_MODEL_OPTIONS = [opt("默认（配置表）", "Gray"), *VIDEO_AI_MODEL_OPTIONS]
 REFERENCE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *REFERENCE_VIDEO_MODEL_OPTIONS]
 FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *FIRST_LAST_VIDEO_MODEL_OPTIONS]
 PROMPT_IMAGE_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *PROMPT_IMAGE_VIDEO_MODEL_OPTIONS]
+STORYBOARD_VIDEO_MODEL_WITH_DEFAULT_OPTIONS = [opt("默认（配置表）", "Gray"), *STORYBOARD_VIDEO_MODEL_OPTIONS]

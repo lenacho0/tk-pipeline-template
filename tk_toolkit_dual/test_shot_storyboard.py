@@ -338,7 +338,7 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
         self.assertEqual(updates[-1]["尾帧图任务ID"], "img_task_1")
         self.assertIn("尾帧图原始响应JSON", updates[-1])
 
-    def test_render_script_doc_last_frame_uses_only_first_frame_url_as_visual_reference(self):
+    def test_render_script_doc_last_frame_includes_product_references_when_required(self):
         shot_fields = {
             "首尾帧视频模式": "启用",
             "尾帧画面描述": "same sofa, stain removed, towel is wet",
@@ -347,34 +347,61 @@ class ShotStoryboardReferenceTests(unittest.TestCase):
             "画面描述": "start pose",
             "视频提示词": "remove stain",
             "图片提示词": "[Starting Frame] stained sofa with exact product bottle\n\n[Ending Frame] same sofa, stain removed",
+            "需要产品参考图": "是",
+        }
+        parent_fields = {"关联产品记录": [{"record_ids": ["recProduct"]}]}
+        product_refs = [
+            {"role": "product:1", "path": "/tmp/product_front.png", "file_token": "ft_product_front"},
+            {"role": "product:2", "path": "/tmp/product_box.png", "file_token": "ft_product_box"},
+        ]
+        image_result = Mock()
+        image_result.task_id = "img_task_1"
+        image_result.submit_body = {"id": "img_task_1"}
+        image_result.result_body = {"status": "completed", "result_url": "https://x.test/last.png"}
+        image_result.request_summary = {
+            "reference_count": 3,
+            "submitted_reference_count": 3,
         }
         updates = []
         with tempfile.TemporaryDirectory() as tmp, \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_TASKS", "tbl_tasks"), \
+             patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_REFERENCE_ASSETS", "tbl_assets"), \
              patch("tk_shot_storyboard.TABLE_SCRIPT_DOC_SHOTS", "tbl_shots"), \
-             patch("tk_shot_storyboard.safe_get_record", return_value=shot_fields), \
-             patch("tk_shot_storyboard.build_reference_urls") as build_reference_urls, \
+             patch("tk_shot_storyboard.safe_get_record", side_effect=[shot_fields, parent_fields]), \
+             patch("tk_shot_storyboard.safe_list_records", return_value=[]), \
+             patch("tk_script_doc_shots.collect_reference_images_for_shot", return_value=product_refs), \
+             patch("tk_shot_storyboard.build_reference_urls", return_value=[
+                 "https://x.test/product-front.png",
+                 "https://x.test/product-box.png",
+             ]) as build_reference_urls, \
              patch("tk_shot_storyboard.get_tmp_download_url_for_attachment", return_value="https://x.test/first-frame.png") as tmp_url_getter, \
              patch("tk_shot_storyboard.safe_update_record", side_effect=lambda token, table, rid, fields: updates.append(fields)), \
              patch("tk_shot_storyboard.filter_existing_fields", side_effect=lambda token, table, fields: fields), \
              patch("tk_shot_storyboard.ensure_task_dir", return_value=tmp), \
              patch("tk_shot_storyboard.download_feishu_media", return_value=Path(tmp) / "first.png"), \
              patch("tk_shot_storyboard.get_model_config", return_value={"model": "gpt-image-2", "api_key": "sk", "api_base": "https://otuapi.com", "prompt": ""}), \
-             patch("tk_shot_storyboard.submit_otu_image_task", return_value=("img_task_1", {"id": "img_task_1"})) as submitter, \
-             patch("tk_shot_storyboard.poll_otu_image_task", return_value={"status": "completed", "result_url": "https://x.test/last.png"}), \
-             patch("tk_shot_storyboard.download_otu_image_result") as image_downloader, \
+             patch("tk_shot_storyboard.run_image_generation", return_value=image_result) as runner, \
              patch("tk_shot_storyboard.auto_review_enabled", return_value=False), \
              patch("tk_shot_storyboard.upload_image_to_feishu", return_value="ft_last"):
-            image_downloader.side_effect = lambda url, path: Path(path).write_bytes(b"image bytes")
             storyboard.render_script_doc_last_frame("t", "rec1")
 
-        metadata = submitter.call_args.kwargs["metadata"]
-        self.assertEqual(metadata["urls"], ["https://x.test/first-frame.png"])
-        self.assertEqual(metadata["reference_roles"], ["first_frame"])
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["input_mode"], "image-to-image")
+        self.assertEqual(kwargs["image_path"], str(Path(tmp) / "first.png"))
+        self.assertEqual(kwargs["reference_image_paths"], [ref["path"] for ref in product_refs])
+        self.assertEqual(kwargs["reference_count_override"], 3)
+        self.assertEqual(kwargs["metadata"]["urls"], [
+            "https://x.test/first-frame.png",
+            "https://x.test/product-front.png",
+            "https://x.test/product-box.png",
+        ])
+        self.assertEqual(kwargs["metadata"]["reference_roles"], ["first_frame", "product:1", "product:2"])
         tmp_url_getter.assert_called_once_with("t", "ft_first")
-        build_reference_urls.assert_not_called()
-        prompt = submitter.call_args.args[1]
+        build_reference_urls.assert_called_once_with("t", product_refs)
+        prompt = runner.call_args.args[1]
         self.assertIn("ending frame instruction", prompt.lower())
-        self.assertNotIn("product reference wins", prompt.lower())
+        self.assertIn("product reference", prompt.lower())
+        self.assertIn("packaging", prompt.lower())
 
     def test_render_script_doc_last_frame_resumes_existing_task_without_resubmitting(self):
         shot_fields = {
