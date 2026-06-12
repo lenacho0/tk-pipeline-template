@@ -17,6 +17,9 @@ DEFAULT_OMNI_MODEL = "omni_flash-10s"
 DEFAULT_OMNI_SIZE = "720x1280"
 DEFAULT_OMNI_ASPECT_RATIO = "9:16"
 SUBMIT_TIMEOUT = 180
+SUBMIT_MAX_ATTEMPTS = 3
+SUBMIT_RETRY_STATUS_CODES = {429, 502, 503, 504, 524}
+SUBMIT_RETRY_BACKOFF_BASE_SECONDS = 2
 POLL_TIMEOUT = 45
 POLL_INTERVAL = 15
 MAX_POLL_SECONDS = 2400
@@ -42,6 +45,18 @@ def video_item_url(api_base: str, task_id: str) -> str:
     return f"{videos_url(api_base).rstrip('/')}/{task_id}"
 
 
+def _response_json_or_text(resp: requests.Response) -> Dict[str, Any]:
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"raw_text": resp.text[:1000]}
+    return body if isinstance(body, dict) else {"raw": body}
+
+
+def _submit_retry_delay(attempt: int) -> int:
+    return min(SUBMIT_RETRY_BACKOFF_BASE_SECONDS * (2 ** max(0, attempt - 1)), 20)
+
+
 def submit_omni_video_task(
     config: Dict[str, str],
     prompt: str,
@@ -60,30 +75,40 @@ def submit_omni_video_task(
         "size": size or DEFAULT_OMNI_SIZE,
         "aspect_ratio": aspect_ratio or DEFAULT_OMNI_ASPECT_RATIO,
     }
-    opened = []
-    files: List[Tuple[str, Tuple[Any, ...]]] = []
-    try:
-        for ref in refs[:7]:
-            path = ref.get("path", "")
-            if not path or not os.path.exists(path):
-                raise ValueError(f"Omni 参考图不存在: {ref.get('role')}")
-            handle = open(path, "rb")
-            opened.append(handle)
-            files.append(("input_reference[]", (os.path.basename(path), handle, "image/png")))
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
-    finally:
-        for handle in opened:
-            handle.close()
-    try:
-        body = resp.json()
-    except Exception:
-        body = {"raw_text": resp.text[:1000]}
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Omni 视频任务提交失败: HTTP {resp.status_code}, body={str(body)[:1200]}")
-    task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
-    if not task_id:
-        raise RuntimeError(f"Omni 视频任务提交未返回任务 ID: {str(body)[:1200]}")
-    return task_id, body
+    last_error: Any = None
+    for attempt in range(1, SUBMIT_MAX_ATTEMPTS + 1):
+        opened = []
+        files: List[Tuple[str, Tuple[Any, ...]]] = []
+        try:
+            for ref in refs[:7]:
+                path = ref.get("path", "")
+                if not path or not os.path.exists(path):
+                    raise ValueError(f"Omni 参考图不存在: {ref.get('role')}")
+                handle = open(path, "rb")
+                opened.append(handle)
+                files.append(("input_reference[]", (os.path.basename(path), handle, "image/png")))
+            resp = requests.post(url, headers=headers, data=data, files=files, timeout=SUBMIT_TIMEOUT)
+            body = _response_json_or_text(resp)
+            if resp.status_code >= 400:
+                last_error = f"HTTP {resp.status_code}, body={str(body)[:1200]}"
+                if resp.status_code in SUBMIT_RETRY_STATUS_CODES and attempt < SUBMIT_MAX_ATTEMPTS:
+                    time.sleep(_submit_retry_delay(attempt))
+                    continue
+                raise RuntimeError(f"Omni 视频任务提交失败: {last_error}")
+            task_id = extract_text(body.get("id") or body.get("task_id") or (body.get("data") or {}).get("id") or (body.get("data") or {}).get("task_id")).strip()
+            if not task_id:
+                raise RuntimeError(f"Omni 视频任务提交未返回任务 ID: {str(body)[:1200]}")
+            return task_id, body
+        except requests.RequestException as exc:
+            last_error = str(exc)
+            if attempt < SUBMIT_MAX_ATTEMPTS:
+                time.sleep(_submit_retry_delay(attempt))
+                continue
+            raise RuntimeError(f"Omni 视频任务提交失败: {last_error}") from exc
+        finally:
+            for handle in opened:
+                handle.close()
+    raise RuntimeError(f"Omni 视频任务提交失败: {last_error}")
 
 
 def poll_omni_video_task(config: Dict[str, str], task_id: str) -> Dict[str, Any]:

@@ -20,6 +20,18 @@ from common import (  # noqa: E402
     APP_TOKEN,
     CONFIG_RECORDS,
     TABLE_CONFIG,
+    TABLE_FIRST_LAST_VIDEO,
+    TABLE_MULTI_ROLE_FIRST_LAST,
+    TABLE_NINE_GRID_VIDEO,
+    TABLE_PROMPT_IMAGE_VIDEO,
+    TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+    TABLE_SCRIPT_DOC_SHOTS,
+    TABLE_SCRIPT_DOC_TASKS,
+    TABLE_SCRIPT_DOC_UNIFIED,
+    TABLE_STORYBOARD_VIDEO,
+    TABLE_TEXT_AUDIO,
+    TABLE_VIDEO_EDIT,
+    TABLE_VOICE_LIBRARY,
     extract_text,
     feishu_headers,
     get_feishu_token,
@@ -45,6 +57,8 @@ EXPLICIT_STATUS_BY_STAGE = {
 }
 ROUTE_SWITCH_STAGE = "统一AI路由启用状态"
 DISPATCHER_CONCURRENCY_STAGE = "Dispatcher并发控制"
+DISPATCHER_TABLE_CONCURRENCY_STAGE = "Dispatcher表格并发"
+DEFAULT_DISPATCHER_TABLE_MAX_CONCURRENCY = 20
 AUTO_REVIEW_SUFFIX = "一键审核通过模式"
 TEXT_STAGES = {
     "脚本文档结构化拆分-Gemini",
@@ -85,6 +99,7 @@ ARCHIVE_PREFIX = "归档："
 SECRET_FIELD_NAMES = {"API Key"}
 OBSOLETE_VIEW_NAMES = {
     "00-生产运行配置",
+    "01-运行配置-管理员",
     "01-统一AI Catalog",
     "02-链路提示词配置",
     "02-旧运行配置总览",
@@ -112,10 +127,27 @@ TASK_DEFAULT_APP_TABLE_OPTIONS = [
     "003-2脚本文档-参考资产表",
     "003-3脚本文档-分镜生产表",
     "003-脚本文档生产表",
+    "004-故事板视频生成表",
     "005-多图宫格视频生成表",
     "005-多图九宫格视频生成表",
     "006-视频编辑任务表",
     "008-图生视频生成表",
+    "音色库",
+    "文案音频表",
+]
+DISPATCHER_TABLE_CONCURRENCY_TARGETS = [
+    ("001-多角色首尾帧生成表", TABLE_MULTI_ROLE_FIRST_LAST),
+    ("002-首尾帧视频生成表", TABLE_FIRST_LAST_VIDEO),
+    ("003-1脚本文档-任务表", TABLE_SCRIPT_DOC_TASKS),
+    ("003-2脚本文档-参考资产表", TABLE_SCRIPT_DOC_REFERENCE_ASSETS),
+    ("003-3脚本文档-分镜生产表", TABLE_SCRIPT_DOC_SHOTS),
+    ("003-脚本文档生产表", TABLE_SCRIPT_DOC_UNIFIED),
+    ("004-故事板视频生成表", TABLE_STORYBOARD_VIDEO),
+    ("005-多图宫格视频生成表", TABLE_NINE_GRID_VIDEO),
+    ("006-视频编辑任务表", TABLE_VIDEO_EDIT),
+    ("008-图生视频生成表", TABLE_PROMPT_IMAGE_VIDEO),
+    ("音色库", TABLE_VOICE_LIBRARY),
+    ("文案音频表", TABLE_TEXT_AUDIO),
 ]
 TASK_STAGE_BUSINESS_ACTIONS = {
     "多角色解析默认": "文本分析",
@@ -225,6 +257,10 @@ CONFIG_FIELD_SPECS = [
     },
     {
         "name": "全局最大并发",
+        "type": "number",
+    },
+    {
+        "name": "表格最大并发",
         "type": "number",
     },
     {
@@ -711,24 +747,32 @@ def build_backup_snapshot(
 def build_view_definitions(field_names: Sequence[str]) -> Dict[str, Dict[str, Any]]:
     all_fields = [name for name in field_names if name not in MIGRATED_FIELD_NAMES]
     return {
-        "01-运行配置-管理员": {
-            "visible_fields": ["配置类型", "环节", "业务环节名", "调度环节名", "使用位置摘要", "状态", "生效来源", "环节最大并发", "全局最大并发", "供应商", "能力类型", "模型名称", "API Key", "API 代理地址", "调用方式", "提示词", "画面尺寸", "画面比例", "AI参数JSON", "备注"],
-            "filter": {
-                "logic": "and",
-                "conditions": [["配置类型", "intersects", ["运行环节", "路由开关", "自动审核"]], ["状态", "intersects", ["启用", "测试中"]]],
-            },
+        "01-表格并发控制": {
+            "visible_fields": ["应用表格", "表格最大并发", "状态", "备注"],
+            "filter": {"logic": "and", "conditions": [["环节", "intersects", [DISPATCHER_TABLE_CONCURRENCY_STAGE]]]},
         },
         "02-任务默认配置": {
-            "visible_fields": ["配置类型", "应用表格", "业务环节名", "调度环节名", "任务环节", "默认槽位", "状态", "生效来源", "环节最大并发", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "提示词", "备注"],
+            "visible_fields": ["应用表格", "业务环节名", "调度环节名", "任务环节", "默认槽位", "供应商", "模型名称", "画面尺寸", "画面比例", "AI参数JSON", "状态", "备注"],
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["任务默认"]]]},
         },
         MODEL_CATALOG_VIEW_NAME: {
             "visible_fields": MODEL_CATALOG_VISIBLE_FIELDS,
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["模型目录"]]]},
         },
+        "04-API密钥管理-管理员": {
+            "visible_fields": ["环节", "供应商", "能力类型", "模型名称", "API Key", "API 代理地址", "调用方式", "状态", "备注"],
+            "filter": {
+                "logic": "and",
+                "conditions": [["配置类型", "intersects", ["运行环节"]], ["状态", "intersects", ["启用", "测试中"]]],
+            },
+        },
         "05-自动审核开关": {
             "visible_fields": ["配置类型", "环节", "状态", "备注"],
             "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["自动审核"]]]},
+        },
+        "98-高级并发保险丝": {
+            "visible_fields": ["环节", "调度环节名", "环节最大并发", "全局最大并发", "状态", "备注"],
+            "filter": {"logic": "or", "conditions": [["环节最大并发", "non_empty"], ["全局最大并发", "non_empty"]]},
         },
         "99-排错全字段": {
             "visible_fields": all_fields,
@@ -897,6 +941,22 @@ def configure_view(base_token: str, view_id: str, definition: Mapping[str, Any])
             except RuntimeError as exc:
                 text = str(exc)
                 if "800070003" in text or "no operation produced" in text:
+                    if command == "+view-set-visible-fields" and len(payload.get("visible_fields") or []) > 1:
+                        first_field_payload = {"visible_fields": [payload["visible_fields"][0]]}
+                        run_json([
+                            "lark-cli", "base", command,
+                            "--base-token", base_token,
+                            "--table-id", TABLE_CONFIG,
+                            "--view-id", view_id,
+                            "--json", json.dumps(first_field_payload, ensure_ascii=False),
+                        ])
+                        run_json([
+                            "lark-cli", "base", command,
+                            "--base-token", base_token,
+                            "--table-id", TABLE_CONFIG,
+                            "--view-id", view_id,
+                            "--json", json.dumps(payload, ensure_ascii=False),
+                        ])
                     break
                 if "800004135" not in text or attempt == 3:
                     raise
@@ -1294,43 +1354,97 @@ def dispatcher_concurrency_control_fields() -> Dict[str, Any]:
     return {
         "配置类型": "路由开关",
         "环节": DISPATCHER_CONCURRENCY_STAGE,
-        "状态": "启用",
+        "状态": "停用",
         "生效来源": "线上配置",
         "全局最大并发": 0,
-        "备注": "Dispatcher 全局并发控制；0 或空值表示不启用全局限制，大于 0 表示所有环节合计最大并发。",
+        "备注": "旧全表 dispatcher 回滚专用；当前单表 dispatcher 模式日常不使用。",
     }
 
 
 def ensure_dispatcher_concurrency_control_record(token: str, records: Sequence[Mapping[str, Any]], *, dry_run: bool) -> Dict[str, Any]:
+    archived_fields = dispatcher_concurrency_control_fields()
     for record in records:
         fields = _fields(record)
         if _text(fields, "配置类型") != "路由开关":
             continue
         if _text(fields, "环节") != DISPATCHER_CONCURRENCY_STAGE:
             continue
+        record_id = _record_id(record)
+        patch = {
+            "状态": archived_fields["状态"],
+            "备注": _archive_remark(_text(fields, "备注"), archived_fields["备注"]),
+        }
+        if _same_patch(fields, patch):
+            return {"status": "exists_archived", "record_id": record_id}
+        if dry_run:
+            return {"status": "dry_run_archive", "record_id": record_id, "fields": patch}
+        safe_update_record(token, TABLE_CONFIG, record_id, patch)
+        return {"status": "archived", "record_id": record_id, "fields": patch}
+
+    if dry_run:
+        return {"status": "dry_run_skip_missing", "fields": archived_fields}
+
+    return {"status": "skipped_missing"}
+
+
+def dispatcher_table_concurrency_fields(app_table: str, table_id: str) -> Dict[str, Any]:
+    return {
+        "配置类型": "路由开关",
+        "环节": DISPATCHER_TABLE_CONCURRENCY_STAGE,
+        "应用表格": app_table,
+        "状态": "启用",
+        "生效来源": "线上配置",
+        "表格最大并发": DEFAULT_DISPATCHER_TABLE_MAX_CONCURRENCY,
+        "备注": f"单表 dispatcher 并发控制；对应 table_id={table_id}。修改“表格最大并发”后 dispatcher 会在下一次读取配置时生效；0 表示暂停该表新任务。",
+    }
+
+
+def ensure_dispatcher_table_concurrency_records(token: str, records: Sequence[Mapping[str, Any]], *, dry_run: bool) -> List[Dict[str, Any]]:
+    existing_by_app_table: Dict[str, str] = {}
+    for record in records:
+        fields = _fields(record)
+        if _text(fields, "配置类型") != "路由开关":
+            continue
+        if _text(fields, "环节") != DISPATCHER_TABLE_CONCURRENCY_STAGE:
+            continue
         if _text(fields, "状态") == "停用":
             continue
-        return {"status": "exists", "record_id": _record_id(record)}
+        app_table = _text(fields, "应用表格")
+        if app_table and app_table not in existing_by_app_table:
+            existing_by_app_table[app_table] = _record_id(record)
 
-    fields = dispatcher_concurrency_control_fields()
-    if dry_run:
-        return {"status": "dry_run_create", "fields": fields}
+    results = []
+    for app_table, table_id in DISPATCHER_TABLE_CONCURRENCY_TARGETS:
+        fields = {"应用表格": app_table}
+        if not table_id:
+            results.append({"status": "skipped_missing_table_id", "fields": fields})
+            continue
+        existing_record_id = existing_by_app_table.get(app_table)
+        if existing_record_id:
+            results.append({"status": "exists", "record_id": existing_record_id, "fields": fields})
+            continue
 
-    data = safe_request(
-        "post",
-        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_CONFIG}/records",
-        headers=feishu_headers(token),
-        json={"fields": fields},
-        timeout=30,
-        max_attempts=3,
-        acceptable_codes=(0,),
-    )
-    record = ((data.get("data") or {}).get("record") or {})
-    return {
-        "status": "created",
-        "record_id": record.get("record_id") or record.get("id"),
-        "fields": fields,
-    }
+        fields = dispatcher_table_concurrency_fields(app_table, table_id)
+        if dry_run:
+            results.append({"status": "dry_run_create", "fields": fields})
+            continue
+
+        data = safe_request(
+            "post",
+            f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_CONFIG}/records",
+            headers=feishu_headers(token),
+            json={"fields": fields},
+            timeout=30,
+            max_attempts=3,
+            acceptable_codes=(0,),
+        )
+        record = ((data.get("data") or {}).get("record") or {})
+        results.append({
+            "status": "created",
+            "record_id": record.get("record_id") or record.get("id"),
+            "fields": fields,
+        })
+    return results
 
 
 def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
@@ -1365,6 +1479,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
     ]
     record_results = apply_record_updates(token, filtered_updates, dry_run=not write)
     dispatcher_concurrency_control = ensure_dispatcher_concurrency_control_record(token, records, dry_run=not write)
+    dispatcher_table_concurrency = ensure_dispatcher_table_concurrency_records(token, records, dry_run=not write)
     delete_audit = build_delete_audit(records, [])
     view_rename_results = rename_legacy_views(APP_TOKEN, dry_run=not write)
     table_name_result = ensure_unified_config_table_name(APP_TOKEN, dry_run=not write)
@@ -1375,6 +1490,7 @@ def run_cleanup(*, write: bool, backup_path: Path) -> Dict[str, Any]:
         "backup_path": str(backup_path),
         "summary": plan.summary,
         "record_updates": record_results,
+        "dispatcher_table_concurrency": dispatcher_table_concurrency,
         "delete_audit": delete_audit.to_public_dict(),
         "deleted_records": [],
         "fields": field_results,

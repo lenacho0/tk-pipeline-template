@@ -11,6 +11,7 @@ import tk_dispatcher as dispatcher
 
 class DispatcherRecoveryTests(unittest.TestCase):
     def setUp(self):
+        dispatcher.running_processes = {}
         dispatcher._CONCURRENCY_POLICY_CACHE = {
             "loaded_at": 0,
             "policy": {"stage_policies": {}, "global_max_concurrency": None},
@@ -55,6 +56,37 @@ class DispatcherRecoveryTests(unittest.TestCase):
 
         self.assertEqual(policy["stage_policies"], {"多角色视频片段生成": {"max_concurrency": 0}})
         self.assertEqual(policy["global_max_concurrency"], 5)
+
+    def test_load_feishu_concurrency_policy_reads_table_limits(self):
+        records = [
+            {
+                "record_id": "rec_table",
+                "fields": {
+                    "配置类型": "路由开关",
+                    "环节": "Dispatcher表格并发",
+                    "应用表格": "005-多图宫格视频生成表",
+                    "状态": "启用",
+                    "生效来源": "线上配置",
+                    "表格最大并发": "18",
+                },
+            },
+        ]
+
+        with patch.object(dispatcher, "safe_list_records", return_value=records):
+            policy = dispatcher.load_feishu_concurrency_policy("token", force=True)
+
+        self.assertEqual(policy["table_policies"], {
+            dispatcher.TABLE_NINE_GRID_VIDEO: {"max_concurrency": 18}
+        })
+
+    def test_table_max_concurrency_prefers_feishu_policy(self):
+        watch = {"table": dispatcher.TABLE_NINE_GRID_VIDEO, "table_max_concurrency": 2}
+
+        with patch.object(dispatcher, "TABLE_KEY", dispatcher.TABLE_NINE_GRID_VIDEO), \
+             patch.object(dispatcher, "get_current_concurrency_policy", return_value={
+                 "table_policies": {dispatcher.TABLE_NINE_GRID_VIDEO: {"max_concurrency": 18}},
+             }):
+            self.assertEqual(dispatcher.table_max_concurrency_for_watch(watch), 18)
 
     def test_load_feishu_concurrency_policy_prefers_dispatch_stage_name(self):
         records = [
@@ -200,6 +232,265 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(len(ordered_names), len(set(ordered_names)))
         self.assertEqual(set(ordered_names), {watch["name"] for watch in dispatcher.WATCH_LIST})
 
+    def test_ordered_watch_list_rotates_normal_watches_after_priority_group(self):
+        watches = [
+            {"name": "多角色视频片段重生成"},
+            {"name": "普通A"},
+            {"name": "普通B"},
+            {"name": "普通C"},
+        ]
+
+        ordered = dispatcher.ordered_watch_list(watches, normal_rotation_offset=1)
+
+        self.assertEqual([watch["name"] for watch in ordered], [
+            "多角色视频片段重生成",
+            "普通B",
+            "普通C",
+            "普通A",
+        ])
+
+    def test_background_status_watches_reclaim_running_states(self):
+        missing = []
+        explicit_status_fields = {"拆分状态", "文档拆分状态"}
+        for watch in dispatcher.RAW_WATCH_LIST:
+            status_field = watch.get("status_field") or ""
+            if not watch.get("table") or not watch.get("script"):
+                continue
+            if not status_field.endswith("状态") and status_field not in explicit_status_fields:
+                continue
+            running_value = watch.get("running_value")
+            trigger_value = watch.get("trigger_value")
+            if not running_value or running_value == trigger_value:
+                continue
+            trigger_values = watch.get("trigger_values") or [trigger_value]
+            if running_value not in trigger_values:
+                missing.append({
+                    "name": watch.get("name"),
+                    "status_field": status_field,
+                    "running_value": running_value,
+                    "trigger_values": trigger_values,
+                })
+
+        self.assertEqual(missing, [])
+
+    def test_group_watches_by_table_groups_only_table_watches(self):
+        watches = [
+            {"name": "A1", "table": "tblA"},
+            {"name": "A2", "table": "tblA"},
+            {"name": "B1", "table": "tblB"},
+            {"name": "NoTable"},
+        ]
+
+        grouped = dispatcher.group_watches_by_table(watches)
+
+        self.assertEqual(set(grouped), {"tblA", "tblB"})
+        self.assertEqual([watch["name"] for watch in grouped["tblA"]], ["A1", "A2"])
+        self.assertEqual([watch["name"] for watch in grouped["tblB"]], ["B1"])
+
+    def test_filter_watches_by_table_key_keeps_only_that_table(self):
+        watches = [
+            {"name": "A1", "table": "tblA"},
+            {"name": "A2", "table": "tblA"},
+            {"name": "B1", "table": "tblB"},
+        ]
+
+        scoped = dispatcher.filter_watches_by_table_key(watches, "tblA")
+
+        self.assertEqual([watch["name"] for watch in scoped], ["A1", "A2"])
+
+    def test_scoped_runtime_file_uses_table_suffix_only_in_table_mode(self):
+        self.assertEqual(
+            dispatcher.scoped_runtime_file(".running_tasks", "ryan", None),
+            str(Path(dispatcher.SCRIPTS_DIR) / ".running_tasks.ryan.json"),
+        )
+        self.assertEqual(
+            dispatcher.scoped_runtime_file(".running_tasks", "ryan", "tblA"),
+            str(Path(dispatcher.SCRIPTS_DIR) / ".running_tasks.ryan.tblA.json"),
+        )
+
+    def test_make_task_key_includes_table_and_status_for_new_scoped_keys(self):
+        watch = {
+            "table": "tblA",
+            "status_field": "视频生成状态",
+            "script": "worker.py",
+            "args": ["video"],
+        }
+
+        self.assertEqual(
+            dispatcher.make_task_key(watch, "rec1"),
+            "tblA::视频生成状态::worker.py::video::rec1",
+        )
+
+    def test_build_watch_candidate_filter_queries_status_and_record_type(self):
+        watch = {
+            "status_field": "参考图生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "failed_value": "失败",
+            "required_field_values": {"记录类型": ["参考资产"]},
+            "skip_deprecated_records": True,
+        }
+
+        payload = dispatcher.build_watch_candidate_filter(watch)
+
+        self.assertEqual(payload, {
+            "logic": "and",
+            "conditions": [
+                ["参考图生成状态", "intersects", ["待生成", "生成中", "失败"]],
+                ["记录类型", "intersects", ["参考资产"]],
+            ],
+        })
+
+    def test_build_watch_candidate_filter_does_not_treat_noop_status_as_retryable_failure(self):
+        watch = {
+            "status_field": "参考图操作",
+            "trigger_value": "重新生成参考图",
+            "failed_value": "不触发",
+            "required_field_values": {"记录类型": ["参考资产"]},
+        }
+
+        payload = dispatcher.build_watch_candidate_filter(watch)
+
+        self.assertEqual(payload, {
+            "logic": "and",
+            "conditions": [
+                ["参考图操作", "intersects", ["重新生成参考图"]],
+                ["记录类型", "intersects", ["参考资产"]],
+            ],
+        })
+
+    def test_build_watch_candidate_filter_does_not_push_required_blank_values(self):
+        watch = {
+            "status_field": "场景拆分操作",
+            "trigger_value": "重新拆分场景",
+            "failed_value": "不触发",
+            "required_field_values": {"记录类型": ["", "母任务"]},
+        }
+
+        payload = dispatcher.build_watch_candidate_filter(watch)
+
+        self.assertEqual(payload, {
+            "logic": "and",
+            "conditions": [
+                ["场景拆分操作", "intersects", ["重新拆分场景"]],
+            ],
+        })
+
+    def test_get_watch_candidate_records_prefers_cloud_filter_over_full_table_scan(self):
+        watch = {
+            "name": "测试参考图生成",
+            "table": "tblA",
+            "status_field": "参考图生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "failed_value": "失败",
+            "required_field_values": {"记录类型": ["参考资产"]},
+        }
+        expected = [{"record_id": "rec1", "fields": {"参考图生成状态": "待生成"}}]
+
+        with patch.object(dispatcher, "base_v3_filter_records", return_value=expected) as filtered, \
+             patch.object(dispatcher, "get_table_records_cached") as full_scan:
+            records = dispatcher.get_watch_candidate_records_cached("token", watch, force=True)
+
+        self.assertEqual(records, expected)
+        filtered.assert_called_once()
+        full_scan.assert_not_called()
+
+    def test_check_and_run_table_scope_ignores_global_concurrency_limit(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "worker.py",
+            "table": "tblA",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 3,
+        }
+        record = {"record_id": "recWait", "fields": {"图片生成状态": "待生成", "任务名称": "waiting task"}}
+
+        with patch.object(dispatcher, "TABLE_KEY", "tblA"), \
+             patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": 1,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_active_running_tasks", return_value=1), \
+             patch.object(dispatcher, "count_running_by_table", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_table", return_value=0), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "try_claim_task", return_value=True), \
+             patch.object(dispatcher, "save_running_tasks"), \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_called_once()
+
+    def test_check_and_run_table_scope_respects_table_concurrency_limit(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "worker.py",
+            "table": "tblA",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 3,
+            "table_max_concurrency": 2,
+        }
+        record = {"record_id": "recWait", "fields": {"图片生成状态": "待生成", "任务名称": "waiting task"}}
+
+        with patch.object(dispatcher, "TABLE_KEY", "tblA"), \
+             patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": None,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_running_by_table", return_value=2), \
+             patch.object(dispatcher, "count_live_persisted_by_table", return_value=0), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
+    def test_check_and_run_table_scope_zero_table_limit_pauses_table(self):
+        watch = {
+            "name": "测试图片生成",
+            "script": "worker.py",
+            "table": "tblA",
+            "status_field": "图片生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "args": ["image"],
+            "max_concurrency": 3,
+            "table_max_concurrency": 0,
+        }
+        record = {"record_id": "recWait", "fields": {"图片生成状态": "待生成", "任务名称": "waiting task"}}
+
+        with patch.object(dispatcher, "TABLE_KEY", "tblA"), \
+             patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": None,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_running_by_table", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_table", return_value=0), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+
     def test_effective_concurrency_report_shows_policy_override(self):
         watch = {
             "name": "多角色关键帧重生成",
@@ -239,11 +530,97 @@ class DispatcherRecoveryTests(unittest.TestCase):
              patch.object(dispatcher, "load_running_tasks", return_value={}), \
              patch.object(dispatcher, "count_running_by_watch", return_value=0), \
              patch.object(dispatcher, "count_active_running_tasks", return_value=1), \
-             patch.object(dispatcher, "get_table_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
              patch.object(dispatcher.subprocess, "Popen") as popen:
             dispatcher.check_and_run("token", watch)
 
         popen.assert_not_called()
+
+    def test_failed_retryable_candidate_is_requeued_without_launching_same_cycle(self):
+        watch = {
+            "name": "测试参考图生成",
+            "script": "worker.py",
+            "table": "tblA",
+            "status_field": "参考图生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "参考图错误信息",
+            "args": ["image"],
+            "max_concurrency": 5,
+            "max_retries": 2,
+        }
+        record = {
+            "record_id": "recFailed",
+            "fields": {
+                "参考图生成状态": "失败",
+                "参考图错误信息": "dispatcher兜底失败回写[UPSTREAM_NETWORK]: read timed out",
+                "任务名称": "failed task",
+            },
+        }
+        updates = []
+
+        with patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": None,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_active_running_tasks", return_value=0), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "get_retry_count", return_value=0), \
+             patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter, \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+        set_retry_count.assert_called_once()
+        clear_dead_letter.assert_called_once()
+        self.assertEqual(updates[-1]["参考图生成状态"], "待生成")
+        self.assertIn("失败队列重新排队", updates[-1]["参考图错误信息"])
+
+    def test_failed_terminal_candidate_is_left_for_manual_review(self):
+        watch = {
+            "name": "测试参考图生成",
+            "script": "worker.py",
+            "table": "tblA",
+            "status_field": "参考图生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "参考图错误信息",
+            "args": ["image"],
+            "max_concurrency": 5,
+            "max_retries": 2,
+        }
+        record = {
+            "record_id": "recFailed",
+            "fields": {
+                "参考图生成状态": "失败",
+                "参考图错误信息": "dispatcher兜底失败回写[CONFIG_INVALID]: model missing",
+                "任务名称": "failed task",
+            },
+        }
+
+        with patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={
+                 "stage_policies": {},
+                 "global_max_concurrency": None,
+             }), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "load_running_tasks", return_value={}), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_active_running_tasks", return_value=0), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "safe_update_record") as update_record, \
+             patch.object(dispatcher.subprocess, "Popen") as popen:
+            dispatcher.check_and_run("token", watch)
+
+        popen.assert_not_called()
+        update_record.assert_not_called()
 
     def test_claim_payload_skips_attachment_fields_when_clearing_outputs(self):
         claim_fields = {
@@ -298,6 +675,16 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertFalse(payload["retryable"])
         self.assertEqual(payload["status"], "failed_terminal")
 
+    def test_english_unsafe_error_is_terminal_policy_block(self):
+        payload = common.build_error_payload(
+            "OTU 视频生成失败: {'error': {'message': 'The generated video appears to be unsafe. Try modifying the prompts or the seeds.'}}",
+            stage="multi_role_first_last_video",
+        )
+
+        self.assertEqual(payload["error_code"], "UPSTREAM_POLICY_BLOCKED")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_terminal")
+
     def test_aitgenne_upstream_saturation_500_is_retryable(self):
         payload = common.build_error_payload(
             "Aitgenne 参考图视频任务提交失败: HTTP 500, body={'code': 'do_request_failed', "
@@ -309,9 +696,9 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertTrue(payload["retryable"])
         self.assertEqual(payload["status"], "failed_retryable")
 
-    def test_upstream_no_available_channel_is_terminal_config_error(self):
+    def test_upstream_no_available_channel_without_503_is_terminal_config_error(self):
         payload = common.build_error_payload(
-            "OTU 图片任务提交失败: HTTP 503, body={'code': 'fail_to_fetch_task', "
+            "OTU 图片任务提交失败: HTTP 400, body={'code': 'fail_to_fetch_task', "
             "'message': '{\"error\":{\"code\":\"model_not_found\",\"message\":\"No available channel for model gpt-image-2 under group default\"}}'}",
             stage="image_generation",
         )
@@ -319,6 +706,18 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(payload["error_code"], "CONFIG_INVALID")
         self.assertFalse(payload["retryable"])
         self.assertEqual(payload["status"], "failed_terminal")
+
+    def test_upstream_no_available_channel_503_is_retryable(self):
+        payload = common.build_error_payload(
+            "Omni 视频任务提交失败: HTTP 503, body={'error': {'code': 'model_not_found', "
+            "'message': 'No available channel for model omni_flash-10s under group default (distributor)', "
+            "'type': 'new_api_error'}}",
+            stage="storyboard_video",
+        )
+
+        self.assertEqual(payload["error_code"], "UPSTREAM_RATE_LIMIT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_retryable")
 
     def test_feishu_records_400_is_retryable_transient_api_error(self):
         payload = common.build_error_payload(
@@ -379,6 +778,44 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(payload["error_code"], "UPSTREAM_POLICY_BLOCKED")
         self.assertFalse(payload["retryable"])
 
+    def test_multi_role_video_retry_resubmits_new_task_instead_of_locking_failed(self):
+        watch = {
+            "name": "多角色视频片段生成",
+            "script": "tk_multi_role_first_last.py",
+            "args": ["video"],
+            "table": "tbl_multi",
+            "status_field": "视频生成状态",
+            "trigger_value": "待生成",
+            "trigger_values": ["待生成", "生成中"],
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "视频错误信息",
+            "resubmit_on_retryable_failure": True,
+        }
+        updates = []
+        payload = common.build_error_payload(
+            "OTU 视频 progress=0 timeout，自 created_at 已超过 600s: task_id=task_old",
+            stage="multi_role_first_last_video",
+        )
+
+        with patch.object(dispatcher, "get_retry_count", return_value=99), \
+             patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_get_record", return_value={"视频生成状态": "生成中"}), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter, \
+             patch.object(dispatcher, "bump_metric"):
+            retried = dispatcher.maybe_retry_task("token", watch, "rec_clip", "tk_multi_role_first_last.py::video::rec_clip", "timeout", error_payload=payload)
+
+        self.assertTrue(retried)
+        set_retry_count.assert_not_called()
+        clear_retry_count.assert_called_once_with("tk_multi_role_first_last.py::video::rec_clip")
+        clear_dead_letter.assert_called_once_with("tk_multi_role_first_last.py::video::rec_clip")
+        self.assertEqual(updates[-1]["视频生成状态"], "待生成")
+        self.assertEqual(updates[-1]["视频任务ID"], "")
+        self.assertEqual(updates[-1]["视频原始响应JSON"], "")
+        self.assertIn("重新提交新任务", updates[-1]["视频错误信息"])
+
     def test_parse_subprocess_error_payload_accepts_wrapped_error_payload(self):
         stderr = (
             'Traceback before structured payload\n'
@@ -423,6 +860,141 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(claim_fields["结果视频"], [])
         self.assertEqual(claim_fields["视频任务ID"], "")
         self.assertEqual(claim_fields["错误信息"], "")
+
+    def test_clear_retry_count_for_manual_waiting_requeue(self):
+        watch = {
+            "trigger_value": "待生成",
+            "error_field": "视频错误信息",
+        }
+
+        with patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter:
+            dispatcher.clear_retry_count_for_manual_requeue(
+                watch,
+                "task-key",
+                "待生成",
+                {"视频错误信息": "用户重新提交，清空失败状态"},
+            )
+
+        clear_retry_count.assert_called_once_with("task-key")
+        clear_dead_letter.assert_called_once_with("task-key")
+
+    def test_clear_retry_count_for_manual_waiting_requeue_keeps_auto_retry_count(self):
+        watch = {
+            "trigger_value": "待生成",
+            "error_field": "视频错误信息",
+        }
+
+        with patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter:
+            dispatcher.clear_retry_count_for_manual_requeue(
+                watch,
+                "task-key",
+                "待生成",
+                {"视频错误信息": "自动重试中[UPSTREAM_NETWORK] 第 1 次失败，将继续重试"},
+            )
+
+        clear_retry_count.assert_not_called()
+        clear_dead_letter.assert_not_called()
+
+    def test_clear_retry_count_for_manual_waiting_requeue_keeps_dispatcher_failure_count(self):
+        watch = {
+            "trigger_value": "待解析",
+            "error_field": "解析错误信息",
+        }
+
+        with patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter:
+            cleared = dispatcher.clear_retry_count_for_manual_requeue(
+                watch,
+                "task-key",
+                "待解析",
+                {"解析错误信息": "dispatcher兜底失败回写[UPSTREAM_NETWORK]: Read timed out"},
+            )
+
+        self.assertFalse(cleared)
+        clear_retry_count.assert_not_called()
+        clear_dead_letter.assert_not_called()
+
+    def test_clear_retry_count_for_manual_waiting_requeue_keeps_auto_resubmit_count(self):
+        watch = {
+            "trigger_value": "待生成",
+            "error_field": "视频错误信息",
+        }
+
+        with patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter:
+            cleared = dispatcher.clear_retry_count_for_manual_requeue(
+                watch,
+                "task-key",
+                "待生成",
+                {"视频错误信息": "自动重新提交新任务[UPSTREAM_NETWORK]: 等待 dispatcher 提交新任务"},
+            )
+
+        self.assertFalse(cleared)
+        clear_retry_count.assert_not_called()
+        clear_dead_letter.assert_not_called()
+
+    def test_clear_retry_count_for_manual_waiting_requeue_clears_empty_error(self):
+        watch = {
+            "trigger_value": "待解析",
+            "error_field": "解析错误信息",
+        }
+
+        with patch.object(dispatcher, "clear_retry_count") as clear_retry_count, \
+             patch.object(dispatcher, "clear_dead_letter") as clear_dead_letter:
+            cleared = dispatcher.clear_retry_count_for_manual_requeue(
+                watch,
+                "task-key",
+                "待解析",
+                {"解析错误信息": ""},
+            )
+
+        self.assertTrue(cleared)
+        clear_retry_count.assert_called_once_with("task-key")
+        clear_dead_letter.assert_called_once_with("task-key")
+
+    def test_mark_task_failed_writes_failed_status_after_retry_limit(self):
+        watch = {
+            "name": "003新表脚本文档解析拆分",
+            "script": "tk_script_doc_shots.py",
+            "args": ["parse", "--unified"],
+            "table": "tbl_unified",
+            "status_field": "解析状态",
+            "trigger_value": "待解析",
+            "running_value": "解析中",
+            "failed_value": "失败",
+            "error_field": "解析错误信息",
+            "max_retries": 1,
+        }
+        payload = {
+            "status": "failed_retryable",
+            "error_code": "UPSTREAM_NETWORK",
+            "retryable": True,
+            "message": "Read timed out",
+        }
+        updates = []
+
+        with patch.object(dispatcher, "append_last_error"), \
+             patch.object(dispatcher, "safe_get_record", return_value={"解析状态": "待解析"}), \
+             patch.object(dispatcher, "get_retry_count", return_value=1), \
+             patch.object(dispatcher, "set_retry_count") as set_retry_count, \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "register_dead_letter") as register_dead_letter, \
+             patch.object(dispatcher, "bump_metric"):
+            dispatcher.mark_task_failed(
+                "token",
+                watch,
+                "rec_doc",
+                "tk_script_doc_shots.py::parse --unified::rec_doc",
+                reason="timeout",
+                error_payload=payload,
+            )
+
+        set_retry_count.assert_called_once()
+        self.assertEqual(updates[-1]["解析状态"], "失败")
+        self.assertIn("dispatcher兜底失败回写[UPSTREAM_NETWORK]", updates[-1]["解析错误信息"])
+        register_dead_letter.assert_called_once()
 
     def test_unified_script_doc_video_watch_reclaims_running_records(self):
         watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "003新表脚本文档分镜视频生成")

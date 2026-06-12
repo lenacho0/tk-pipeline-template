@@ -6,7 +6,7 @@ TK 任务调度器 —— 轮询飞书多维表格，发现「待执行」任务
 用法: python3 tk_dispatcher.py
 后台运行: nohup python3 tk_dispatcher.py >> dispatcher.log 2>&1 &
 """
-import json, os, sys, time, subprocess, logging
+import json, os, sys, time, subprocess, logging, urllib.parse
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
@@ -21,31 +21,88 @@ logging.basicConfig(
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 INSTANCE = os.environ.get('TK_INSTANCE', 'default')
+
+
+def get_dispatcher_table_key(argv=None, environ=None):
+    env = environ if environ is not None else os.environ
+    env_value = (env.get('TK_DISPATCHER_TABLE_KEY') or '').strip()
+    if env_value:
+        return env_value
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    for index, arg in enumerate(args):
+        if arg == '--table-key' and index + 1 < len(args):
+            return args[index + 1].strip()
+        if arg.startswith('--table-key='):
+            return arg.split('=', 1)[1].strip()
+    return ''
+
+
+def sanitize_scope_component(value):
+    text = str(value or '').strip()
+    return ''.join(ch if ch.isalnum() or ch in ('_', '-') else '_' for ch in text)
+
+
+def runtime_scope_name(instance, table_key=None):
+    instance_part = sanitize_scope_component(instance or 'default') or 'default'
+    table_part = sanitize_scope_component(table_key)
+    if table_part:
+        return f'{instance_part}.{table_part}'
+    return instance_part
+
+
+def scoped_runtime_file(prefix, instance, table_key=None, extension='json'):
+    scope = runtime_scope_name(instance, table_key)
+    suffix = f'.{extension}' if extension else ''
+    return os.path.join(SCRIPTS_DIR, f'{prefix}.{scope}{suffix}')
+
+
+TABLE_KEY = get_dispatcher_table_key()
+RUNTIME_SCOPE = runtime_scope_name(INSTANCE, TABLE_KEY)
 POLL_INTERVAL = int(DISPATCHER_CFG.get('poll_interval', 30) or 30)
 HEALTHCHECK_HOUR = int(DISPATCHER_CFG.get('healthcheck_hour', 8) or 8)
 HEALTHCHECK_DONE_FILE = os.path.join(SCRIPTS_DIR, f'.healthcheck_today.{INSTANCE}')
-RUNNING_TASKS_FILE = os.path.join(SCRIPTS_DIR, f'.running_tasks.{INSTANCE}.json')
-RETRY_STATE_FILE = os.path.join(SCRIPTS_DIR, f'.retry_state.{INSTANCE}.json')
-METRICS_FILE = os.path.join(SCRIPTS_DIR, f'.dispatcher_metrics.{INSTANCE}.json')
-HEARTBEAT_FILE = os.path.join(SCRIPTS_DIR, f'.dispatcher_heartbeat.{INSTANCE}.json')
-DEAD_LETTER_FILE = os.path.join(SCRIPTS_DIR, f'.dead_letter_tasks.{INSTANCE}.json')
-CIRCUIT_BREAKER_FILE = os.path.join(SCRIPTS_DIR, f'.circuit_breakers.{INSTANCE}.json')
+RUNNING_TASKS_FILE = scoped_runtime_file('.running_tasks', INSTANCE, TABLE_KEY)
+RETRY_STATE_FILE = scoped_runtime_file('.retry_state', INSTANCE, TABLE_KEY)
+METRICS_FILE = scoped_runtime_file('.dispatcher_metrics', INSTANCE, TABLE_KEY)
+HEARTBEAT_FILE = scoped_runtime_file('.dispatcher_heartbeat', INSTANCE, TABLE_KEY)
+DEAD_LETTER_FILE = scoped_runtime_file('.dead_letter_tasks', INSTANCE, TABLE_KEY)
+CIRCUIT_BREAKER_FILE = scoped_runtime_file('.circuit_breakers', INSTANCE, TABLE_KEY)
 STAGE_CFG = DISPATCHER_CFG.get('stages', {})
 CIRCUIT_CFG = DISPATCHER_CFG.get('circuit_breaker', {})
 GLOBAL_MAX_CONCURRENCY = int(DISPATCHER_CFG.get('global_max_concurrency') or 0)
+TABLE_MAX_CONCURRENCY_CFG = DISPATCHER_CFG.get('table_max_concurrency', {})
+DEFAULT_TABLE_MAX_CONCURRENCY = int(DISPATCHER_CFG.get('default_table_max_concurrency') or 20)
 CONCURRENCY_CONTROL_STAGE = 'Dispatcher并发控制'
+TABLE_CONCURRENCY_CONTROL_STAGE = 'Dispatcher表格并发'
 CONCURRENCY_POLICY_TTL_SECONDS = int(DISPATCHER_CFG.get('concurrency_policy_ttl_seconds', 60) or 60)
 _CONCURRENCY_POLICY_CACHE = {
     'loaded_at': 0,
-    'policy': {'stage_policies': {}, 'global_max_concurrency': None, 'source_rows': []},
+    'policy': {'stage_policies': {}, 'table_policies': {}, 'global_max_concurrency': None, 'source_rows': []},
 }
-TABLE_SCAN_STATE_FILE = os.path.join(SCRIPTS_DIR, f'.table_scan_state.{INSTANCE}.json')
-RECORD_STATE_CACHE_FILE = os.path.join(SCRIPTS_DIR, f'.record_state_cache.{INSTANCE}.json')
+DISPATCHER_TABLE_ID_BY_APP_TABLE = {
+    '001-多角色首尾帧生成表': TABLE_MULTI_ROLE_FIRST_LAST,
+    '002-首尾帧视频生成表': TABLE_FIRST_LAST_VIDEO,
+    '003-1脚本文档-任务表': TABLE_SCRIPT_DOC_TASKS,
+    '003-2脚本文档-参考资产表': TABLE_SCRIPT_DOC_REFERENCE_ASSETS,
+    '003-3脚本文档-分镜生产表': TABLE_SCRIPT_DOC_SHOTS,
+    '003-脚本文档生产表': TABLE_SCRIPT_DOC_UNIFIED,
+    '004-故事板视频生成表': TABLE_STORYBOARD_VIDEO,
+    '005-多图宫格视频生成表': TABLE_NINE_GRID_VIDEO,
+    '005-多图九宫格视频生成表': TABLE_NINE_GRID_VIDEO,
+    '006-视频编辑任务表': TABLE_VIDEO_EDIT,
+    '008-图生视频生成表': TABLE_PROMPT_IMAGE_VIDEO,
+    '音色库': TABLE_VOICE_LIBRARY,
+    '文案音频表': TABLE_TEXT_AUDIO,
+}
+TABLE_SCAN_STATE_FILE = scoped_runtime_file('.table_scan_state', INSTANCE, TABLE_KEY)
+RECORD_STATE_CACHE_FILE = scoped_runtime_file('.record_state_cache', INSTANCE, TABLE_KEY)
 SCAN_CFG = DISPATCHER_CFG.get('scan', {})
 TABLE_MIN_INTERVAL_SECONDS = int(SCAN_CFG.get('table_min_interval_seconds', 20) or 20)
 RECORD_STATE_CACHE_TTL_SECONDS = int(SCAN_CFG.get('record_state_cache_ttl_seconds', 300) or 300)
-RUNTIME_LOG_FILE = os.path.join(SCRIPTS_DIR, f'dispatcher-runtime.{INSTANCE}.log')
+RUNTIME_LOG_FILE = scoped_runtime_file('dispatcher-runtime', INSTANCE, TABLE_KEY, extension='log')
 _TABLE_FIELD_KINDS_CACHE = {}
+_WATCH_CANDIDATE_CACHE = {}
 ATTACHMENT_FIELD_TYPE_IDS = {17, '17', 'attachment'}
 KNOWN_ATTACHMENT_FIELD_NAMES = {
     '参考图',
@@ -82,6 +139,7 @@ WATCH_LIST = [
         'table': TABLE_VOICE_LIBRARY,
         'status_field': '生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -96,6 +154,7 @@ WATCH_LIST = [
         'table': TABLE_TEXT_AUDIO,
         'status_field': '生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -133,6 +192,7 @@ WATCH_LIST = [
         'table': TABLE_NINE_GRID_VIDEO,
         'status_field': '方案生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -260,7 +320,7 @@ WATCH_LIST = [
         'args': ['video'],
         'timeout': 2400,
         'max_concurrency': 1,
-        'max_retries': 1,
+        'max_retries': 3,
         'required_field_values': {'记录类型': ['Board分段']},
         'claim_clear_values': {
             '分镜视频': [],
@@ -338,6 +398,7 @@ WATCH_LIST = [
         'table': TABLE_STORYBOARD_VIDEO,
         'status_field': '解析状态',
         'trigger_value': '待解析',
+        'trigger_values': ['待解析', '解析中'],
         'running_value': '解析中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -421,6 +482,7 @@ WATCH_LIST = [
         'table': TABLE_FIRST_LAST_VIDEO,
         'status_field': '拆分状态',
         'trigger_value': '待拆分',
+        'trigger_values': ['待拆分', '拆分中'],
         'running_value': '拆分中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -437,6 +499,7 @@ WATCH_LIST = [
         'table': TABLE_FIRST_LAST_VIDEO,
         'status_field': '文档拆分状态',
         'trigger_value': '待拆分',
+        'trigger_values': ['待拆分', '拆分中'],
         'running_value': '拆分中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -657,6 +720,7 @@ WATCH_LIST = [
         'table': TABLE_MULTI_ROLE_FIRST_LAST,
         'status_field': '拆解状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '错误信息',
@@ -827,6 +891,7 @@ WATCH_LIST = [
         'max_retries': 1,
         'required_field_values': {'记录类型': ['视频片段']},
         'skip_deprecated_records': True,
+        'resubmit_on_retryable_failure': True,
         'claim_clear_fields_by_trigger_value': {
             '待生成': [
                 '视频任务ID',
@@ -848,6 +913,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_TASKS,
         'status_field': '解析状态',
         'trigger_value': '待解析',
+        'trigger_values': ['待解析', '解析中'],
         'running_value': '解析中',
         'failed_value': '失败',
         'error_field': '解析错误信息',
@@ -887,6 +953,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_SHOTS,
         'status_field': '口播音频状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '口播音频错误信息',
@@ -975,6 +1042,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_SHOTS,
         'status_field': '视频生成状态',
         'trigger_value': '待生成',
+        'trigger_values': ['待生成', '生成中'],
         'running_value': '生成中',
         'failed_value': '失败',
         'error_field': '视频错误信息',
@@ -990,6 +1058,7 @@ WATCH_LIST = [
         'table': TABLE_SCRIPT_DOC_UNIFIED,
         'status_field': '解析状态',
         'trigger_value': '待解析',
+        'trigger_values': ['待解析', '解析中'],
         'running_value': '解析中',
         'failed_value': '失败',
         'error_field': '解析错误信息',
@@ -1113,8 +1182,8 @@ WATCH_LIST = [
 
 
 RAW_WATCH_LIST = list(WATCH_LIST)
-WATCH_LIST = [w for w in WATCH_LIST if w.get('table') or w.get('keep_when_table_missing')]
 MEDIA_REGENERATION_WATCH_NAMES = [
+    '多角色视频片段生成',
     '多图宫格参考图重生成',
     '首尾帧首帧图重生成',
     '首尾帧尾帧图重生成',
@@ -1125,11 +1194,34 @@ MEDIA_REGENERATION_WATCH_NAMES = [
 ]
 
 
-def ordered_watch_list(watches=None):
+def group_watches_by_table(watches=None):
+    grouped = {}
+    for watch in list(watches if watches is not None else WATCH_LIST):
+        table_id = watch.get('table')
+        if not table_id:
+            continue
+        grouped.setdefault(table_id, []).append(watch)
+    return grouped
+
+
+def filter_watches_by_table_key(watches, table_key):
+    if not table_key:
+        return list(watches)
+    return [watch for watch in watches if watch.get('table') == table_key]
+
+
+WATCH_LIST = [w for w in WATCH_LIST if w.get('table') or w.get('keep_when_table_missing')]
+WATCH_LIST = filter_watches_by_table_key(WATCH_LIST, TABLE_KEY)
+
+
+def ordered_watch_list(watches=None, normal_rotation_offset=0):
     source = list(watches if watches is not None else WATCH_LIST)
     priority = [watch for watch in source if watch.get('name') in MEDIA_REGENERATION_WATCH_NAMES]
     normal = [watch for watch in source if watch.get('name') not in MEDIA_REGENERATION_WATCH_NAMES]
     priority.sort(key=lambda watch: MEDIA_REGENERATION_WATCH_NAMES.index(watch.get('name')))
+    if normal and normal_rotation_offset:
+        offset = normal_rotation_offset % len(normal)
+        normal = normal[offset:] + normal[:offset]
     return priority + normal
 
 
@@ -1180,7 +1272,7 @@ def _config_status_is_active(fields):
 
 
 def get_current_concurrency_policy():
-    return _CONCURRENCY_POLICY_CACHE.get('policy') or {'stage_policies': {}, 'global_max_concurrency': None, 'source_rows': []}
+    return _CONCURRENCY_POLICY_CACHE.get('policy') or {'stage_policies': {}, 'table_policies': {}, 'global_max_concurrency': None, 'source_rows': []}
 
 
 def load_feishu_concurrency_policy(token, *, force=False):
@@ -1199,6 +1291,7 @@ def load_feishu_concurrency_policy(token, *, force=False):
         return cached
 
     stage_candidates = {}
+    table_candidates = {}
     global_limit = None
 
     for record in records:
@@ -1225,6 +1318,21 @@ def load_feishu_concurrency_policy(token, *, force=False):
             parsed_global = parse_concurrency_cell(fields.get('全局最大并发'))
             if parsed_global is not None:
                 global_limit = parsed_global
+        elif config_type == '路由开关' and stage == TABLE_CONCURRENCY_CONTROL_STAGE:
+            table_limit = parse_concurrency_cell(fields.get('表格最大并发'))
+            app_table = extract_text(fields.get('应用表格', '')).strip()
+            table_id = DISPATCHER_TABLE_ID_BY_APP_TABLE.get(app_table)
+            if table_limit is None or not table_id:
+                continue
+            source_row = {
+                'record_id': record.get('record_id') or record.get('id'),
+                '配置类型': config_type,
+                '环节': stage,
+                '应用表格': app_table,
+                'matched_table': table_id,
+                '表格最大并发': table_limit,
+            }
+            table_candidates.setdefault(table_id, []).append((fields, table_limit, source_row))
 
     stage_policies = {}
     source_rows = []
@@ -1246,7 +1354,25 @@ def load_feishu_concurrency_policy(token, *, force=False):
         stage_policies[stage] = {'max_concurrency': selected[0][1]}
         source_rows.append(selected[0][2])
 
-    policy = {'stage_policies': stage_policies, 'global_max_concurrency': global_limit, 'source_rows': source_rows}
+    table_policies = {}
+    for table_id, candidates in table_candidates.items():
+        online = [
+            item for item in candidates
+            if extract_text(item[0].get('生效来源', '')).strip() in ('', '线上配置')
+        ]
+        selected = online or candidates
+        if len(selected) != 1:
+            log.warning(f"忽略重复表格并发配置: table={table_id} count={len(selected)}")
+            continue
+        table_policies[table_id] = {'max_concurrency': selected[0][1]}
+        source_rows.append(selected[0][2])
+
+    policy = {
+        'stage_policies': stage_policies,
+        'table_policies': table_policies,
+        'global_max_concurrency': global_limit,
+        'source_rows': source_rows,
+    }
     _CONCURRENCY_POLICY_CACHE['loaded_at'] = now
     _CONCURRENCY_POLICY_CACHE['policy'] = policy
     return policy
@@ -1276,6 +1402,28 @@ def current_global_max_concurrency(policy):
     if configured is None:
         return GLOBAL_MAX_CONCURRENCY
     return int(configured)
+
+
+def table_max_concurrency_for_watch(watch):
+    if not TABLE_KEY:
+        return None
+    table_id = watch.get('table')
+    feishu_table_policy = (get_current_concurrency_policy().get('table_policies') or {}).get(table_id)
+    if feishu_table_policy and 'max_concurrency' in feishu_table_policy:
+        return int(feishu_table_policy['max_concurrency'])
+    direct = parse_concurrency_cell(watch.get('table_max_concurrency'))
+    if direct is not None:
+        return direct
+
+    configured = None
+    if isinstance(TABLE_MAX_CONCURRENCY_CFG, dict):
+        configured = TABLE_MAX_CONCURRENCY_CFG.get(table_id)
+        if isinstance(configured, dict):
+            configured = configured.get('max_concurrency')
+    parsed = parse_concurrency_cell(configured)
+    if parsed is not None:
+        return parsed
+    return DEFAULT_TABLE_MAX_CONCURRENCY
 
 
 def apply_stage_policy(watch):
@@ -1571,7 +1719,10 @@ def log_metrics_snapshot():
 def make_task_key(watch, record_id):
     args = watch.get('args') or []
     action_key = ' '.join(str(arg) for arg in args)
-    return f"{watch['script']}::{action_key}::{record_id}"
+    script = watch.get('script') or watch.get('name') or 'unknown'
+    table = watch.get('table') or 'no-table'
+    status_field = watch.get('status_field') or 'no-status'
+    return f"{table}::{status_field}::{script}::{action_key}::{record_id}"
 
 
 def format_timeout_reason(watch, record_id, elapsed):
@@ -1583,7 +1734,8 @@ def format_timeout_reason(watch, record_id, elapsed):
 
 
 def legacy_task_key(watch, record_id):
-    return f"{watch['script']}::{record_id}"
+    script = watch.get('script') or watch.get('name') or 'unknown'
+    return f"{script}::{record_id}"
 
 
 def pop_legacy_running_state(running_state, watch, record_id):
@@ -1619,8 +1771,23 @@ def count_active_running_tasks():
     return count
 
 
+def count_running_by_table(table_id):
+    count = 0
+    for proc in running_processes.values():
+        process = proc.get('process')
+        if process is not None and process.poll() is not None:
+            continue
+        if proc.get('watch', {}).get('table') == table_id:
+            count += 1
+    return count
+
+
 def running_state_entry_matches_watch(task_info, watch):
     if task_info.get('script') != watch.get('script'):
+        return False
+    if task_info.get('table') and task_info.get('table') != watch.get('table'):
+        return False
+    if task_info.get('status_field') and task_info.get('status_field') != watch.get('status_field'):
         return False
     stored_args = [str(arg) for arg in (task_info.get('args') or [])]
     watch_args = [str(arg) for arg in (watch.get('args') or [])]
@@ -1647,8 +1814,31 @@ def count_live_persisted_by_watch(watch, running_state):
     return count
 
 
+def running_state_entry_matches_table(task_info, table_id):
+    if not table_id:
+        return False
+    stored_table = task_info.get('table')
+    if stored_table:
+        return stored_table == table_id
+    return False
+
+
+def count_live_persisted_by_table(table_id, running_state):
+    count = 0
+    for task_key, task_info in (running_state or {}).items():
+        if task_key in running_processes:
+            continue
+        if not running_state_entry_matches_table(task_info or {}, table_id):
+            continue
+        if has_live_process_for_task_key(task_key, task_info or {}):
+            count += 1
+    return count
+
+
 def has_live_process_for_task_key(task_key, task_info):
-    script = task_info.get('script') or task_key.split('::', 1)[0]
+    key_parts = task_key.split('::')
+    script_from_key = key_parts[2] if len(key_parts) >= 5 else key_parts[0]
+    script = task_info.get('script') or script_from_key
     record_id = task_info.get('record_id') or (task_key.rsplit('::', 1)[1] if '::' in task_key else '')
     if not script or not record_id:
         return False
@@ -1715,6 +1905,88 @@ def clear_retry_count(task_key):
         save_retry_state(state)
 
 
+def clear_dead_letter(task_key):
+    data = load_dead_letters()
+    if task_key in data:
+        data.pop(task_key, None)
+        save_dead_letters(data)
+
+
+SYSTEM_REQUEUE_ERROR_PREFIXES = (
+    '自动重试中[',
+    'dispatcher兜底失败回写[',
+    '自动重新提交新任务[',
+)
+
+RETRYABLE_FAILED_ERROR_CODES = {
+    'UPSTREAM_NETWORK',
+    'UPSTREAM_RATE_LIMIT',
+    'UPSTREAM_RETRYABLE',
+    'FEISHU_API_TRANSIENT',
+}
+DEFAULT_RETRYABLE_FAILED_VALUES = {'失败'}
+
+
+def retryable_error_code_from_text(error_text):
+    text = extract_text(error_text).strip()
+    for prefix in SYSTEM_REQUEUE_ERROR_PREFIXES:
+        if not text.startswith(prefix):
+            continue
+        remainder = text[len(prefix):]
+        code, _, _ = remainder.partition(']')
+        code = code.strip()
+        if code in RETRYABLE_FAILED_ERROR_CODES:
+            return code
+    return ''
+
+
+def retryable_failed_statuses_for_watch(watch):
+    values = watch.get('retryable_failed_values')
+    if values is None:
+        failed_value = watch.get('failed_value')
+        values = [failed_value] if failed_value in DEFAULT_RETRYABLE_FAILED_VALUES else []
+    return set(_unique_preserve_order(values))
+
+
+def maybe_requeue_failed_candidate(token, watch, record_id, task_key, fields, status):
+    if status not in retryable_failed_statuses_for_watch(watch):
+        return False
+    error_field = watch.get('error_field')
+    error_code = retryable_error_code_from_text((fields or {}).get(error_field, '') if error_field else '')
+    if not error_code:
+        return False
+    retry_count = get_retry_count(task_key)
+    new_retry = retry_count + 1
+    max_retries = int(watch.get('max_retries', 1) or 0)
+    if new_retry > max_retries:
+        return False
+    fallback_trigger = (watch.get('trigger_values') or [watch.get('trigger_value')])[0]
+    update_payload = {watch['status_field']: fallback_trigger}
+    if error_field:
+        update_payload[error_field] = (
+            f"自动重试中[{error_code}] 第 {new_retry} 次失败队列重新排队，等待 dispatcher 重新处理。"
+        )[:1000]
+    safe_update_record(token, watch['table'], record_id, update_payload)
+    set_retry_count(task_key, new_retry, watch=watch, record_id=record_id)
+    clear_dead_letter(task_key)
+    update_record_state_cache(watch, record_id, fallback_trigger)
+    bump_metric('retried', watch['name'])
+    log.warning(f"[{watch['name']}] 失败可重试任务已重新排队: {record_id} retry={new_retry}/{max_retries} error_code={error_code}")
+    return True
+
+
+def clear_retry_count_for_manual_requeue(watch, task_key, latest_status, latest_fields):
+    if latest_status != watch.get('trigger_value'):
+        return False
+    error_field = watch.get('error_field')
+    error_text = extract_text((latest_fields or {}).get(error_field, '')).strip() if error_field else ''
+    if error_text.startswith(SYSTEM_REQUEUE_ERROR_PREFIXES):
+        return False
+    clear_retry_count(task_key)
+    clear_dead_letter(task_key)
+    return True
+
+
 def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=None):
     error_payload = error_payload or build_error_payload(reason, stage=watch.get('script', 'unknown'))
     if not error_payload.get('retryable'):
@@ -1732,6 +2004,37 @@ def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=No
             return True
     except Exception as e:
         log.warning(f"[{watch['name']}] 重试前读取最新状态失败，继续按可重试错误回退: {record_id} error={e}")
+
+    if watch.get('resubmit_on_retryable_failure'):
+        try:
+            error_message = error_payload.get('message') or str(reason)
+            update_payload = {
+                watch['status_field']: watch.get('trigger_value', '待生成'),
+                '视频操作': '不触发',
+                '视频任务ID': '',
+                '视频本地路径': '',
+                '视频原始响应JSON': '',
+                '视频错误信息': f"自动重新提交新任务[{error_payload.get('error_code', 'UNKNOWN')}]: 已丢弃旧任务，等待 dispatcher 提交新任务。{error_message}"[:1000],
+                '错误信息': '',
+            }
+            if watch.get('status_field') == '视频生成状态':
+                current_version = 1
+                try:
+                    current_version = int(float(extract_text(latest.get('视频版本')).strip() or latest.get('视频版本') or 1))
+                except Exception:
+                    current_version = 1
+                update_payload['视频版本'] = current_version + 1
+                update_payload['视频片段URL'] = None
+                update_payload['视频片段file_token'] = ''
+            safe_update_record(token, watch['table'], record_id, update_payload)
+            clear_retry_count(task_key)
+            clear_dead_letter(task_key)
+            bump_metric('retried', watch['name'])
+            log.warning(f"[{watch['name']}] 可重试错误已清旧任务并重新排队: {record_id} error_code={error_payload.get('error_code')} reason={error_payload.get('message')}")
+            return True
+        except Exception as e:
+            log.error(f"[{watch['name']}] 清旧任务并重新排队失败: {record_id} error={e}")
+            return False
 
     retry_count = get_retry_count(task_key)
     new_retry = retry_count + 1
@@ -1820,6 +2123,7 @@ def cleanup_finished_processes(token):
                 log.info(f"[{watch['name']}] ✅ 完成: {record_id}")
                 refresh_record_state_cache_from_record(token, watch, record_id)
                 clear_retry_count(task_key)
+                clear_dead_letter(task_key)
                 clear_circuit_failure(watch)
                 bump_metric('success', watch['name'])
             else:
@@ -1962,6 +2266,7 @@ def try_claim_task(token, watch, record_id):
         if latest_status not in valid_trigger_values:
             update_record_state_cache(watch, record_id, latest_status)
             return False
+        clear_retry_count_for_manual_requeue(watch, make_task_key(watch, record_id), latest_status, latest)
         claim_fields = {watch['status_field']: watch['running_value']}
         apply_claim_clear_fields(claim_fields, watch, latest_status)
         claim_fields = sanitize_claim_fields_for_update(token, watch['table'], claim_fields)
@@ -1978,7 +2283,7 @@ def get_table_records_cached(token, table_id, force=False):
     now = int(time.time())
     entry = state.get(table_id, {})
     last_scan = int(entry.get('last_scan_at', 0) or 0)
-    cache_file = os.path.join(SCRIPTS_DIR, f'.table_cache_{table_id}.{INSTANCE}.json')
+    cache_file = os.path.join(SCRIPTS_DIR, f'.table_cache_{table_id}.{RUNTIME_SCOPE}.json')
 
     if not force and os.path.exists(cache_file) and now - last_scan < TABLE_MIN_INTERVAL_SECONDS:
         try:
@@ -1998,6 +2303,93 @@ def get_table_records_cached(token, table_id, force=False):
     return records
 
 
+def _unique_preserve_order(values):
+    result = []
+    seen = set()
+    for value in values:
+        text = extract_text(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def build_watch_candidate_filter(watch):
+    status_field = watch.get('status_field')
+    statuses = _unique_preserve_order(
+        list(watch.get('trigger_values') or [watch.get('trigger_value')])
+        + list(retryable_failed_statuses_for_watch(watch))
+    )
+    conditions = []
+    if status_field and statuses:
+        conditions.append([status_field, 'intersects', statuses])
+    for field_name, required_values in (watch.get('required_field_values') or {}).items():
+        raw_values = list(required_values or [])
+        if any(extract_text(value).strip() == '' for value in raw_values):
+            continue
+        values = _unique_preserve_order(required_values)
+        if values:
+            conditions.append([field_name, 'intersects', values])
+    return {'logic': 'and', 'conditions': conditions}
+
+
+def base_v3_filter_records(token, table_id, filter_payload, *, limit=100):
+    records = []
+    offset = 0
+    encoded_filter = urllib.parse.quote(json.dumps(filter_payload, ensure_ascii=False))
+    while True:
+        url = (
+            f'https://open.feishu.cn/open-apis/base/v3/bases/{APP_TOKEN}/tables/{table_id}/records'
+            f'?filter={encoded_filter}&limit={limit}&offset={offset}'
+        )
+        data = safe_request(
+            'get',
+            url,
+            headers=feishu_headers(token),
+            timeout=30,
+            max_attempts=3,
+            acceptable_codes=(0,),
+        )
+        payload = data.get('data') or {}
+        field_names = payload.get('fields') or []
+        rows = payload.get('data') or []
+        record_ids = payload.get('record_id_list') or []
+        for index, row in enumerate(rows):
+            record_id = record_ids[index] if index < len(record_ids) else ''
+            fields = {
+                field_name: row[field_index] if field_index < len(row) else None
+                for field_index, field_name in enumerate(field_names)
+                if field_name
+            }
+            records.append({'record_id': record_id, 'fields': fields})
+        if not payload.get('has_more') or not rows:
+            break
+        offset += len(rows)
+    return records
+
+
+def get_watch_candidate_records_cached(token, watch, force=False):
+    table_id = watch['table']
+    filter_payload = build_watch_candidate_filter(watch)
+    cache_key = json.dumps({
+        'table': table_id,
+        'filter': filter_payload,
+    }, ensure_ascii=False, sort_keys=True)
+    now = int(time.time())
+    cached = _WATCH_CANDIDATE_CACHE.get(cache_key)
+    if not force and cached and now - int(cached.get('loaded_at', 0) or 0) < TABLE_MIN_INTERVAL_SECONDS:
+        return cached.get('records') or []
+
+    try:
+        records = base_v3_filter_records(token, table_id, filter_payload)
+    except Exception as exc:
+        log.warning(f"[{watch['name']}] 精准查询候选失败，回退全表缓存扫描: {exc}")
+        records = get_table_records_cached(token, table_id, force=force)
+    _WATCH_CANDIDATE_CACHE[cache_key] = {'loaded_at': now, 'records': records}
+    return records
+
+
 def check_and_run(token, watch):
     policy = load_feishu_concurrency_policy(token)
     watch = apply_stage_policy(watch)
@@ -2005,15 +2397,25 @@ def check_and_run(token, watch):
     running_state = load_running_tasks()
     current_running = count_running_by_watch(watch['name']) + count_live_persisted_by_watch(watch, running_state)
     available_slots = max(0, watch.get('max_concurrency', 1) - current_running)
-    global_limit = current_global_max_concurrency(policy)
-    if global_limit > 0:
+    table_limit = table_max_concurrency_for_watch(watch)
+    if table_limit is not None:
+        current_table_running = count_running_by_table(watch['table']) + count_live_persisted_by_table(watch['table'], running_state)
+        table_slots = max(0, table_limit - current_table_running)
+        available_slots = min(available_slots, table_slots)
+    elif not TABLE_KEY:
+        global_limit = current_global_max_concurrency(policy)
+        if global_limit <= 0:
+            global_limit = 0
+    else:
+        global_limit = 0
+    if not TABLE_KEY and global_limit > 0:
         global_slots = max(0, global_limit - count_active_running_tasks())
         available_slots = min(available_slots, global_slots)
     if available_slots <= 0:
         return
 
     try:
-        records = get_table_records_cached(token, watch['table'])
+        records = get_watch_candidate_records_cached(token, watch)
     except Exception as e:
         log.error(f"[{watch['name']}] 读取表失败: {e}")
         append_last_error(watch['name'], 'TABLE', f'读取表失败: {e}')
@@ -2031,12 +2433,21 @@ def check_and_run(token, watch):
             continue
         status = extract_text(fields.get(watch['status_field'], ''))
         valid_trigger_values = watch.get('trigger_values') or [watch['trigger_value']]
+        task_key = make_task_key(watch, record_id)
+        if status in retryable_failed_statuses_for_watch(watch):
+            if maybe_requeue_failed_candidate(token, watch, record_id, task_key, fields, status):
+                continue
         if status not in valid_trigger_values:
             update_record_state_cache(watch, record_id, status)
             continue
 
-        task_key = make_task_key(watch, record_id)
-        running_info = {'script': watch['script'], 'record_id': record_id}
+        running_info = {
+            'table': watch.get('table'),
+            'status_field': watch.get('status_field'),
+            'script': watch['script'],
+            'args': watch.get('args', []) or [],
+            'record_id': record_id,
+        }
         if task_key in running_processes:
             process = running_processes[task_key].get('process')
             if process is None or process.poll() is None:
@@ -2087,6 +2498,8 @@ def check_and_run(token, watch):
                 'started_at': time.time(),
             }
             running_state[task_key] = {
+                'table': watch.get('table'),
+                'status_field': watch.get('status_field'),
                 'script': watch['script'],
                 'args': extra_args,
                 'record_id': record_id,
@@ -2110,6 +2523,8 @@ def check_and_run(token, watch):
 
 
 def check_daily_health():
+    if TABLE_KEY:
+        return
     now = datetime.now()
     if now.hour != HEALTHCHECK_HOUR:
         return
@@ -2167,15 +2582,22 @@ def log_effective_concurrency(policy, watches=None):
 def main():
     log.info("🚀 TK 任务调度器启动（增强版 + 自动重试 + 运行统计）")
     log.info(f"   实例名: {INSTANCE}")
+    log.info(f"   表格作用域: {TABLE_KEY or '<all>'}")
     log.info(f"   配置文件: {os.environ.get('TK_CONFIG_FILE', os.path.join(SCRIPTS_DIR, 'config.json'))}")
     log.info(f"   轮询间隔: {POLL_INTERVAL}秒")
     log.info(f"   监控环节: {', '.join(w['name'] for w in ordered_watch_list())}")
+    if TABLE_KEY and not WATCH_LIST:
+        note = f"table_key={TABLE_KEY} 未匹配任何 watch"
+        write_heartbeat(status='blocked', note=note)
+        log.error(note)
+        raise SystemExit(2)
 
     bootstrap_running_state()
     token = get_feishu_token()
     token_time = time.time()
     log_effective_concurrency(load_feishu_concurrency_policy(token, force=True), ordered_watch_list())
     last_metrics_log = 0
+    normal_watch_rotation_offset = 0
 
     while True:
         write_heartbeat(status='running')
@@ -2193,10 +2615,11 @@ def main():
         cleanup_finished_processes(token)
         check_daily_health()
 
-        for watch in ordered_watch_list():
+        for watch in ordered_watch_list(normal_rotation_offset=normal_watch_rotation_offset):
             if not watch.get('table'):
                 continue
             check_and_run(token, watch)
+        normal_watch_rotation_offset += 1
 
         if time.time() - last_metrics_log > 600:
             log_metrics_snapshot()

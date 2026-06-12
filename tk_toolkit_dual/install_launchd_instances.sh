@@ -4,7 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTANCE="${1:-${TK_INSTANCE:-colleague}}"
-LABEL="com.tk-pipeline.dispatcher.${INSTANCE}"
+TABLE_KEY="${2:-${TK_DISPATCHER_TABLE_KEY:-}}"
+SCOPE="$INSTANCE"
+if [[ -n "$TABLE_KEY" ]]; then
+  SCOPE="${INSTANCE}.${TABLE_KEY}"
+fi
+LABEL="com.tk-pipeline.dispatcher.${SCOPE}"
 CONFIG_FILE="${TK_CONFIG_FILE:-$SCRIPT_DIR/config.local.json}"
 PYTHON_BIN="${PYTHON_BIN:-$REPO_ROOT/.venv/bin/python}"
 PLIST_DIR="$HOME/Library/LaunchAgents"
@@ -42,13 +47,15 @@ cat > "$PLIST_PATH" <<EOF
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${SCRIPT_DIR}/launchd.${INSTANCE}.out.log</string>
+  <string>${SCRIPT_DIR}/launchd.${SCOPE}.out.log</string>
   <key>StandardErrorPath</key>
-  <string>${SCRIPT_DIR}/launchd.${INSTANCE}.err.log</string>
+  <string>${SCRIPT_DIR}/launchd.${SCOPE}.err.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>TK_INSTANCE</key>
     <string>${INSTANCE}</string>
+    <key>TK_DISPATCHER_TABLE_KEY</key>
+    <string>${TABLE_KEY}</string>
     <key>TK_CONFIG_FILE</key>
     <string>${CONFIG_FILE}</string>
     <key>PYTHON_BIN</key>
@@ -63,4 +70,5 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
 launchctl enable "gui/$(id -u)/${LABEL}" || true
 launchctl kickstart -k "gui/$(id -u)/${LABEL}"
 echo "installed: ${LABEL}"
+echo "table_key: ${TABLE_KEY:-<all>}"
 echo "plist: ${PLIST_PATH}"

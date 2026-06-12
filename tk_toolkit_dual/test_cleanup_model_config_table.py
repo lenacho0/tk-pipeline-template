@@ -208,20 +208,23 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         views = cleanup.build_view_definitions(field_names)
 
         self.assertEqual(list(views), [
-            "01-运行配置-管理员",
+            "01-表格并发控制",
             "02-任务默认配置",
             "03-模型目录",
+            "04-API密钥管理-管理员",
             "05-自动审核开关",
+            "98-高级并发保险丝",
             "99-排错全字段",
         ])
-        self.assertIn("API Key", views["01-运行配置-管理员"]["visible_fields"])
-        self.assertIn("提示词", views["01-运行配置-管理员"]["visible_fields"])
+        self.assertEqual(views["01-表格并发控制"]["visible_fields"], ["应用表格", "表格最大并发", "状态", "备注"])
+        self.assertNotIn("API Key", views["02-任务默认配置"]["visible_fields"])
+        self.assertIn("API Key", views["04-API密钥管理-管理员"]["visible_fields"])
         self.assertEqual(views["03-模型目录"]["visible_fields"], cleanup.MODEL_CATALOG_VISIBLE_FIELDS)
         self.assertIn("画面尺寸", views["02-任务默认配置"]["visible_fields"])
         self.assertIn("画面比例", views["02-任务默认配置"]["visible_fields"])
         self.assertEqual(
-            views["01-运行配置-管理员"]["filter"],
-            {"logic": "and", "conditions": [["配置类型", "intersects", ["运行环节", "路由开关", "自动审核"]], ["状态", "intersects", ["启用", "测试中"]]]},
+            views["01-表格并发控制"]["filter"],
+            {"logic": "and", "conditions": [["环节", "intersects", [cleanup.DISPATCHER_TABLE_CONCURRENCY_STAGE]]]},
         )
         self.assertEqual(
             views["05-自动审核开关"]["filter"],
@@ -236,19 +239,25 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
         self.assertEqual(specs["环节最大并发"]["type"], "number")
         self.assertEqual(specs["全局最大并发"]["type"], "number")
+        self.assertEqual(specs["表格最大并发"]["type"], "number")
         self.assertEqual(specs["业务环节名"]["type"], "text")
         self.assertEqual(specs["调度环节名"]["type"], "text")
         self.assertEqual(specs["使用位置摘要"]["type"], "text")
 
-    def test_admin_view_shows_concurrency_fields(self):
-        views = cleanup.build_view_definitions(["配置类型", "环节", "业务环节名", "调度环节名", "使用位置摘要", "环节最大并发", "全局最大并发"])
-        visible = views["01-运行配置-管理员"]["visible_fields"]
+    def test_daily_views_hide_advanced_concurrency_fields(self):
+        views = cleanup.build_view_definitions(["配置类型", "环节", "应用表格", "业务环节名", "调度环节名", "使用位置摘要", "环节最大并发", "全局最大并发", "表格最大并发"])
+        visible = views["01-表格并发控制"]["visible_fields"]
+        task_visible = views["02-任务默认配置"]["visible_fields"]
+        advanced_visible = views["98-高级并发保险丝"]["visible_fields"]
 
-        self.assertIn("业务环节名", visible)
-        self.assertIn("调度环节名", visible)
-        self.assertIn("使用位置摘要", visible)
-        self.assertIn("环节最大并发", visible)
-        self.assertIn("全局最大并发", visible)
+        self.assertIn("应用表格", visible)
+        self.assertIn("表格最大并发", visible)
+        self.assertNotIn("环节最大并发", visible)
+        self.assertNotIn("全局最大并发", visible)
+        self.assertNotIn("环节最大并发", task_visible)
+        self.assertNotIn("表格最大并发", task_visible)
+        self.assertIn("环节最大并发", advanced_visible)
+        self.assertIn("全局最大并发", advanced_visible)
 
     def test_task_default_rows_get_business_and_dispatch_names(self):
         fields = {
@@ -416,15 +425,16 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertIn("显示名称", specs)
         self.assertIn("任务环节", specs)
 
-    def test_dispatcher_concurrency_control_record_is_created_when_missing(self):
+    def test_dispatcher_concurrency_control_record_is_skipped_when_missing(self):
         result = cleanup.ensure_dispatcher_concurrency_control_record("token", [], dry_run=True)
 
-        self.assertEqual(result["status"], "dry_run_create")
+        self.assertEqual(result["status"], "dry_run_skip_missing")
         self.assertEqual(result["fields"]["配置类型"], "路由开关")
         self.assertEqual(result["fields"]["环节"], cleanup.DISPATCHER_CONCURRENCY_STAGE)
+        self.assertEqual(result["fields"]["状态"], "停用")
         self.assertEqual(result["fields"]["全局最大并发"], 0)
 
-    def test_dispatcher_concurrency_control_record_is_not_duplicated(self):
+    def test_dispatcher_concurrency_control_record_is_archived(self):
         records = [
             rec("rec_control", **{
                 "配置类型": "路由开关",
@@ -436,7 +446,38 @@ class CleanupModelConfigTableTests(unittest.TestCase):
 
         result = cleanup.ensure_dispatcher_concurrency_control_record("token", records, dry_run=True)
 
-        self.assertEqual(result, {"status": "exists", "record_id": "rec_control"})
+        self.assertEqual(result["status"], "dry_run_archive")
+        self.assertEqual(result["record_id"], "rec_control")
+        self.assertEqual(result["fields"]["状态"], "停用")
+        self.assertIn("旧全表 dispatcher 回滚专用", result["fields"]["备注"])
+
+    def test_dispatcher_table_concurrency_records_are_created_when_missing(self):
+        results = cleanup.ensure_dispatcher_table_concurrency_records("token", [], dry_run=True)
+
+        by_table = {item["fields"]["应用表格"]: item for item in results}
+        self.assertEqual(by_table["005-多图宫格视频生成表"]["status"], "dry_run_create")
+        self.assertEqual(by_table["005-多图宫格视频生成表"]["fields"]["环节"], cleanup.DISPATCHER_TABLE_CONCURRENCY_STAGE)
+        self.assertEqual(by_table["005-多图宫格视频生成表"]["fields"]["表格最大并发"], cleanup.DEFAULT_DISPATCHER_TABLE_MAX_CONCURRENCY)
+
+    def test_dispatcher_table_concurrency_records_are_not_duplicated(self):
+        records = [
+            rec("rec_table", **{
+                "配置类型": "路由开关",
+                "环节": cleanup.DISPATCHER_TABLE_CONCURRENCY_STAGE,
+                "应用表格": "005-多图宫格视频生成表",
+                "状态": "启用",
+                "表格最大并发": 12,
+            }),
+        ]
+
+        results = cleanup.ensure_dispatcher_table_concurrency_records("token", records, dry_run=True)
+        by_table = {item["fields"]["应用表格"]: item for item in results}
+
+        self.assertEqual(by_table["005-多图宫格视频生成表"], {
+            "status": "exists",
+            "record_id": "rec_table",
+            "fields": {"应用表格": "005-多图宫格视频生成表"},
+        })
 
     def test_view_definitions_expose_single_source_management_views(self):
         views = cleanup.build_view_definitions([
@@ -462,17 +503,21 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         ])
 
         self.assertEqual(list(views), [
-            "01-运行配置-管理员",
+            "01-表格并发控制",
             "02-任务默认配置",
             "03-模型目录",
+            "04-API密钥管理-管理员",
             "05-自动审核开关",
+            "98-高级并发保险丝",
             "99-排错全字段",
         ])
-        self.assertIn("API Key", views["01-运行配置-管理员"]["visible_fields"])
+        self.assertIn("表格最大并发", views["01-表格并发控制"]["visible_fields"])
+        self.assertIn("API Key", views["04-API密钥管理-管理员"]["visible_fields"])
         self.assertIn("应用表格", views["02-任务默认配置"]["visible_fields"])
         self.assertIn("默认槽位", views["02-任务默认配置"]["visible_fields"])
         self.assertIn("显示名称", views["03-模型目录"]["visible_fields"])
         self.assertIn("状态", views["05-自动审核开关"]["visible_fields"])
+        self.assertIn("环节最大并发", views["98-高级并发保险丝"]["visible_fields"])
 
     def test_model_catalog_visible_field_count_allows_forced_primary_field(self):
         definition = {"visible_fields": cleanup.MODEL_CATALOG_VISIBLE_FIELDS}
@@ -509,6 +554,28 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertTrue(any("+view-rename" in call and "vew_old" in call for call in calls))
         self.assertTrue(any("+view-delete" in call and "vew_old" in call for call in calls))
         self.assertTrue(any("+view-create" in call for call in calls))
+
+    def test_configure_view_recovers_visible_field_noop_with_two_step_set(self):
+        calls = []
+
+        def fake_run_json(argv):
+            calls.append(list(argv))
+            if len(calls) == 1:
+                raise RuntimeError("api_error 800070003 no operation produced")
+            return {}
+
+        definition = {
+            "visible_fields": ["环节", "供应商", "模型名称"],
+            "filter": {"conditions": []},
+        }
+
+        with patch.object(cleanup, "run_json", side_effect=fake_run_json):
+            cleanup.configure_view("app_token", "view_id", definition)
+
+        visible_calls = [call for call in calls if "+view-set-visible-fields" in call]
+        self.assertEqual(len(visible_calls), 3)
+        self.assertEqual(visible_calls[1][-1], '{"visible_fields": ["环节"]}')
+        self.assertEqual(visible_calls[2][-1], '{"visible_fields": ["环节", "供应商", "模型名称"]}')
 
     def test_run_cleanup_avoids_legacy_table_writes_and_field_deletes(self):
         with patch.object(cleanup, "get_feishu_token", return_value="token"), \
