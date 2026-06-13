@@ -104,6 +104,35 @@ class PromptImageVideoTableTests(unittest.TestCase):
         payload = json.loads(set_call[set_call.index("--json") + 1])
         self.assertEqual(payload["visible_fields"], target_fields)
 
+    def test_create_or_update_views_applies_visibility_snapshot_before_setting_fields(self):
+        default_fields = create_table.TABLE_DEFINITION["views"]["01-用户入口"]
+        snapshot_fields = ["任务名称", "图片生成状态", "视频生成状态"]
+        field_id_by_name = {name: f"fld_{idx}" for idx, name in enumerate(create_table.ALL_FIELD_NAMES)}
+        current_visible_fields = list(snapshot_fields)
+        set_payloads = []
+
+        def fake_run_json(argv):
+            nonlocal current_visible_fields
+            if "+field-list" in argv:
+                return {"data": {"fields": [{"name": name, "id": fid} for name, fid in field_id_by_name.items()]}}
+            if "+view-list" in argv:
+                return {"data": {"views": [{"name": "01-用户入口", "id": "view_user"}]}}
+            if "+view-set-visible-fields" in argv:
+                current_visible_fields = json.loads(argv[argv.index("--json") + 1])["visible_fields"]
+                set_payloads.append(current_visible_fields)
+                return {"ok": True}
+            if "+view-get-visible-fields" in argv:
+                return {"data": {"visible_fields": current_visible_fields}}
+            raise AssertionError(argv)
+
+        with patch.object(create_table, "run_json", side_effect=fake_run_json), \
+             patch.object(create_table.time, "sleep"), \
+             patch.object(create_table, "apply_view_visibility_snapshot", return_value={"01-用户入口": snapshot_fields}) as apply_snapshot:
+            create_table.create_or_update_views("base", "table", {"01-用户入口": default_fields})
+
+        apply_snapshot.assert_called_once_with("table", {"01-用户入口": default_fields})
+        self.assertEqual(set_payloads[-1], snapshot_fields)
+
     def test_create_or_update_views_applies_large_visibility_changes_gradually(self):
         target_fields = create_table.TABLE_DEFINITION["views"]["01-用户入口"]
         field_id_by_name = {name: f"fld_{idx}" for idx, name in enumerate(create_table.ALL_FIELD_NAMES)}

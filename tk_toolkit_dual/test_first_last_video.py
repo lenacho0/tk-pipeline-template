@@ -171,7 +171,6 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "文本AI模型",
             "拆分AI参数JSON",
             "拆分状态",
-            "场景拆分操作",
             "总场景数",
             "错误信息",
         ])
@@ -187,7 +186,7 @@ class FirstLastVideoTableTests(unittest.TestCase):
         ]:
             self.assertNotIn(hidden_field, entry_fields)
 
-    def test_workflow_views_keep_related_regeneration_controls_without_filters(self):
+    def test_workflow_views_use_generation_status_as_daily_regeneration_controls(self):
         views = create_table.TABLE_DEFINITION["views"]
 
         self.assertEqual(list(views.keys()), [
@@ -199,9 +198,11 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "05-视频结果",
             "99-排错",
         ])
-        self.assertIn("场景拆分操作", views["01-用户入口"])
         for field_name in ["场景拆分操作", "首帧图操作", "尾帧图操作", "视频操作"]:
-            self.assertIn(field_name, views["02-场景子任务"])
+            for view_name, visible_fields in views.items():
+                if view_name == "99-排错":
+                    continue
+                self.assertNotIn(field_name, visible_fields)
             self.assertIn(field_name, views["99-排错"])
         self.assertIn("视频生成模型", views["99-排错"])
         self.assertNotIn("视频AI模型", views["99-排错"])
@@ -218,13 +219,10 @@ class FirstLastVideoTableTests(unittest.TestCase):
             "视频画面比例",
         ]:
             self.assertIn(field_name, views["02-场景子任务"])
-        self.assertIn("首帧图操作", views["03-首帧审核"])
         self.assertIn("首帧图画面尺寸", views["03-首帧审核"])
         self.assertIn("首帧图画面比例", views["03-首帧审核"])
-        self.assertIn("尾帧图操作", views["04-尾帧审核"])
         self.assertIn("尾帧图画面尺寸", views["04-尾帧审核"])
         self.assertIn("尾帧图画面比例", views["04-尾帧审核"])
-        self.assertIn("视频操作", views["05-视频结果"])
         self.assertNotIn("视频AI模型", views["05-视频结果"])
         self.assertNotIn("视频AI参数JSON", views["05-视频结果"])
         self.assertIn("视频通道", views["05-视频结果"])

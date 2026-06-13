@@ -39,6 +39,7 @@ from common import (  # noqa: E402
     safe_request,
     safe_update_record,
 )
+from view_visibility import apply_view_visibility_snapshot  # noqa: E402
 
 
 BACKUP_PATH = Path("docs/tk-pipeline/model-config-cleanup-backup-2026-05-31.json")
@@ -1048,6 +1049,7 @@ def rebuild_view_definition(
 
 
 def apply_view_definitions(base_token: str, views: Mapping[str, Mapping[str, Any]], *, dry_run: bool) -> List[Dict[str, Any]]:
+    views = apply_view_visibility_snapshot(TABLE_CONFIG, views)
     existing = existing_view_map(list_views(get_feishu_token())) if not dry_run else {}
     results = []
     for view_name, definition in views.items():

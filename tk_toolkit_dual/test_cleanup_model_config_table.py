@@ -545,7 +545,8 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         with patch.object(cleanup, "get_feishu_token", return_value="token"), \
              patch.object(cleanup, "list_views", return_value=[{"view_name": "03-模型目录", "view_id": "vew_old"}]), \
              patch.object(cleanup, "view_visible_field_count", side_effect=[21, 11]), \
-             patch.object(cleanup, "run_json", side_effect=fake_run_json):
+             patch.object(cleanup, "run_json", side_effect=fake_run_json), \
+             patch.object(cleanup, "apply_view_visibility_snapshot", side_effect=lambda _table_id, view_defs: view_defs):
             results = cleanup.apply_view_definitions("app_token", views, dry_run=False)
 
         self.assertEqual(results[0]["status"], "rebuilt")
@@ -554,6 +555,26 @@ class CleanupModelConfigTableTests(unittest.TestCase):
         self.assertTrue(any("+view-rename" in call and "vew_old" in call for call in calls))
         self.assertTrue(any("+view-delete" in call and "vew_old" in call for call in calls))
         self.assertTrue(any("+view-create" in call for call in calls))
+
+    def test_apply_view_definitions_applies_visibility_snapshot(self):
+        views = {
+            "02-任务默认配置": {
+                "visible_fields": ["应用表格", "模型名称", "状态"],
+                "filter": {"logic": "and", "conditions": [["配置类型", "intersects", ["任务默认"]]]},
+            }
+        }
+        snapshot_views = {
+            "02-任务默认配置": {
+                "visible_fields": ["应用表格", "状态"],
+                "filter": views["02-任务默认配置"]["filter"],
+            }
+        }
+
+        with patch.object(cleanup, "apply_view_visibility_snapshot", return_value=snapshot_views) as apply_snapshot:
+            results = cleanup.apply_view_definitions("app_token", views, dry_run=True)
+
+        apply_snapshot.assert_called_once_with(cleanup.TABLE_CONFIG, views)
+        self.assertEqual(results[0]["visible_fields"], ["应用表格", "状态"])
 
     def test_configure_view_recovers_visible_field_noop_with_two_step_set(self):
         calls = []

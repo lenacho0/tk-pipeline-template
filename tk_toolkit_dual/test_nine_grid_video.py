@@ -890,6 +890,7 @@ class NineGridVideoTests(unittest.TestCase):
         reference_view = create_table.TABLE_DEFINITION["views"]["02-参考资产确认"]
         self.assertIn("参考图画面尺寸", reference_view)
         self.assertIn("参考图画面比例", reference_view)
+        self.assertNotIn("参考图操作", reference_view)
         video_view = create_table.TABLE_DEFINITION["views"]["04-视频生成"]
         self.assertIn("视频生成模型", video_view)
         self.assertNotIn("视频AI模型", video_view)
@@ -914,6 +915,7 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertIn("宫格数量", create_table.TABLE_DEFINITION["views"]["99-排错"])
         self.assertIn("宫格布局", create_table.TABLE_DEFINITION["views"]["99-排错"])
         self.assertIn("视频生成模型", create_table.TABLE_DEFINITION["views"]["99-排错"])
+        self.assertIn("参考图操作", create_table.TABLE_DEFINITION["views"]["99-排错"])
         self.assertNotIn("视频AI模型", create_table.TABLE_DEFINITION["views"]["99-排错"])
 
     def test_nine_grid_model_options_are_split_by_capability(self):
@@ -987,8 +989,8 @@ class NineGridVideoTests(unittest.TestCase):
         )
         self.assertEqual(watches["多图宫格视频生成"]["trigger_values"], ["待生成", "生成中"])
         self.assertEqual(
-            watches["多图宫格视频生成"]["claim_clear_fields_by_trigger_value"],
-            {"待生成": ["视频任务ID"]},
+            watches["多图宫格视频生成"]["claim_clear_values_by_trigger_value"]["待生成"]["视频任务ID"],
+            "",
         )
 
         waiting_claim = {"视频生成状态": "生成中"}

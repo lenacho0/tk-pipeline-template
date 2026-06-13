@@ -27,6 +27,7 @@ from ai_model_catalog import (
     FIRST_LAST_VIDEO_MODEL_WITH_DEFAULT_OPTIONS,
     TEXT_MODEL_OPTIONS,
 )
+from view_visibility import apply_view_visibility_snapshot
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATHS = [
@@ -489,6 +490,7 @@ def list_views(base_token, table_id):
 
 
 def create_or_update_views(base_token, table_id, view_definitions):
+    view_definitions = apply_view_visibility_snapshot(table_id, view_definitions)
     existing = list_views(base_token, table_id)
     created = 0
     updated = 0

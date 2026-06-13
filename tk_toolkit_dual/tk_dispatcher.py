@@ -322,15 +322,15 @@ WATCH_LIST = [
         'max_concurrency': 1,
         'max_retries': 3,
         'required_field_values': {'记录类型': ['Board分段']},
-        'claim_clear_values': {
-            '分镜视频': [],
-            '分镜视频URL': None,
-            '视频错误信息': '',
-            '视频生成时间': None,
-            '错误信息': '',
-        },
-        'claim_clear_fields_by_trigger_value': {
-            '待生成': ['视频任务ID'],
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '错误信息': '',
+            },
         },
     },
     {
@@ -1051,7 +1051,19 @@ WATCH_LIST = [
         'timeout': 2400,
         'max_concurrency': 1,
         'max_retries': 1,
-        'claim_clear_fields': ['视频任务ID', '视频生成原始响应JSON'],
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频生成原始响应JSON': '',
+                '视频错误信息': '',
+                '视频生成时间': None,
+                '本地视频路径': '',
+                '分镜视频file_token': '',
+                '错误信息': '',
+            },
+        },
     },
     {
         'name': '003新表脚本文档解析拆分',
@@ -1174,8 +1186,14 @@ WATCH_LIST = [
         'max_retries': 1,
         'keep_when_table_missing': True,
         'required_field_values': {'记录类型': ['分镜']},
-        'claim_clear_fields_by_trigger_value': {
-            '待生成': ['视频任务ID'],
+        'claim_clear_values_by_trigger_value': {
+            '待生成': {
+                '分镜视频': [],
+                '分镜视频URL': None,
+                '视频任务ID': '',
+                '视频错误信息': '',
+                '错误信息': '',
+            },
         },
     },
 ]

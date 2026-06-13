@@ -570,6 +570,27 @@ class ScriptDocShotsTests(unittest.TestCase):
             self.assertEqual(views[view_name]["filter"]["conditions"], [["记录类型", "is", ["分镜"]]])
         self.assertNotIn("04-口播音频", views)
 
+    def test_create_or_update_views_applies_visibility_snapshot(self):
+        default_fields = ["任务名称", "解析状态", "错误信息"]
+        snapshot_fields = ["任务名称", "解析状态"]
+        set_payloads = []
+
+        def fake_run_json(argv):
+            if "+view-list" in argv:
+                return {"data": {"views": [{"name": "01-用户入口", "id": "view_user"}]}}
+            if "+view-set-visible-fields" in argv:
+                set_payloads.append(json.loads(argv[argv.index("--json") + 1])["visible_fields"])
+                return {"ok": True}
+            raise AssertionError(argv)
+
+        with patch.object(create_tables, "run_json", side_effect=fake_run_json), \
+             patch.object(create_tables, "apply_view_visibility_snapshot", return_value={"01-用户入口": snapshot_fields}) as apply_snapshot:
+            result = create_tables.create_or_update_views("base", "table", {"01-用户入口": default_fields})
+
+        self.assertEqual(result, {"created": 0, "updated": 1})
+        apply_snapshot.assert_called_once_with("table", {"01-用户入口": default_fields})
+        self.assertEqual(set_payloads[-1], snapshot_fields)
+
     def test_parse_parent_record_unified_writes_only_new_unified_table(self):
         parent_fields = {
             "任务名称": "doc task",

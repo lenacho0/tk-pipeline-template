@@ -337,7 +337,12 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertNotIn("04-视频结果", views)
         self.assertNotIn("记录类型", views["01-母任务入口"])
         self.assertIn("记录类型", views["90-有效记录总览"])
-        self.assertIn("视频操作", views["04-视频片段结果"])
+        for field_name in ["参考图操作", "关键帧操作", "视频操作"]:
+            for view_name, visible_fields in views.items():
+                if view_name in {"99-排错", "99-全字段系统视图"}:
+                    continue
+                self.assertNotIn(field_name, visible_fields)
+            self.assertIn(field_name, views["99-排错"])
         for name in ["参考图画面尺寸", "参考图画面比例"]:
             self.assertIn(name, views["02-参考图确认"])
         for name in ["关键帧画面尺寸", "关键帧画面比例"]:

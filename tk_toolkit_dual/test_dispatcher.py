@@ -848,6 +848,26 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertIsNone(claim_fields["视频生成时间"])
         self.assertEqual(claim_fields["视频生成状态"], "不触发")
 
+    def test_media_video_claim_clears_outputs_only_for_waiting_regeneration(self):
+        expectations = {
+            "多图宫格视频生成": ["分镜视频", "分镜视频URL", "视频任务ID", "视频错误信息", "视频生成时间"],
+            "脚本文档分镜视频生成": ["分镜视频", "分镜视频URL", "视频任务ID", "视频生成原始响应JSON", "视频错误信息", "视频生成时间"],
+            "003新表脚本文档分镜视频生成": ["分镜视频", "分镜视频URL", "视频任务ID", "视频错误信息"],
+        }
+
+        for watch_name, cleared_fields in expectations.items():
+            with self.subTest(watch_name=watch_name):
+                watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == watch_name)
+                waiting_claim = {watch["status_field"]: watch["running_value"]}
+                running_claim = {watch["status_field"]: watch["running_value"]}
+
+                dispatcher.apply_claim_clear_fields(waiting_claim, watch, trigger_value="待生成")
+                dispatcher.apply_claim_clear_fields(running_claim, watch, trigger_value="生成中")
+
+                for field_name in cleared_fields:
+                    self.assertIn(field_name, waiting_claim)
+                    self.assertNotIn(field_name, running_claim)
+
     def test_video_edit_watch_claim_clears_stale_result_state(self):
         watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "视频编辑生成")
         claim_fields = {watch["status_field"]: watch["running_value"]}

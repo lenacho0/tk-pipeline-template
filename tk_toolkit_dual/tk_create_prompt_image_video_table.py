@@ -16,6 +16,7 @@ from tk_create_script_doc_shots_table import (
     run_json,
     update_config,
 )
+from view_visibility import apply_view_visibility_snapshot
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -315,6 +316,7 @@ def set_view_visible_fields(base_token, table_id, view_id, view_name, visible_fi
 
 
 def create_or_update_views(base_token, table_id, view_definitions):
+    view_definitions = apply_view_visibility_snapshot(table_id, view_definitions)
     field_names = list_field_names(base_token, table_id)
     existing = list_views(base_token, table_id)
     created = 0
