@@ -1,0 +1,2022 @@
+{
+  "generated_at": "2026-06-12T12:05:36",
+  "note": "Only legacy video/global routing fields are backed up. API Key fields are not included.",
+  "tables": [
+    {
+      "delete_fields": [
+        "视频AI模型",
+        "AI供应商",
+        "AI能力类型",
+        "AI任务类型",
+        "AI模型",
+        "AI参数JSON"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fldBUkX6o4",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optHSohxDe",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "optJVC6bs8",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optrWTj090",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optntkJU8l",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optbDJFSq5",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optoY651gU",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "opta9Gkk2r",
+                "name": "Aitgenne / veo_3_1_lite_vip"
+              },
+              {
+                "color": 6,
+                "id": "opty7hhqmV",
+                "name": "Aitgenne / veo_3_1_fast_vip"
+              },
+              {
+                "color": 6,
+                "id": "opt7pKiaiR",
+                "name": "Aitgenne / veo_3_1_vip"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fld7x3uJEJ",
+          "field_name": "AI供应商",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optCj1JVKN",
+                "name": "AIHubMix"
+              },
+              {
+                "color": 6,
+                "id": "optPhVux6W",
+                "name": "Aitgenne"
+              },
+              {
+                "color": 7,
+                "id": "optjgmMaT6",
+                "name": "OTU"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldPrJ1CBI",
+          "field_name": "AI能力类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optx4wEqgx",
+                "name": "文本"
+              },
+              {
+                "color": 7,
+                "id": "optut1II8u",
+                "name": "图片"
+              },
+              {
+                "color": 0,
+                "id": "optNafBhf7",
+                "name": "视频"
+              },
+              {
+                "color": 6,
+                "id": "opt6vNzPht",
+                "name": "语音"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldAlCnUIa",
+          "field_name": "AI任务类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optyFmp2MZ",
+                "name": "脚本解析拆分"
+              },
+              {
+                "color": 0,
+                "id": "optEgYbwPX",
+                "name": "故事板提示词拆分"
+              },
+              {
+                "color": 0,
+                "id": "optK1b5P1d",
+                "name": "多角色首尾帧解析"
+              },
+              {
+                "color": 0,
+                "id": "optJocYLkr",
+                "name": "视频分析"
+              },
+              {
+                "color": 0,
+                "id": "optcrVhNs6",
+                "name": "脚本生成"
+              },
+              {
+                "color": 0,
+                "id": "optAqDKWUT",
+                "name": "视频提示词生成"
+              },
+              {
+                "color": 7,
+                "id": "optkWCA2YD",
+                "name": "文生图"
+              },
+              {
+                "color": 7,
+                "id": "optXxlI3EL",
+                "name": "图生图/参考图重绘"
+              },
+              {
+                "color": 0,
+                "id": "optRynZMcp",
+                "name": "首帧图生视频"
+              },
+              {
+                "color": 0,
+                "id": "opt8UfZqjC",
+                "name": "首尾帧视频"
+              },
+              {
+                "color": 6,
+                "id": "optBnix5kd",
+                "name": "TTS"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldh1VzWw6",
+          "field_name": "AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optjtVjzPK",
+                "name": "AIHubMix / gemini-3.1-pro-preview"
+              },
+              {
+                "color": 6,
+                "id": "optfCERDeE",
+                "name": "Aitgenne / gpt-5.5"
+              },
+              {
+                "color": 7,
+                "id": "optY3XCi2a",
+                "name": "OTU / gpt-image-2"
+              },
+              {
+                "color": 7,
+                "id": "optxJYddm2",
+                "name": "OTU / gpt-image-2-2K"
+              },
+              {
+                "color": 7,
+                "id": "optChuFByy",
+                "name": "OTU / gpt-image-2-4K"
+              },
+              {
+                "color": 7,
+                "id": "optcH9MgRc",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 7,
+                "id": "opts09BGZC",
+                "name": "OTU / veo_3_1"
+              },
+              {
+                "color": 7,
+                "id": "opt2vk6UL2",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optwHRKa42",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optdPta9py",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optktZ0NtE",
+                "name": "OTU / veo_3_1-hd"
+              },
+              {
+                "color": 7,
+                "id": "opt7lNCCnH",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 0,
+                "id": "optlQ2j5s7",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 6,
+                "id": "optnA0sYqH",
+                "name": "Aitgenne / happyhorse-1.0-r2v"
+              },
+              {
+                "color": 6,
+                "id": "optmjU6Mru",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optaYzoe0l",
+                "name": "Aitgenne / omni-flash"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldvrryzfh",
+          "field_name": "AI参数JSON",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": null,
+          "type": 1,
+          "ui_type": "Text"
+        }
+      ],
+      "label": "001-多角色开头钩子",
+      "record_values": [],
+      "table_id": "tblObiMzCDn9ilFQ",
+      "table_key": "multi_role_first_last"
+    },
+    {
+      "delete_fields": [
+        "视频AI模型",
+        "AI供应商",
+        "AI能力类型",
+        "AI任务类型",
+        "AI模型",
+        "AI参数JSON"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fldrbpOnQn",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optWaHhvZK",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "optReuu2hH",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optcuaH0vB",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optsf65ToQ",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optCbshQIs",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optsOVBQmv",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optKudTc30",
+                "name": "Aitgenne / veo_3_1_lite_vip"
+              },
+              {
+                "color": 6,
+                "id": "opt7kH7ui9",
+                "name": "Aitgenne / veo_3_1_fast_vip"
+              },
+              {
+                "color": 6,
+                "id": "optfL6U3aB",
+                "name": "Aitgenne / veo_3_1_vip"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldKi6whSJ",
+          "field_name": "AI供应商",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "opt9442sIa",
+                "name": "AIHubMix"
+              },
+              {
+                "color": 6,
+                "id": "optdylibpx",
+                "name": "Aitgenne"
+              },
+              {
+                "color": 7,
+                "id": "optZKuuDys",
+                "name": "OTU"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldLfAc17c",
+          "field_name": "AI能力类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "opt7zXZWJT",
+                "name": "文本"
+              },
+              {
+                "color": 7,
+                "id": "opt9IEOQjC",
+                "name": "图片"
+              },
+              {
+                "color": 0,
+                "id": "optxirIe12",
+                "name": "视频"
+              },
+              {
+                "color": 6,
+                "id": "optUphWqhF",
+                "name": "语音"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldkLZpX6a",
+          "field_name": "AI任务类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optLBAtOD8",
+                "name": "脚本解析拆分"
+              },
+              {
+                "color": 0,
+                "id": "optK7Nx4kr",
+                "name": "故事板提示词拆分"
+              },
+              {
+                "color": 0,
+                "id": "optRAb3fU0",
+                "name": "多角色首尾帧解析"
+              },
+              {
+                "color": 0,
+                "id": "optL6ubTro",
+                "name": "视频分析"
+              },
+              {
+                "color": 0,
+                "id": "opt7xSfKPA",
+                "name": "脚本生成"
+              },
+              {
+                "color": 0,
+                "id": "opthlclCKE",
+                "name": "视频提示词生成"
+              },
+              {
+                "color": 7,
+                "id": "optvldZ7Qq",
+                "name": "文生图"
+              },
+              {
+                "color": 7,
+                "id": "optYUy0iuj",
+                "name": "图生图/参考图重绘"
+              },
+              {
+                "color": 0,
+                "id": "optUiTTYAG",
+                "name": "首帧图生视频"
+              },
+              {
+                "color": 0,
+                "id": "optLuAV97w",
+                "name": "首尾帧视频"
+              },
+              {
+                "color": 6,
+                "id": "optZ8ZZfEs",
+                "name": "TTS"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldnmin1RT",
+          "field_name": "AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optGQIH5lu",
+                "name": "AIHubMix / gemini-3.1-pro-preview"
+              },
+              {
+                "color": 6,
+                "id": "optTUoznS3",
+                "name": "Aitgenne / gpt-5.5"
+              },
+              {
+                "color": 7,
+                "id": "optvwwfHlG",
+                "name": "OTU / gpt-image-2"
+              },
+              {
+                "color": 7,
+                "id": "optd7I0hDS",
+                "name": "OTU / gpt-image-2-2K"
+              },
+              {
+                "color": 7,
+                "id": "opt2iOP9uu",
+                "name": "OTU / gpt-image-2-4K"
+              },
+              {
+                "color": 7,
+                "id": "optopQu8Pf",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 7,
+                "id": "optd75BdnD",
+                "name": "OTU / veo_3_1"
+              },
+              {
+                "color": 7,
+                "id": "opt44Oseqv",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "opt6Ua2dK7",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optxgHbby6",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optCAJOMp3",
+                "name": "OTU / veo_3_1-hd"
+              },
+              {
+                "color": 7,
+                "id": "optLALHLEN",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 0,
+                "id": "optPhf8yXp",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 6,
+                "id": "optiTZFUJP",
+                "name": "Aitgenne / happyhorse-1.0-r2v"
+              },
+              {
+                "color": 6,
+                "id": "optQhFfeHh",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optcRlQyji",
+                "name": "Aitgenne / omni-flash"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldh6MKXkE",
+          "field_name": "AI参数JSON",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": null,
+          "type": 1,
+          "ui_type": "Text"
+        }
+      ],
+      "label": "002-产品使用场景",
+      "record_values": [],
+      "table_id": "tblPPfKQMMC0D4XC",
+      "table_key": "first_last_video"
+    },
+    {
+      "delete_fields": [],
+      "field_definitions": [],
+      "label": "003-爆款视频复刻",
+      "record_values": [],
+      "table_id": "tblAY3rpgcbeMixC",
+      "table_key": "script_doc_unified"
+    },
+    {
+      "delete_fields": [
+        "视频AI模型",
+        "AI供应商",
+        "AI能力类型",
+        "AI任务类型",
+        "AI模型",
+        "AI参数JSON"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fldJppGV8N",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optTzW0V7b",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "optVfrePBK",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optQ5Si93o",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optz3EWN0g",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "opt3bX8ooM",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optTgRi6pZ",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldcLrqMDv",
+          "field_name": "AI供应商",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "opt3vQZlWR",
+                "name": "AIHubMix"
+              },
+              {
+                "color": 6,
+                "id": "optcQ1gTQM",
+                "name": "Aitgenne"
+              },
+              {
+                "color": 7,
+                "id": "optTkvcNRt",
+                "name": "OTU"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldAaoKr5V",
+          "field_name": "AI能力类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optxFod7ml",
+                "name": "文本"
+              },
+              {
+                "color": 7,
+                "id": "optogD70Oy",
+                "name": "图片"
+              },
+              {
+                "color": 8,
+                "id": "optfdTcHlH",
+                "name": "视频"
+              },
+              {
+                "color": 6,
+                "id": "optrkmEqxy",
+                "name": "语音"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldnypKJWo",
+          "field_name": "AI任务类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optQtF5yWK",
+                "name": "脚本解析拆分"
+              },
+              {
+                "color": 0,
+                "id": "optFbO7b6s",
+                "name": "故事板提示词拆分"
+              },
+              {
+                "color": 0,
+                "id": "optlvj39As",
+                "name": "多角色首尾帧解析"
+              },
+              {
+                "color": 8,
+                "id": "opt4qHkEMw",
+                "name": "视频分析"
+              },
+              {
+                "color": 0,
+                "id": "optYlIObcc",
+                "name": "脚本生成"
+              },
+              {
+                "color": 0,
+                "id": "optEnDiR4w",
+                "name": "视频提示词生成"
+              },
+              {
+                "color": 7,
+                "id": "optqjEMkzE",
+                "name": "文生图"
+              },
+              {
+                "color": 7,
+                "id": "optmEq4yql",
+                "name": "图生图/参考图重绘"
+              },
+              {
+                "color": 8,
+                "id": "optrgV10TR",
+                "name": "首帧图生视频"
+              },
+              {
+                "color": 8,
+                "id": "opt0dzjReo",
+                "name": "首尾帧视频"
+              },
+              {
+                "color": 6,
+                "id": "optIxtW76S",
+                "name": "TTS"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldl9IrptQ",
+          "field_name": "AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optJx2w21U",
+                "name": "AIHubMix / gemini-3.1-pro-preview"
+              },
+              {
+                "color": 6,
+                "id": "optjlJ6xOp",
+                "name": "Aitgenne / gpt-5.5"
+              },
+              {
+                "color": 7,
+                "id": "optBLFCmiI",
+                "name": "OTU / gpt-image-2"
+              },
+              {
+                "color": 7,
+                "id": "optQeV58Zs",
+                "name": "OTU / gpt-image-2-2K"
+              },
+              {
+                "color": 7,
+                "id": "optEsTqXlP",
+                "name": "OTU / gpt-image-2-4K"
+              },
+              {
+                "color": 7,
+                "id": "optrVXLkSU",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 7,
+                "id": "optDRXXJZE",
+                "name": "OTU / veo_3_1"
+              },
+              {
+                "color": 7,
+                "id": "optq3K5AQf",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optNqpsNp0",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optJ5jhNwC",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optw9nBZI0",
+                "name": "OTU / veo_3_1-hd"
+              },
+              {
+                "color": 7,
+                "id": "optjE82lMO",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 0,
+                "id": "optKvcNz7T",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 6,
+                "id": "optE2Uxw70",
+                "name": "Aitgenne / happyhorse-1.0-r2v"
+              },
+              {
+                "color": 6,
+                "id": "optTRSQWx5",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optZUHuUfR",
+                "name": "Aitgenne / omni-flash"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldAXYlBoG",
+          "field_name": "AI参数JSON",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": null,
+          "type": 1,
+          "ui_type": "Text"
+        }
+      ],
+      "label": "003-旧任务表",
+      "record_values": [],
+      "table_id": "tblBC37ktQBHPLep",
+      "table_key": "script_doc_tasks"
+    },
+    {
+      "delete_fields": [
+        "视频AI模型",
+        "AI供应商",
+        "AI能力类型",
+        "AI任务类型",
+        "AI模型",
+        "AI参数JSON"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fldrbenPDj",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optQb1kyz2",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "opttP9pb7Y",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "opt0P3iCRe",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optIjAjZl1",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optC6i9n4f",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optlNtFsIO",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fld45P1bCx",
+          "field_name": "AI供应商",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "opt5Y8AGXi",
+                "name": "AIHubMix"
+              },
+              {
+                "color": 6,
+                "id": "opt5aLpmXi",
+                "name": "Aitgenne"
+              },
+              {
+                "color": 7,
+                "id": "optmSvVxZ1",
+                "name": "OTU"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldLAlL5cS",
+          "field_name": "AI能力类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optPYf8CZ2",
+                "name": "文本"
+              },
+              {
+                "color": 7,
+                "id": "optlplEOUZ",
+                "name": "图片"
+              },
+              {
+                "color": 0,
+                "id": "optb7JDtv3",
+                "name": "视频"
+              },
+              {
+                "color": 6,
+                "id": "opt9WfO2JG",
+                "name": "语音"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldFBnusnN",
+          "field_name": "AI任务类型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optgoGgW1P",
+                "name": "脚本解析拆分"
+              },
+              {
+                "color": 0,
+                "id": "opt25lqa12",
+                "name": "故事板提示词拆分"
+              },
+              {
+                "color": 0,
+                "id": "optGph91oL",
+                "name": "多角色首尾帧解析"
+              },
+              {
+                "color": 0,
+                "id": "opt61psy17",
+                "name": "视频分析"
+              },
+              {
+                "color": 0,
+                "id": "opt04Ak4rA",
+                "name": "脚本生成"
+              },
+              {
+                "color": 0,
+                "id": "optg9Dcgcj",
+                "name": "视频提示词生成"
+              },
+              {
+                "color": 7,
+                "id": "opt2s2nHjv",
+                "name": "文生图"
+              },
+              {
+                "color": 7,
+                "id": "optQzEwTGS",
+                "name": "图生图/参考图重绘"
+              },
+              {
+                "color": 0,
+                "id": "optVSI3mxX",
+                "name": "首帧图生视频"
+              },
+              {
+                "color": 0,
+                "id": "optmTpV3QL",
+                "name": "首尾帧视频"
+              },
+              {
+                "color": 6,
+                "id": "optOmdJWNc",
+                "name": "TTS"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldjWXsf53",
+          "field_name": "AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "optZ4sAivv",
+                "name": "AIHubMix / gemini-3.1-pro-preview"
+              },
+              {
+                "color": 6,
+                "id": "opt9VD16v6",
+                "name": "Aitgenne / gpt-5.5"
+              },
+              {
+                "color": 7,
+                "id": "optBSig0qD",
+                "name": "OTU / gpt-image-2"
+              },
+              {
+                "color": 7,
+                "id": "opt3PPbow2",
+                "name": "OTU / gpt-image-2-2K"
+              },
+              {
+                "color": 7,
+                "id": "optyqgw7YT",
+                "name": "OTU / gpt-image-2-4K"
+              },
+              {
+                "color": 7,
+                "id": "optM7FQMgD",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 7,
+                "id": "optrucfyj4",
+                "name": "OTU / veo_3_1"
+              },
+              {
+                "color": 7,
+                "id": "optAdoTqoo",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optqmEj2zM",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optNsbx5vE",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optduQ92Gw",
+                "name": "OTU / veo_3_1-hd"
+              },
+              {
+                "color": 7,
+                "id": "optHnSbs19",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 0,
+                "id": "optP7fvch5",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 6,
+                "id": "optrCwSB9T",
+                "name": "Aitgenne / happyhorse-1.0-r2v"
+              },
+              {
+                "color": 6,
+                "id": "optbMorhO0",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "opt0tbLcpU",
+                "name": "Aitgenne / omni-flash"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fldnn5QHgD",
+          "field_name": "AI参数JSON",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": null,
+          "type": 1,
+          "ui_type": "Text"
+        }
+      ],
+      "label": "003-旧分镜生产表",
+      "record_values": [],
+      "table_id": "tbldPJLJhczlGzSt",
+      "table_key": "script_doc_shots"
+    },
+    {
+      "delete_fields": [
+        "视频AI模型"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fld70sx75X",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 10,
+                "id": "optLXeJoAu",
+                "name": "默认（配置表）"
+              },
+              {
+                "color": 0,
+                "id": "optaoZMRQx",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "optzYszKD1",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optSsYTxTd",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optNiXST26",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "opttKSI4uF",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optvJF5z2q",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optsyJhlT7",
+                "name": "Aitgenne / veo_3_1_lite_vip"
+              },
+              {
+                "color": 6,
+                "id": "optZkAd0cK",
+                "name": "Aitgenne / veo_3_1_fast_vip"
+              },
+              {
+                "color": 6,
+                "id": "optJEFzaD4",
+                "name": "Aitgenne / veo_3_1_vip"
+              },
+              {
+                "color": 7,
+                "id": "optAlJxprj",
+                "name": "OTU / omni_flash-10s"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        }
+      ],
+      "label": "004-故事板",
+      "record_values": [
+        {
+          "keys": {
+            "Storyboard编号": "1",
+            "任务名称": "061001test - Storyboard 01",
+            "批次ID": "STORYBOARD-20260610153159-z7B9gC",
+            "父任务记录ID": "recvm7iqz7B9gC",
+            "记录类型": "Storyboard分段"
+          },
+          "record_id": "recvm7Kr4fwNgY",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Storyboard编号": "2",
+            "任务名称": "061001test - Storyboard 02",
+            "批次ID": "STORYBOARD-20260610153159-z7B9gC",
+            "父任务记录ID": "recvm7iqz7B9gC",
+            "记录类型": "Storyboard分段"
+          },
+          "record_id": "recvm7Kr4fEd1I",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        }
+      ],
+      "table_id": "tblYvJfkayAbI6W1",
+      "table_key": "storyboard_video"
+    },
+    {
+      "delete_fields": [
+        "视频AI供应商",
+        "视频AI模型"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fldo3C4sPU",
+          "field_name": "视频AI供应商",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 0,
+                "id": "opt1zyAFjd",
+                "name": "AIHubMix"
+              },
+              {
+                "color": 6,
+                "id": "optLsaR8m3",
+                "name": "Aitgenne"
+              },
+              {
+                "color": 7,
+                "id": "optjvccNOp",
+                "name": "OTU"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        },
+        {
+          "field_id": "fld02REC4Z",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 7,
+                "id": "opt65lUIrG",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 6,
+                "id": "optaKfP44M",
+                "name": "Aitgenne / happyhorse-1.0-r2v"
+              },
+              {
+                "color": 6,
+                "id": "optS8v2fAs",
+                "name": "Aitgenne / omni-flash"
+              },
+              {
+                "color": 6,
+                "id": "optHh6jAgc",
+                "name": "Aitgenne / veo_3_1_lite_vip"
+              },
+              {
+                "color": 6,
+                "id": "optOsz9LCx",
+                "name": "Aitgenne / veo_3_1_fast_vip"
+              },
+              {
+                "color": 6,
+                "id": "optXGZ3M7A",
+                "name": "Aitgenne / veo_3_1_vip"
+              },
+              {
+                "color": 6,
+                "id": "optGV1x60P",
+                "name": "Aitgenne / veo_3_1_components_vip"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        }
+      ],
+      "label": "005-多图N宫格",
+      "record_values": [
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060309尿味-Board01",
+            "批次ID": "NINEGRID-20260603094900-qxxWUS",
+            "父任务记录ID": "recvlrlFqxxWUS",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlrqxol01JA",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060310尿味-Board01",
+            "批次ID": "NINEGRID-20260603095338-NKucBF",
+            "父任务记录ID": "recvlrlGNKucBF",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlrrF9fF531",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060312尿味-Board01",
+            "批次ID": "NINEGRID-20260603103143-0n1jLa",
+            "父任务记录ID": "recvlrAt0n1jLa",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlrBgpgwLvX",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060401尿味-Board01",
+            "批次ID": "NINEGRID-20260603112426-r0QkmT",
+            "父任务记录ID": "recvlrNcr0QkmT",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlrOIGgrfMb",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060402尿味-Board01",
+            "批次ID": "NINEGRID-20260603151049-QbyLqr",
+            "父任务记录ID": "recvlsqDQbyLqr",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlsJIgYdjWB",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060403尿味-Board01",
+            "批次ID": "NINEGRID-20260603152316-pqe1sy",
+            "父任务记录ID": "recvlsqEpqe1sy",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlsMK2TH4M0",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060404尿味-Board01",
+            "批次ID": "NINEGRID-20260603170823-pqQaUo",
+            "父任务记录ID": "recvlsqEpqQaUo",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvltd70MCF6v",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060405尿味-Board01",
+            "批次ID": "NINEGRID-20260603171148-pqZX63",
+            "父任务记录ID": "recvlsqEpqZX63",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvltdZr4yhdC",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060406尿味-Board01",
+            "批次ID": "NINEGRID-20260603214844-pq0l2e",
+            "父任务记录ID": "recvlsqEpq0l2e",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlulFx1NWBC",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060801非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260608145508-9zGKBZ",
+            "父任务记录ID": "recvlVre9zGKBZ",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlVUfqHHRak",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "2",
+            "任务名称": "060801非泼罗尼-Board02",
+            "批次ID": "NINEGRID-20260608145508-9zGKBZ",
+            "父任务记录ID": "recvlVre9zGKBZ",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvlVUfqH1JNn",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060901非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260609104323-nxquNy",
+            "父任务记录ID": "recvlVI3nxquNy",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvm0JqtDffOF",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "060902非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260609104326-WAs9z6",
+            "父任务记录ID": "recvm0HZWAs9z6",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvm0JujGDHOq",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061003非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260610173421-BII9LW",
+            "父任务记录ID": "recvm7XLBII9LW",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvm8fnxINJzN",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061101非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260610205918-PPGmPD",
+            "父任务记录ID": "recvm93NPPGmPD",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvm94T0a7knX",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061102非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260610205921-DC7kqf",
+            "父任务记录ID": "recvm93WDC7kqf",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvm94U26F4SS",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061103非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102038-99I1iS",
+            "父任务记录ID": "recvmcgx99I1iS",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmckRdfXeoP",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061106非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102105-cxnUI2",
+            "父任务记录ID": "recvmcgycxnUI2",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmcl6cctTqB",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061104非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102049-yZXmrB",
+            "父任务记录ID": "recvmcgxyZXmrB",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmcldqlFjzk",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061109非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102127-sWIDeK",
+            "父任务记录ID": "recvmcgzsWIDeK",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmclfHqlept",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061108非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102124-WtbTqk",
+            "父任务记录ID": "recvmcgyWtbTqk",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmclg4UIpU6",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061110非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611102142-LC3F2z",
+            "父任务记录ID": "recvmcgzLC3F2z",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmcljPgdyiC",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061105非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611104306-RXzh43",
+            "父任务记录ID": "recvmcgxRXzh43",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmcqrrG21rM",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "Board编号": "1",
+            "任务名称": "061107非泼罗尼-Board01",
+            "批次ID": "NINEGRID-20260611104313-zy2acY",
+            "父任务记录ID": "recvmcgyzy2acY",
+            "记录类型": "Board分段"
+          },
+          "record_id": "recvmcqszaZl7r",
+          "values": {
+            "视频AI供应商": "OTU",
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        }
+      ],
+      "table_id": "tbliRML5KjmzVjB0",
+      "table_key": "nine_grid_video"
+    },
+    {
+      "delete_fields": [
+        "视频AI模型"
+      ],
+      "field_definitions": [
+        {
+          "field_id": "fld4sm958t",
+          "field_name": "视频AI模型",
+          "is_extend": false,
+          "is_primary": false,
+          "is_synced": false,
+          "property": {
+            "options": [
+              {
+                "color": 10,
+                "id": "optkmURUEz",
+                "name": "默认（配置表）"
+              },
+              {
+                "color": 0,
+                "id": "opt8BdNHLM",
+                "name": "AIHubMix / veo-3.1-fast-generate-preview"
+              },
+              {
+                "color": 7,
+                "id": "optEiW1Z3F",
+                "name": "OTU / veo_3_1-fast-fl"
+              },
+              {
+                "color": 7,
+                "id": "optUg6TP13",
+                "name": "OTU / veo_3_1-fast-fl-hd"
+              },
+              {
+                "color": 7,
+                "id": "optfBu9LM9",
+                "name": "OTU / veo_3_1-fl"
+              },
+              {
+                "color": 7,
+                "id": "optocpDp1u",
+                "name": "OTU / veo_3_1-hd-fl"
+              },
+              {
+                "color": 6,
+                "id": "optNqNpHSw",
+                "name": "Aitgenne / happyhorse-1.0-i2v"
+              },
+              {
+                "color": 6,
+                "id": "optaLURaZy",
+                "name": "Aitgenne / veo_3_1_lite_vip"
+              },
+              {
+                "color": 6,
+                "id": "optnxQEKIY",
+                "name": "Aitgenne / veo_3_1_fast_vip"
+              },
+              {
+                "color": 6,
+                "id": "optPMV0BhP",
+                "name": "Aitgenne / veo_3_1_vip"
+              },
+              {
+                "color": 7,
+                "id": "optSUPC3xQ",
+                "name": "OTU / omni_flash-10s"
+              },
+              {
+                "color": 6,
+                "id": "optUjqECcg",
+                "name": "Aitgenne / veo_3_1_components_vip"
+              }
+            ]
+          },
+          "type": 3,
+          "ui_type": "SingleSelect"
+        }
+      ],
+      "label": "008-产品展示CTA",
+      "record_values": [
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGcpP3",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGw92R",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGYJG9",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGRcHj",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGc7iq",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nGHs8s",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608尿味"
+          },
+          "record_id": "recvlWa7nG3Ibt",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33w6Dk",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX333baf",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33bdKy",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX3368Aa",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33JAoL",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33yVdo",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33yJrl",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX338HUW",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33SPjI",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0608非泼罗尼"
+          },
+          "record_id": "recvlWiX33oC2g",
+          "values": {
+            "视频AI模型": "OTU / veo_3_1-fast-fl-hd"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0609test1gsb"
+          },
+          "record_id": "recvlWj4iFUC12",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0609test2gsb"
+          },
+          "record_id": "recvm0yRlVHyFw",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "0609test3gsb"
+          },
+          "record_id": "recvm0yS6R9hRr",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "061001非泼test"
+          },
+          "record_id": "recvm7wop9iIFl",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        },
+        {
+          "keys": {
+            "任务名称": "061001非泼test2"
+          },
+          "record_id": "recvm7wuQiogUq",
+          "values": {
+            "视频AI模型": "OTU / omni_flash-10s"
+          }
+        }
+      ],
+      "table_id": "tblAiOVwyscUAEBc",
+      "table_key": "prompt_image_video"
+    }
+  ]
+}
