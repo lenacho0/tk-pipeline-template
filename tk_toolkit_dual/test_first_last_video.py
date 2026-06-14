@@ -403,6 +403,41 @@ class FirstLastVideoTableTests(unittest.TestCase):
         self.assertNotIn("尾帧图任务ID", last_running_claim)
         self.assertTrue(watches["首尾帧首帧图生成"]["skip_deprecated_records"])
 
+    def test_first_last_dispatcher_claim_increments_existing_media_versions_before_clearing(self):
+        watches = {watch["name"]: watch for watch in dispatcher.WATCH_LIST}
+
+        expectations = [
+            (
+                "首尾帧首帧图生成",
+                {"首帧图生成状态": "待生成", "首帧图版本": 2, "首帧图file_token": "ft_first"},
+                "首帧图版本",
+                3,
+            ),
+            (
+                "首尾帧尾帧图生成",
+                {"尾帧图生成状态": "待生成", "尾帧图版本": 4, "尾帧图任务ID": "task_last"},
+                "尾帧图版本",
+                5,
+            ),
+            (
+                "首尾帧视频生成",
+                {"视频生成状态": "待生成", "视频版本": 7, "首尾帧视频file_token": "ft_video"},
+                "视频版本",
+                8,
+            ),
+        ]
+
+        for watch_name, latest, version_field, expected_version in expectations:
+            with self.subTest(watch_name=watch_name):
+                updates = []
+                with patch.object(dispatcher, "safe_get_record", return_value=latest), \
+                     patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+                     patch.object(dispatcher, "update_record_state_cache"), \
+                     patch.object(dispatcher, "get_table_field_kinds", return_value={}):
+                    self.assertTrue(dispatcher.try_claim_task("token", watches[watch_name], "rec1"))
+
+                self.assertEqual(updates[0][version_field], expected_version)
+
     def test_dispatcher_classifies_otu_resubmit_errors_as_retryable(self):
         stderr = (
             "OTU 视频生成失败: {'id': 'task_old', 'error': {'code': 'official_generation_error', "
@@ -709,6 +744,87 @@ video prompt
         self.assertEqual(parent_final["总场景数"], 2)
         self.assertEqual(parent_final["拆分版本"], 2)
         self.assertEqual(parent_final["场景拆分操作"], "不触发")
+
+    def test_batch_parse_inherits_versions_from_same_parent_scene_children(self):
+        updates = []
+        created_batches = []
+        parent_fields = {
+            "记录类型": "母任务",
+            "记录状态": "有效",
+            "任务名称": "尿味分解",
+            "首尾帧文档": "12 scenes doc",
+            "拆分版本": 1,
+            "目标时长秒": 6,
+            "关联产品记录": [{"record_ids": ["recProduct"]}],
+        }
+        existing_records = [
+            {
+                "record_id": "old_s01",
+                "fields": {
+                    "记录类型": "场景子任务",
+                    "记录状态": "已废弃",
+                    "父任务记录ID": "parent",
+                    "场景编号": 1,
+                    "首帧图版本": 2,
+                    "尾帧图版本": 4,
+                    "视频版本": 7,
+                },
+            },
+            {
+                "record_id": "old_s02",
+                "fields": {
+                    "记录类型": "场景子任务",
+                    "记录状态": "有效",
+                    "父任务记录ID": "parent",
+                    "场景编号": 2,
+                    "首帧图版本": 1,
+                    "尾帧图版本": 3,
+                    "视频版本": 5,
+                },
+            },
+            {
+                "record_id": "other_parent_s01",
+                "fields": {
+                    "记录类型": "场景子任务",
+                    "记录状态": "已废弃",
+                    "父任务记录ID": "other_parent",
+                    "场景编号": 1,
+                    "视频版本": 20,
+                },
+            },
+        ]
+        model_output = {
+            "scenes": [
+                {"scene_no": 1, "title": "开场", "first_frame_prompt": "first 1", "last_frame_prompt": "last 1", "video_prompt": "video 1"},
+                {"scene_no": 2, "title": "收尾", "first_frame_prompt": "first 2", "last_frame_prompt": "last 2", "video_prompt": "video 2"},
+            ]
+        }
+
+        def capture_create(token, table, records):
+            created_batches.append(records)
+            return len(records)
+
+        with patch.object(first_last, "TABLE_FIRST_LAST_VIDEO", "tbl_first_last"), \
+             patch.object(first_last, "get_feishu_token", return_value="token"), \
+             patch.object(first_last, "safe_get_record", side_effect=[
+                 parent_fields,
+                 {"产品名称-zh": "Pet Odor Spray", "产品图片": [{"file_token": "ft_product"}]},
+             ]), \
+             patch.object(first_last, "safe_list_records", return_value=existing_records), \
+             patch.object(first_last, "safe_update_record", side_effect=lambda token, table, rid, fields: updates.append((rid, fields))), \
+             patch.object(first_last, "filter_existing_fields", side_effect=lambda token, table, fields: fields), \
+             patch.object(first_last, "create_records", side_effect=capture_create), \
+             patch.object(first_last, "make_batch_id", return_value="batch_new"), \
+             patch.object(first_last, "parse_structured_markdown_scenes", return_value={}):
+            first_last.batch_parse_document("parent", raw_model_output=model_output)
+
+        created = created_batches[0]
+        self.assertEqual(created[0]["fields"]["首帧图版本"], 3)
+        self.assertEqual(created[0]["fields"]["尾帧图版本"], 5)
+        self.assertEqual(created[0]["fields"]["视频版本"], 8)
+        self.assertEqual(created[1]["fields"]["首帧图版本"], 2)
+        self.assertEqual(created[1]["fields"]["尾帧图版本"], 4)
+        self.assertEqual(created[1]["fields"]["视频版本"], 6)
 
     def test_batch_parse_uses_markdown_directly_without_text_model(self):
         updates = []

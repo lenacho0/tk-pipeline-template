@@ -885,7 +885,47 @@ Character source prompt:
 """.strip()
 
 
-def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], payload: Dict[str, Any], *, batch_id: str) -> List[Dict[str, Dict[str, Any]]]:
+def collect_child_version_seeds(records: List[Dict[str, Any]], parent_record_id: str) -> Dict[str, Dict[str, int]]:
+    seeds: Dict[str, Dict[str, int]] = {"reference": {}, "keyframe": {}, "video": {}}
+    for rec in records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        kind = record_type(fields)
+        if kind == ASSET_RECORD_TYPE:
+            key = extract_text(fields.get("资产ID")).strip()
+            version_field = "参考图版本"
+            bucket = "reference"
+        elif kind == KEYFRAME_RECORD_TYPE:
+            key = extract_text(fields.get("关键帧类型")).strip()
+            version_field = "关键帧版本"
+            bucket = "keyframe"
+        elif kind == VIDEO_RECORD_TYPE:
+            key = extract_text(fields.get("视频片段类型")).strip()
+            version_field = "视频版本"
+            bucket = "video"
+        else:
+            continue
+        if not key:
+            continue
+        seeds[bucket][key] = max(seeds[bucket].get(key, 0), current_version(fields, version_field))
+    return seeds
+
+
+def _seeded_version(version_seeds: Optional[Dict[str, Dict[str, int]]], bucket: str, key: str) -> int:
+    if not version_seeds or not key:
+        return 1
+    return max(1, int(version_seeds.get(bucket, {}).get(key, 0) or 0) + 1)
+
+
+def build_child_records(
+    parent_record_id: str,
+    parent_fields: Dict[str, Any],
+    payload: Dict[str, Any],
+    *,
+    batch_id: str,
+    version_seeds: Optional[Dict[str, Dict[str, int]]] = None,
+) -> List[Dict[str, Dict[str, Any]]]:
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"多角色首尾帧-{parent_record_id[-6:]}"
     target_seconds = int(float(extract_text(parent_fields.get("目标时长秒")).strip() or 8))
     inherited_route_fields = {
@@ -922,7 +962,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "来源角色ID列表": _csv(asset.get("source_role_ids", [])),
             "参考提示词": asset["prompt"],
             "参考图操作": "不触发",
-            "参考图版本": 1,
+            "参考图版本": _seeded_version(version_seeds, "reference", asset["asset_id"]),
             "参考图生成状态": "待生成",
             "参考图审核状态": "待确认",
             "错误信息": "",
@@ -947,7 +987,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "依赖关键帧类型": refs["depends_on_keyframe_type"],
             "参考图选择原因": refs["reason"],
             "关键帧操作": "不触发",
-            "关键帧版本": 1,
+            "关键帧版本": _seeded_version(version_seeds, "keyframe", frame["keyframe_type"]),
             "关键帧生成状态": "不触发" if (waits_for_reference_assets or waits_for_previous_keyframe) else "待生成",
             "关键帧审核状态": "待确认",
             "错误信息": "",
@@ -966,7 +1006,7 @@ def build_child_records(parent_record_id: str, parent_fields: Dict[str, Any], pa
             "视频提示词": clip["prompt"],
             "目标时长秒": clip["duration_sec"] or target_seconds,
             "视频操作": "不触发",
-            "视频版本": 1,
+            "视频版本": _seeded_version(version_seeds, "video", clip["clip_type"]),
             "视频通道": "OTU",
             "视频生成模型": f"OTU / {DEFAULT_OTU_MODEL}",
             "视频生成状态": "不触发",
@@ -1311,8 +1351,13 @@ def parse_task(record_id: str, *, dry_run: bool = False, raw_model_output: Any =
             raw_model_output = gemini_text_or_policy_error(response)
     payload = normalize_plan_payload(raw_model_output)
     batch_id = make_batch_id(record_id)
+    previous_children = list_multi_role_records_for_parent(token, record_id, include_deprecated=True)
+    version_seeds = collect_child_version_seeds(previous_children, record_id)
     deprecated = deprecate_existing_children(token, record_id)
-    child_records = apply_child_default_models(token, build_child_records(record_id, fields, payload, batch_id=batch_id))
+    child_records = apply_child_default_models(
+        token,
+        build_child_records(record_id, fields, payload, batch_id=batch_id, version_seeds=version_seeds),
+    )
     create_records(token, TABLE_MULTI_ROLE_FIRST_LAST, [
         {"fields": filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, item["fields"])}
         for item in child_records

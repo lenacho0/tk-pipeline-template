@@ -627,6 +627,7 @@ def build_child_scene_records(
     batch_id: str,
     split_version: int,
     product_context: Optional[Dict[str, Any]] = None,
+    version_seeds: Optional[Dict[int, Dict[str, int]]] = None,
 ) -> List[Dict[str, Dict[str, Any]]]:
     task_name = extract_text(parent_fields.get("任务名称")).strip() or f"首尾帧任务-{parent_record_id[-6:]}"
     target_seconds = normalize_int(parent_fields.get("目标时长秒"), 8)
@@ -654,6 +655,7 @@ def build_child_scene_records(
     for scene in scenes:
         scene_no = normalize_int(scene.get("scene_no"), len(records) + 1)
         title = extract_text(scene.get("title")).strip() or f"场景{scene_no}"
+        seed = (version_seeds or {}).get(scene_no, {})
         fields = {
             "记录类型": CHILD_RECORD_TYPE,
             "记录状态": "有效",
@@ -670,15 +672,15 @@ def build_child_scene_records(
             "尾帧生图提示词": scene["last_frame_prompt"],
             "首尾帧生视频提示词": scene["video_prompt"],
             "首帧图操作": "不触发",
-            "首帧图版本": 1,
+            "首帧图版本": seed.get("首帧图版本", 1),
             "首帧图生成状态": "待生成",
             "首帧审核状态": "待确认",
             "尾帧图操作": "不触发",
-            "尾帧图版本": 1,
+            "尾帧图版本": seed.get("尾帧图版本", 1),
             "尾帧图生成状态": "不触发",
             "尾帧审核状态": "待确认",
             "视频操作": "不触发",
-            "视频版本": 1,
+            "视频版本": seed.get("视频版本", 1),
             "视频通道": "OTU",
             "视频生成模型": f"OTU / {DEFAULT_OTU_MODEL}",
             "视频生成状态": "不触发",
@@ -689,6 +691,29 @@ def build_child_scene_records(
             fields.update(product_reference_record_fields(product_context))
         records.append({"fields": fields})
     return records
+
+
+def collect_child_scene_version_seeds(records: List[Dict[str, Any]], parent_record_id: str) -> Dict[int, Dict[str, int]]:
+    max_versions: Dict[int, Dict[str, int]] = {}
+    for rec in records:
+        fields = rec.get("fields") or {}
+        if record_type(fields) != CHILD_RECORD_TYPE:
+            continue
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        scene_no = normalize_int(fields.get("场景编号"), 0)
+        if scene_no <= 0:
+            continue
+        scene_versions = max_versions.setdefault(scene_no, {})
+        for version_field in ("首帧图版本", "尾帧图版本", "视频版本"):
+            scene_versions[version_field] = max(
+                scene_versions.get(version_field, 0),
+                current_version(fields, version_field),
+            )
+    return {
+        scene_no: {version_field: version + 1 for version_field, version in scene_versions.items()}
+        for scene_no, scene_versions in max_versions.items()
+    }
 
 
 def apply_child_scene_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
@@ -785,8 +810,18 @@ def batch_parse_document(record_id: str, *, dry_run: bool = False, raw_model_out
         summary["parser"] = "structured_markdown"
     payload = normalize_batch_parse_payload(raw_model_output)
     scenes = payload["scenes"]
+    existing_records = safe_list_records(token, TABLE_FIRST_LAST_VIDEO)
+    version_seeds = collect_child_scene_version_seeds(existing_records, record_id)
     deprecated = deprecate_existing_children(token, record_id)
-    child_records = build_child_scene_records(record_id, fields, scenes, batch_id=batch_id, split_version=split_version, product_context=product_context)
+    child_records = build_child_scene_records(
+        record_id,
+        fields,
+        scenes,
+        batch_id=batch_id,
+        split_version=split_version,
+        product_context=product_context,
+        version_seeds=version_seeds,
+    )
     child_records = apply_child_scene_default_models(token, child_records)
     created = create_records(token, TABLE_FIRST_LAST_VIDEO, child_records)
     safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_existing_fields(token, TABLE_FIRST_LAST_VIDEO, {

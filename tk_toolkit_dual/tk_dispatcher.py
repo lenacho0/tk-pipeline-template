@@ -366,6 +366,12 @@ WATCH_LIST = [
                 '错误信息': '',
             },
         },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '图片版本',
+                'existing_fields': ['图片file_token', '图片任务ID'],
+            },
+        },
     },
     {
         'name': '008图生视频视频生成',
@@ -390,6 +396,12 @@ WATCH_LIST = [
                 '视频原始响应JSON': '',
                 '视频错误信息': '',
                 '错误信息': '',
+            },
+        },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '视频版本',
+                'existing_fields': ['生成视频file_token', '视频任务ID'],
             },
         },
     },
@@ -448,6 +460,12 @@ WATCH_LIST = [
                 '错误信息': '',
             },
         },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '图片版本',
+                'existing_fields': ['图片file_token', '图片任务ID'],
+            },
+        },
     },
     {
         'name': '004故事板视频生成',
@@ -474,6 +492,12 @@ WATCH_LIST = [
                 '视频原始响应JSON': '',
                 '视频错误信息': '',
                 '错误信息': '',
+            },
+        },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '视频版本',
+                'existing_fields': ['生成视频file_token', '视频任务ID'],
             },
         },
     },
@@ -583,6 +607,12 @@ WATCH_LIST = [
                 '错误信息': '',
             },
         },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '首帧图版本',
+                'existing_fields': ['首帧图file_token', '首帧图任务ID'],
+            },
+        },
     },
     {
         'name': '首尾帧首帧审核推进',
@@ -649,6 +679,12 @@ WATCH_LIST = [
                 '错误信息': '',
             },
         },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '尾帧图版本',
+                'existing_fields': ['尾帧图file_token', '尾帧图任务ID'],
+            },
+        },
     },
     {
         'name': '首尾帧尾帧审核推进',
@@ -712,6 +748,12 @@ WATCH_LIST = [
             '待生成': {
                 '首尾帧视频': [],
                 '首尾帧视频URL': None,
+            },
+        },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '视频版本',
+                'existing_fields': ['首尾帧视频file_token', '视频任务ID'],
             },
         },
     },
@@ -781,6 +823,12 @@ WATCH_LIST = [
                 '错误信息': '',
             },
         },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '参考图版本',
+                'existing_fields': ['参考图file_token', '参考图任务ID'],
+            },
+        },
     },
     {
         'name': '多角色参考图审核推进',
@@ -840,6 +888,12 @@ WATCH_LIST = [
                 '关键帧错误信息': '',
                 '关键帧生成时间': None,
                 '错误信息': '',
+            },
+        },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '关键帧版本',
+                'existing_fields': ['关键帧图file_token', '关键帧任务ID'],
             },
         },
     },
@@ -905,6 +959,12 @@ WATCH_LIST = [
         'claim_clear_values_by_trigger_value': {
             '待生成': {
                 '视频片段URL': None,
+            },
+        },
+        'claim_version_increment_by_trigger_value': {
+            '待生成': {
+                'version_field': '视频版本',
+                'existing_fields': ['视频片段file_token', '视频任务ID'],
             },
         },
     },
@@ -2256,6 +2316,42 @@ def apply_claim_clear_fields(claim_fields, watch, trigger_value=None):
     return claim_fields
 
 
+def _claim_version_int(value):
+    try:
+        return max(1, int(float(extract_text(value).strip() or value or 1)))
+    except Exception:
+        return 1
+
+
+def _claim_has_existing_value(fields, field_names):
+    for field_name in field_names or []:
+        value = fields.get(field_name)
+        if isinstance(value, list):
+            if value:
+                return True
+            continue
+        if isinstance(value, dict):
+            if value:
+                return True
+            continue
+        if extract_text(value).strip():
+            return True
+    return False
+
+
+def apply_claim_version_increment(claim_fields, watch, latest_fields, trigger_value=None):
+    rule = (watch.get('claim_version_increment_by_trigger_value') or {}).get(trigger_value)
+    if not rule:
+        return claim_fields
+    version_field = rule.get('version_field')
+    if not version_field:
+        return claim_fields
+    if not _claim_has_existing_value(latest_fields or {}, rule.get('existing_fields') or []):
+        return claim_fields
+    claim_fields[version_field] = _claim_version_int((latest_fields or {}).get(version_field)) + 1
+    return claim_fields
+
+
 def record_matches_watch_filters(watch, fields):
     if watch.get('skip_deprecated_records'):
         if extract_text(fields.get('记录状态', '')).strip() == '已废弃':
@@ -2286,6 +2382,7 @@ def try_claim_task(token, watch, record_id):
             return False
         clear_retry_count_for_manual_requeue(watch, make_task_key(watch, record_id), latest_status, latest)
         claim_fields = {watch['status_field']: watch['running_value']}
+        apply_claim_version_increment(claim_fields, watch, latest, latest_status)
         apply_claim_clear_fields(claim_fields, watch, latest_status)
         claim_fields = sanitize_claim_fields_for_update(token, watch['table'], claim_fields)
         safe_update_record(token, watch['table'], record_id, claim_fields)

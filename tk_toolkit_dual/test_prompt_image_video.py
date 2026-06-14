@@ -334,6 +334,46 @@ class PromptImageVideoWorkerTests(unittest.TestCase):
         self.assertFalse(any(update.get("图片画面比例") == "9:16" for update in updates))
         self.assertTrue(all("图片操作" not in update and "视频操作" not in update for update in updates))
 
+    def test_claimed_image_generation_keeps_preincremented_version(self):
+        updates = []
+        fields = {
+            "生图提示词": "raw image prompt",
+            "图片生成状态": "生成中",
+            "生成图片": [{"file_token": "ft_old"}],
+            "图片版本": 3,
+            "图片AI模型": "OTU / gpt-image-2",
+        }
+
+        def fake_run_image(route, prompt, out_path, **kwargs):
+            Path(out_path).write_bytes(b"image")
+            return Mock(
+                output_path=out_path,
+                task_id="task_new",
+                submit_body={"id": "task_new"},
+                result_body={"ok": True},
+                request_summary={},
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(prompt_video, "ensure_table"), \
+             patch.object(prompt_video, "TABLE_PROMPT_IMAGE_VIDEO", "tbl_008"), \
+             patch.object(prompt_video, "safe_get_record", return_value=fields), \
+             patch.object(prompt_video, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(prompt_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
+             patch.object(prompt_video, "collect_image_references", return_value=[]), \
+             patch.object(prompt_video, "get_model_config", return_value={"model": "gpt-image-2", "api_key": "key", "api_base": "https://api.test"}), \
+             patch.object(prompt_video, "safe_list_records", return_value=[]), \
+             patch.object(prompt_video, "resolve_image_route_from_slot", return_value=Mock(provider="OTU", model="gpt-image-2", params={})), \
+             patch.object(prompt_video, "run_image_generation", side_effect=fake_run_image), \
+             patch.object(prompt_video, "upload_image_to_feishu", return_value="ft_image"), \
+             patch.object(prompt_video, "maybe_auto_approve_image", return_value={"status": "disabled"}), \
+             patch.object(prompt_video, "BASE_WORK_DIR", Path(tmpdir)):
+            result = prompt_video.run_image("token", "rec008")
+
+        self.assertEqual(result["status"], "success")
+        self.assertTrue(any(update.get("图片版本") == 3 for update in updates))
+        self.assertTrue(all(update.get("图片版本") != 4 for update in updates))
+
     def test_image_generation_uses_original_image_path_for_single_otu_reference_and_locks_product(self):
         captured = {}
         fields = {

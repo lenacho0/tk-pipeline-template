@@ -228,6 +228,33 @@ def cleanup_child_storyboards(token: str, parent_record_id: str) -> int:
     return deleted
 
 
+def _version_int(value: Any) -> int:
+    try:
+        return max(1, int(float(extract_text(value).strip() or value or 1)))
+    except Exception:
+        return 1
+
+
+def collect_storyboard_version_seeds(records: List[Dict[str, Any]], parent_record_id: str) -> Dict[int, Dict[str, int]]:
+    seeds: Dict[int, Dict[str, int]] = {}
+    for rec in records:
+        fields = rec.get("fields") or {}
+        if extract_text(fields.get("父任务记录ID")).strip() != parent_record_id:
+            continue
+        if extract_text(fields.get("记录类型")).strip() != STORYBOARD_RECORD_TYPE:
+            continue
+        try:
+            number = int(float(extract_text(fields.get("Storyboard编号")).strip() or fields.get("Storyboard编号") or 0))
+        except Exception:
+            number = 0
+        if number <= 0:
+            continue
+        current = seeds.setdefault(number, {})
+        current["图片版本"] = max(current.get("图片版本", 0), _version_int(fields.get("图片版本")))
+        current["视频版本"] = max(current.get("视频版本", 0), _version_int(fields.get("视频版本")))
+    return seeds
+
+
 def apply_storyboard_default_models(token: str, records: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Dict[str, Any]]]:
     app_table = TASK_TABLES["storyboard_video"]
     result = []
@@ -279,6 +306,7 @@ def build_child_storyboard_records(
     *,
     parent_record_id: str,
     batch_id: str,
+    version_seeds: Optional[Dict[int, Dict[str, int]]] = None,
 ) -> List[Dict[str, Dict[str, Any]]]:
     inherited_fields = {
         key: parent_fields.get(key)
@@ -307,8 +335,10 @@ def build_child_storyboard_records(
             "原始Prompt块": board.get("raw_prompt_block", ""),
             "生图提示词": board.get("image_prompt", ""),
             "图生视频提示词": board.get("video_prompt", ""),
+            "图片版本": max(1, int((version_seeds or {}).get(number, {}).get("图片版本", 0) or 0) + 1),
             "图片生成状态": "待生成",
             "图片审核状态": "待确认",
+            "视频版本": max(1, int((version_seeds or {}).get(number, {}).get("视频版本", 0) or 0) + 1),
             "视频生成状态": "不触发",
             "错误信息": "",
             **inherited_fields,
@@ -326,9 +356,11 @@ def parse_parent_record(record_id: str, *, token: Optional[str] = None, dry_run:
     payload = parse_storyboard_markdown_package(document["markdown"])
     payload = {**payload, "document_source": {k: v for k, v in document.items() if k != "markdown"}}
     batch_id = f"STORYBOARD-{time.strftime('%Y%m%d%H%M%S')}-{record_id[-6:]}"
+    existing_records = safe_list_records(token, TABLE_STORYBOARD_VIDEO)
+    version_seeds = collect_storyboard_version_seeds(existing_records, record_id)
     child_records = apply_storyboard_default_models(
         token,
-        build_child_storyboard_records(fields, payload, parent_record_id=record_id, batch_id=batch_id),
+        build_child_storyboard_records(fields, payload, parent_record_id=record_id, batch_id=batch_id, version_seeds=version_seeds),
     )
     summary = {
         "record_id": record_id,

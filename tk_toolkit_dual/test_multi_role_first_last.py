@@ -524,6 +524,7 @@ class MultiRoleFirstLastTests(unittest.TestCase):
              patch.object(multi_role.ai_routing, "call_text_model", return_value=type("Result", (), {"text": json.dumps(sample_plan())})()) as call_text, \
              patch.object(multi_role, "safe_update_record"), \
              patch.object(multi_role, "filter_existing_fields", side_effect=lambda token, table, f: f), \
+             patch.object(multi_role, "list_multi_role_records_for_parent", return_value=[]), \
              patch.object(multi_role, "deprecate_existing_children", return_value=0), \
              patch.object(multi_role, "create_records", return_value=8):
             result = multi_role.parse_task("recParent")
@@ -734,6 +735,33 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         self.assertIn("visible wet patch", env_prompt)
         self.assertNotIn("cat urine", env_prompt)
         self.assertNotRegex(env_prompt.lower(), r"\bcat\b")
+
+    def test_child_records_inherit_next_versions_from_previous_children(self):
+        payload = sample_plan(role_count=3)
+        normalized = multi_role.normalize_plan_payload(payload)
+        old_records = [
+            {"record_id": "old_asset", "fields": {"记录类型": "参考资产", "父任务记录ID": "parent", "资产ID": "role_1", "参考图版本": 2}},
+            {"record_id": "old_keyframe", "fields": {"记录类型": "关键帧", "父任务记录ID": "parent", "关键帧类型": "S01_FIRST", "关键帧版本": 4}},
+            {"record_id": "old_video", "fields": {"记录类型": "视频片段", "父任务记录ID": "parent", "视频片段类型": "S02", "视频版本": 3}},
+        ]
+
+        version_seeds = multi_role.collect_child_version_seeds(old_records, "parent")
+        records = multi_role.build_child_records(
+            "parent",
+            {"任务名称": "Hook", "目标时长秒": 8},
+            normalized,
+            batch_id="batch2",
+            version_seeds=version_seeds,
+        )
+
+        by_asset = {item["fields"].get("资产ID"): item["fields"] for item in records if item["fields"].get("记录类型") == "参考资产"}
+        by_keyframe = {item["fields"].get("关键帧类型"): item["fields"] for item in records if item["fields"].get("记录类型") == "关键帧"}
+        by_video = {item["fields"].get("视频片段类型"): item["fields"] for item in records if item["fields"].get("记录类型") == "视频片段"}
+
+        self.assertEqual(by_asset["role_1"]["参考图版本"], 3)
+        self.assertEqual(by_keyframe["S01_FIRST"]["关键帧版本"], 5)
+        self.assertEqual(by_video["S02"]["视频版本"], 4)
+        self.assertEqual(by_video["S01"]["视频版本"], 1)
 
     def test_keyframe_reference_collection_requires_urls_for_non_primary_references(self):
         fields = {

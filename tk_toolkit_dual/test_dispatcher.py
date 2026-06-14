@@ -848,6 +848,67 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertIsNone(claim_fields["视频生成时间"])
         self.assertEqual(claim_fields["视频生成状态"], "不触发")
 
+    def test_prompt_image_claim_increments_existing_image_version_before_clearing(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "008图生视频图片生成")
+        updates = []
+        latest = {
+            "图片生成状态": "待生成",
+            "图片版本": 2,
+            "图片file_token": "ft_old",
+            "图片任务ID": "task_old",
+        }
+
+        with patch.object(dispatcher, "safe_get_record", return_value=latest), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"), \
+             patch.object(dispatcher, "get_table_field_kinds", return_value={"生成图片": "attachment"}):
+            self.assertTrue(dispatcher.try_claim_task("token", watch, "rec1"))
+
+        self.assertEqual(updates[0]["图片生成状态"], "生成中")
+        self.assertEqual(updates[0]["图片版本"], 3)
+        self.assertEqual(updates[0]["图片file_token"], "")
+        self.assertEqual(updates[0]["图片任务ID"], "")
+
+    def test_prompt_image_claim_does_not_double_increment_prepared_regeneration(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "008图生视频图片生成")
+        updates = []
+        latest = {
+            "图片生成状态": "待生成",
+            "图片版本": 3,
+            "图片file_token": "",
+            "图片任务ID": "",
+        }
+
+        with patch.object(dispatcher, "safe_get_record", return_value=latest), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"), \
+             patch.object(dispatcher, "get_table_field_kinds", return_value={"生成图片": "attachment"}):
+            self.assertTrue(dispatcher.try_claim_task("token", watch, "rec1"))
+
+        self.assertNotIn("图片版本", updates[0])
+
+    def test_multi_role_video_claim_increments_existing_video_version_before_clearing(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多角色视频片段生成")
+        updates = []
+        latest = {
+            "记录类型": "视频片段",
+            "视频生成状态": "待生成",
+            "视频版本": 4,
+            "视频片段file_token": "ft_old",
+            "视频任务ID": "task_old",
+        }
+
+        with patch.object(dispatcher, "safe_get_record", return_value=latest), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "update_record_state_cache"), \
+             patch.object(dispatcher, "get_table_field_kinds", return_value={"视频片段": "attachment", "视频片段URL": "text"}):
+            self.assertTrue(dispatcher.try_claim_task("token", watch, "rec1"))
+
+        self.assertEqual(updates[0]["视频生成状态"], "生成中")
+        self.assertEqual(updates[0]["视频版本"], 5)
+        self.assertEqual(updates[0]["视频片段file_token"], "")
+        self.assertEqual(updates[0]["视频任务ID"], "")
+
     def test_media_video_claim_clears_outputs_only_for_waiting_regeneration(self):
         expectations = {
             "多图宫格视频生成": ["分镜视频", "分镜视频URL", "视频任务ID", "视频错误信息", "视频生成时间"],

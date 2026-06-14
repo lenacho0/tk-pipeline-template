@@ -944,7 +944,8 @@ def run_image(
     if not prompt:
         raise ValueError("生图提示词为空")
     has_existing_image = bool(latest_media_token(fields, "生成图片", "图片file_token"))
-    version = current_version(fields, "图片版本") + (1 if (regenerate or has_existing_image) else 0)
+    claimed_by_dispatcher = extract_text(fields.get("图片生成状态")).strip() == "生成中" and not regenerate
+    version = current_version(fields, "图片版本") + (1 if (regenerate or (has_existing_image and not claimed_by_dispatcher)) else 0)
     work_dir = ensure_work_dir(record_id, "image", version, table_key=table_key)
     refs = collect_image_references(token, fields, work_dir)
     refs = prepare_product_reference_images(refs, work_dir)
@@ -1060,7 +1061,8 @@ def run_video(
     if not image_token:
         raise ValueError("缺少已生成图片，无法图生视频")
     has_existing_video = bool(latest_media_token(fields, "生成视频", "生成视频file_token"))
-    version = current_version(fields, "视频版本") + (1 if (regenerate or has_existing_video) else 0)
+    claimed_by_dispatcher = extract_text(fields.get("视频生成状态")).strip() == "生成中" and not regenerate
+    version = current_version(fields, "视频版本") + (1 if (regenerate or (has_existing_video and not claimed_by_dispatcher)) else 0)
     work_dir = ensure_work_dir(record_id, "video", version, table_key=table_key)
     image_save_path = work_dir / f"generated_image_v{current_version(fields, '图片版本')}.png"
     image_path = Path(_downloaded_path(download_feishu_attachment_raw(token, image_token, image_save_path), image_save_path))

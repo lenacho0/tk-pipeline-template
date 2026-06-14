@@ -110,6 +110,28 @@ class StoryboardVideoTests(unittest.TestCase):
         self.assertIn("Storyboard 01 Video Prompt", payload["storyboards"][0]["video_prompt"])
         self.assertEqual(payload["storyboards"][1]["storyboard_title"], "Storyboard 02")
 
+    def test_child_storyboards_inherit_next_versions_from_previous_children(self):
+        payload = storyboard_video.parse_storyboard_markdown_package(sample_storyboard_package())
+        old_records = [
+            {"record_id": "old_1", "fields": {"记录类型": "Storyboard分段", "父任务记录ID": "parent", "Storyboard编号": 1, "图片版本": 5, "视频版本": 2}},
+            {"record_id": "old_2", "fields": {"记录类型": "Storyboard分段", "父任务记录ID": "parent", "Storyboard编号": 2, "图片版本": 1, "视频版本": 4}},
+        ]
+
+        version_seeds = storyboard_video.collect_storyboard_version_seeds(old_records, "parent")
+        records = storyboard_video.build_child_storyboard_records(
+            {"任务名称": "Story"},
+            payload,
+            parent_record_id="parent",
+            batch_id="batch2",
+            version_seeds=version_seeds,
+        )
+
+        by_number = {item["fields"]["Storyboard编号"]: item["fields"] for item in records}
+        self.assertEqual(by_number[1]["图片版本"], 6)
+        self.assertEqual(by_number[1]["视频版本"], 3)
+        self.assertEqual(by_number[2]["图片版本"], 2)
+        self.assertEqual(by_number[2]["视频版本"], 5)
+
     def test_image_prompt_normalizer_removes_old_multiview_reference_board_language(self):
         payload = storyboard_video.parse_storyboard_markdown_package(sample_multiview_storyboard_package())
         image_prompt = payload["storyboards"][0]["image_prompt"]
@@ -261,6 +283,7 @@ video only
         with patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_004"), \
              patch.object(storyboard_video, "safe_get_record", return_value=fields), \
              patch.object(storyboard_video, "safe_update_record", side_effect=lambda token, table, rid, patch_fields: updates.append(patch_fields)), \
+             patch.object(storyboard_video, "safe_list_records", return_value=[]), \
              patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
              patch.object(storyboard_video, "create_records", side_effect=lambda token, table, records: created_records.extend(records) or len(records)), \
              patch.object(storyboard_video, "cleanup_child_storyboards", return_value=0), \
@@ -290,6 +313,7 @@ video only
         with patch.object(storyboard_video, "TABLE_STORYBOARD_VIDEO", "tbl_004"), \
              patch.object(storyboard_video, "safe_get_record", return_value=fields), \
              patch.object(storyboard_video, "safe_update_record"), \
+             patch.object(storyboard_video, "safe_list_records", return_value=[]), \
              patch.object(storyboard_video, "filter_existing_fields", side_effect=lambda token, table, patch_fields: patch_fields), \
              patch.object(storyboard_video, "create_records", side_effect=lambda token, table, records: created_records.extend(records) or len(records)), \
              patch.object(storyboard_video, "cleanup_child_storyboards", return_value=0), \
