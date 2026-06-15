@@ -265,24 +265,67 @@ def _prompt_body_from_section(body: str, title: str) -> str:
     return prompt
 
 
-def _reference_asset_kind(title: str) -> str:
-    if "人物" in title or "human" in title.lower():
-        return "human"
-    if "宠物" in title or "pet" in title.lower():
-        return "pet"
-    if "环境" in title or "environment" in title.lower():
-        return "environment"
-    if "产品" in title or "product" in title.lower():
-        return "product"
+REFERENCE_PROMPT_TITLE_MARKERS = ("参考图提示词", "参考图生成提示词")
+
+REFERENCE_TYPE_KEYWORDS = {
+    "product": ("产品", "product"),
+    "pet": ("宠物", "猫", "狗", "pet", "cat", "dog"),
+    "environment": ("环境", "场景", "卧室", "门槛", "room", "scene", "environment"),
+    "human": (
+        "人物", "主人", "伴侣", "爸爸", "妈妈", "父亲", "母亲", "家人", "家属", "室友", "房东", "租客", "男友", "女友",
+        "孩子", "儿童", "小孩", "男孩", "女孩",
+        "人", "human", "man", "woman", "person", "father", "mother", "dad", "mom", "roommate", "landlord", "tenant", "owner",
+        "child", "kid", "boy", "girl",
+    ),
+}
+
+
+def _is_reference_prompt_title(title: str) -> bool:
+    return any(marker in title for marker in REFERENCE_PROMPT_TITLE_MARKERS)
+
+
+def _contains_reference_keyword(text: str, asset_type: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in text or keyword in lowered for keyword in REFERENCE_TYPE_KEYWORDS[asset_type])
+
+
+def _reference_asset_kind(title: str, prompt: str = "") -> str:
+    for asset_type in ("product", "human", "pet", "environment"):
+        if _contains_reference_keyword(title, asset_type):
+            return asset_type
+    for asset_type in ("product", "human", "pet", "environment"):
+        if _contains_reference_keyword(prompt, asset_type):
+            return asset_type
     return ""
+
+
+def _reference_title_without_prompt_suffix(title: str) -> str:
+    name = title.strip()
+    for suffix in ("参考图生成提示词", "参考图提示词"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)].strip()
+            break
+    return name.strip(" -_｜|：:")
 
 
 def _reference_title_name(title: str, asset_type: str, index: int) -> str:
     for marker in ("｜", "|", "：", ":"):
         if marker in title:
             name = title.split(marker, 1)[1].strip()
+            for suffix in ("参考图生成提示词", "参考图提示词"):
+                if name.endswith(suffix):
+                    name = name[:-len(suffix)].strip()
             if name:
                 return name
+    fallback = _reference_title_without_prompt_suffix(title)
+    type_labels = {
+        "human": ("人物", "human"),
+        "pet": ("宠物", "pet"),
+        "environment": ("环境", "environment"),
+        "product": ("产品", "product"),
+    }
+    if fallback and fallback not in type_labels.get(asset_type, ()):
+        return fallback
     defaults = {"human": "人物", "pet": "宠物", "environment": "环境"}
     return f"{defaults.get(asset_type, asset_type)}{index}"
 
@@ -400,9 +443,9 @@ def parse_direct_markdown_document(markdown: str, *, requested_grid_count: int =
     video_prompts: Dict[int, str] = {}
     for section in sections:
         title = section["title"]
-        if section["level"] == 3 and "参考图提示词" in title:
-            asset_type = _reference_asset_kind(title)
+        if section["level"] == 3 and _is_reference_prompt_title(title):
             prompt = _prompt_body_from_section(section["body"], title)
+            asset_type = _reference_asset_kind(title, prompt)
             if asset_type == "product":
                 product_reference_prompt = prompt
                 continue
@@ -2483,6 +2526,7 @@ def render_nine_grid_image(record_id: str, *, dry_run: bool = False) -> Dict[str
     if route.provider == "OTU" and refs:
         primary_reference_path = build_reference_contact_sheet(refs, work_dir / "reference_contact_sheet.png")
         submitted_reference_image_paths = None
+        reference_urls = []
 
     if existing_task_id:
         safe_update_record(token, TABLE_NINE_GRID_VIDEO, record_id, filter_existing_fields(token, TABLE_NINE_GRID_VIDEO, {

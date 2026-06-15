@@ -237,6 +237,59 @@ Use the uploaded Board 01 storyboard only as the narrative order and action path
 """.strip()
 
 
+def sample_direct_markdown_document_with_free_reference_titles():
+    return """
+# 方向3_猫包放在门槛边_九宫格纯提示词版
+
+## 参考图生成提示词
+
+### 伴侣 / 卧室拒绝者参考图生成提示词
+
+Create a vertical 9:16 realistic Thai man around 28 years old at a bedroom doorway, casual T-shirt, irritated but restrained expression, one hand pinching his nose, one hand gesturing toward the doorway. Natural home lighting, UGC phone realism, no text, no subtitles, no watermark.
+
+### 主人 / 护猫救场者参考图生成提示词
+
+Create a vertical 9:16 Thai young woman around 25 years old, kneeling near a cat carrier, protective and slightly teary expression, casual home clothes, body turned toward a cat as if defending it. Realistic Thai apartment style, no text, no watermark.
+
+### 爸爸 / 温柔处理者参考图生成提示词
+
+Create a vertical 9:16 realistic Thai father around 40 years old, calm and gentle expression, casual home clothes, kneeling near a small dog, warm family-home lighting, no text, no watermark.
+
+### 孩子 / 哭着要抱猫参考图生成提示词
+
+Create a vertical 9:16 realistic Thai child around 6 years old, crying and reaching toward a cat, safe family living-room mood, natural phone-shot realism, no text, no watermark.
+
+### 猫 / 门槛边委屈宠物参考图生成提示词
+
+Create a vertical 9:16 realistic domestic cat reference image, soft coat, crouching beside a cat carrier at a bedroom threshold, ears slightly lowered, looking toward the room with a pitiful but safe expression. No injury, no text, no watermark.
+
+### 卧室 / 门槛场景参考图生成提示词
+
+Create an empty Thai apartment bedroom doorway and threshold environment reference, cat carrier beside the door, natural afternoon indoor light. No people, no pets, no product, no text, no watermark.
+
+## Board 01 九宫格分镜图提示词
+
+```text
+Create one vertical 9:16 Thai TikTok UGC nine-grid storyboard image.
+Cell 1: The cat carrier sits at the bedroom threshold.
+Cell 2: The partner pinches his nose and points outside the bedroom.
+Cell 3: The owner kneels beside the cat carrier.
+Cell 4: The cat looks toward the bedroom doorway.
+Cell 5: The odor spray appears in the owner's hand.
+Cell 6: The owner sprays around the cat carrier base.
+Cell 7: The partner pauses and lowers his hand.
+Cell 8: The cat walks safely into the bedroom.
+Cell 9: The owner and partner relax near the doorway.
+```
+
+## Board 01 图生视频提示词
+
+```text
+Use the uploaded Board 01 nine-grid image as the storyboard timeline.
+```
+""".strip()
+
+
 def sample_plain_direct_markdown_document():
     return """
 # 方向1 门口驱逐 九宫格纯提示词版
@@ -459,6 +512,43 @@ class NineGridVideoTests(unittest.TestCase):
                 self.assertEqual(payload["boards"][0]["grid_count"], cell_count)
                 self.assertEqual(payload["boards"][0]["grid_layout"], layout)
                 self.assertEqual(len(payload["boards"][0]["cells"]), cell_count)
+
+    def test_parse_direct_markdown_document_accepts_free_reference_titles(self):
+        payload = nine_grid.parse_direct_markdown_document(
+            sample_direct_markdown_document_with_free_reference_titles()
+        )
+
+        refs = payload["reference_manifest"]["required_references"]
+        self.assertEqual([item["role"] for item in refs], ["human", "human", "human", "human", "pet", "environment"])
+        self.assertEqual(
+            [item["name"] for item in refs],
+            [
+                "伴侣 / 卧室拒绝者",
+                "主人 / 护猫救场者",
+                "爸爸 / 温柔处理者",
+                "孩子 / 哭着要抱猫",
+                "猫 / 门槛边委屈宠物",
+                "卧室 / 门槛场景",
+            ],
+        )
+
+        asset_records = nine_grid.build_reference_asset_records(
+            {"人物/宠物默认来源": "AI自动生成", "环境图来源": "AI自动生成"},
+            payload,
+            parent_record_id="recParent",
+            batch_id="batch1",
+        )
+        board_records = nine_grid.build_child_board_records(
+            {},
+            payload,
+            parent_record_id="recParent",
+            batch_id="batch1",
+            await_reference_assets=bool(asset_records),
+        )
+
+        self.assertEqual([item["fields"]["资产类型"] for item in asset_records], ["human", "human", "human", "human", "pet", "environment"])
+        self.assertTrue(all(item["fields"]["参考图生成状态"] == "待生成" for item in asset_records))
+        self.assertEqual(board_records[0]["fields"]["图片生成状态"], "不触发")
 
     def test_parse_direct_markdown_document_rejects_three_cells(self):
         with self.assertRaisesRegex(ValueError, "仅支持 4/6/8/9 宫格"):
@@ -1114,6 +1204,7 @@ class NineGridVideoTests(unittest.TestCase):
         contact_sheet.assert_called_once()
         self.assertEqual(kwargs["image_path"], "/tmp/contact.png")
         self.assertIsNone(kwargs["reference_image_paths"])
+        self.assertEqual(kwargs["metadata"]["urls"], [])
         self.assertEqual(kwargs["metadata"]["reference_roles"], ["product:1", "human:owner", "environment:main_room"])
         self.assertIn("PRODUCT REFERENCE LOCK", submitter.call_args.args[1])
         self.assertNotIn("exact_product_overlay_cells", result)
