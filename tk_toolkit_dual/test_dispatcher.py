@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -908,6 +908,100 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertEqual(updates[0]["视频版本"], 5)
         self.assertEqual(updates[0]["视频片段file_token"], "")
         self.assertEqual(updates[0]["视频任务ID"], "")
+
+    def test_waiting_candidate_with_live_process_kills_old_worker_and_claims_new_task(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多角色视频片段生成")
+        record = {
+            "record_id": "rec_wait",
+            "fields": {
+                "记录类型": "视频片段",
+                "视频生成状态": "待生成",
+                "视频版本": 2,
+                "视频任务ID": "task_old",
+                "任务名称": "clip task",
+            },
+        }
+        updates = []
+        launched = []
+        killed = []
+
+        class FakeProcess:
+            def poll(self):
+                return None
+
+            def kill(self):
+                killed.append("killed")
+
+        with patch.object(dispatcher, "get_current_concurrency_policy", return_value={"stage_policies": {}, "table_policies": {}, "global_max_concurrency": None}), \
+             patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={"stage_policies": {}, "table_policies": {}, "global_max_concurrency": None}), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_watch", return_value=0), \
+             patch.object(dispatcher, "table_max_concurrency_for_watch", return_value=None), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "safe_get_record", return_value=record["fields"]), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "load_running_tasks", return_value={dispatcher.make_task_key(watch, "rec_wait"): {"script": watch["script"], "record_id": "rec_wait"}}), \
+             patch.object(dispatcher, "save_running_tasks"), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher, "subprocess") as subprocess_mod, \
+             patch.object(dispatcher, "bump_metric"), \
+             patch.object(dispatcher, "update_record_state_cache"), \
+             patch.object(dispatcher, "get_table_field_kinds", return_value={"视频片段": "attachment"}):
+            subprocess_mod.Popen.side_effect = lambda *args, **kwargs: launched.append(args[0]) or FakeProcess()
+
+            dispatcher.running_processes = {dispatcher.make_task_key(watch, "rec_wait"): {"process": FakeProcess()}}
+            dispatcher.check_and_run("token", watch)
+
+        self.assertEqual(killed, ["killed"])
+        self.assertEqual(updates[0]["视频生成状态"], "生成中")
+        self.assertEqual(updates[0]["视频任务ID"], "")
+        self.assertEqual(updates[0]["视频版本"], 3)
+        self.assertEqual(len(launched), 1)
+
+    def test_running_candidate_with_live_process_is_not_reclaimed(self):
+        watch = next(w for w in dispatcher.WATCH_LIST if w["name"] == "多角色视频片段生成")
+        record = {
+            "record_id": "rec_running",
+            "fields": {
+                "记录类型": "视频片段",
+                "视频生成状态": "生成中",
+                "视频任务ID": "task_existing",
+                "任务名称": "clip task",
+            },
+        }
+
+        with patch.object(dispatcher, "get_current_concurrency_policy", return_value={"stage_policies": {}, "table_policies": {}, "global_max_concurrency": None}), \
+             patch.object(dispatcher, "load_feishu_concurrency_policy", return_value={"stage_policies": {}, "table_policies": {}, "global_max_concurrency": None}), \
+             patch.object(dispatcher, "cleanup_finished_processes"), \
+             patch.object(dispatcher, "count_running_by_watch", return_value=0), \
+             patch.object(dispatcher, "count_live_persisted_by_watch", return_value=0), \
+             patch.object(dispatcher, "table_max_concurrency_for_watch", return_value=None), \
+             patch.object(dispatcher, "get_watch_candidate_records_cached", return_value=[record]), \
+             patch.object(dispatcher, "has_live_process_for_task_key", return_value=True), \
+             patch.object(dispatcher, "safe_update_record") as update_record, \
+             patch.object(dispatcher, "subprocess") as subprocess_mod:
+            dispatcher.check_and_run("token", watch)
+
+        update_record.assert_not_called()
+        subprocess_mod.Popen.assert_not_called()
+
+    def test_video_generation_watch_timeouts_exceed_worker_poll_timeout(self):
+        video_watch_names = {
+            "视频编辑生成",
+            "多图宫格视频生成",
+            "008图生视频视频生成",
+            "004故事板视频生成",
+            "首尾帧视频生成",
+            "多角色视频片段生成",
+            "脚本文档分镜视频生成",
+            "003新表脚本文档分镜视频生成",
+        }
+        watches = {watch["name"]: watch for watch in dispatcher.WATCH_LIST}
+
+        for watch_name in video_watch_names:
+            with self.subTest(watch_name=watch_name):
+                self.assertEqual(watches[watch_name]["timeout"], 3000)
 
     def test_media_video_claim_clears_outputs_only_for_waiting_regeneration(self):
         expectations = {

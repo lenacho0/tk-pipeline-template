@@ -6,7 +6,7 @@ TK 任务调度器 —— 轮询飞书多维表格，发现「待执行」任务
 用法: python3 tk_dispatcher.py
 后台运行: nohup python3 tk_dispatcher.py >> dispatcher.log 2>&1 &
 """
-import json, os, sys, time, subprocess, logging, urllib.parse
+import json, os, sys, time, subprocess, logging, urllib.parse, signal
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
@@ -60,6 +60,7 @@ def scoped_runtime_file(prefix, instance, table_key=None, extension='json'):
 TABLE_KEY = get_dispatcher_table_key()
 RUNTIME_SCOPE = runtime_scope_name(INSTANCE, TABLE_KEY)
 POLL_INTERVAL = int(DISPATCHER_CFG.get('poll_interval', 30) or 30)
+VIDEO_GENERATION_TIMEOUT_SECONDS = 3000
 HEALTHCHECK_HOUR = int(DISPATCHER_CFG.get('healthcheck_hour', 8) or 8)
 HEALTHCHECK_DONE_FILE = os.path.join(SCRIPTS_DIR, f'.healthcheck_today.{INSTANCE}')
 RUNNING_TASKS_FILE = scoped_runtime_file('.running_tasks', INSTANCE, TABLE_KEY)
@@ -175,7 +176,7 @@ WATCH_LIST = [
         'error_field': '错误信息',
         'script': 'tk_video_edit.py',
         'args': ['edit'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'keep_when_table_missing': True,
@@ -318,7 +319,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_nine_grid_video.py',
         'args': ['video'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 3,
         'required_field_values': {'记录类型': ['Board分段']},
@@ -384,7 +385,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_prompt_image_video.py',
         'args': ['video'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'claim_clear_values_by_trigger_value': {
@@ -478,7 +479,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_storyboard_video.py',
         'args': ['video'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'keep_when_table_missing': True,
@@ -729,7 +730,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_first_last_video.py',
         'args': ['video'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'skip_deprecated_records': True,
@@ -940,7 +941,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_multi_role_first_last.py',
         'args': ['video'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 2,
         'max_retries': 1,
         'required_field_values': {'记录类型': ['视频片段']},
@@ -1108,7 +1109,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_shot_video.py',
         'args': ['--table', 'script_doc'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'claim_clear_values_by_trigger_value': {
@@ -1241,7 +1242,7 @@ WATCH_LIST = [
         'error_field': '视频错误信息',
         'script': 'tk_shot_video.py',
         'args': ['--table', 'script_doc_unified'],
-        'timeout': 2400,
+        'timeout': VIDEO_GENERATION_TIMEOUT_SECONDS,
         'max_concurrency': 1,
         'max_retries': 1,
         'keep_when_table_missing': True,
@@ -1913,13 +1914,13 @@ def count_live_persisted_by_table(table_id, running_state):
     return count
 
 
-def has_live_process_for_task_key(task_key, task_info):
+def live_process_pids_for_task_key(task_key, task_info):
     key_parts = task_key.split('::')
     script_from_key = key_parts[2] if len(key_parts) >= 5 else key_parts[0]
     script = task_info.get('script') or script_from_key
     record_id = task_info.get('record_id') or (task_key.rsplit('::', 1)[1] if '::' in task_key else '')
     if not script or not record_id:
-        return False
+        return []
     try:
         result = subprocess.run(
             ['ps', 'axo', 'pid=,command='],
@@ -1929,10 +1930,11 @@ def has_live_process_for_task_key(task_key, task_info):
             timeout=5,
         )
     except Exception:
-        return False
+        return []
     if result.returncode != 0:
-        return False
+        return []
     current_pid = str(os.getpid())
+    pids = []
     for line in result.stdout.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -1941,8 +1943,50 @@ def has_live_process_for_task_key(task_key, task_info):
         if pid == current_pid:
             continue
         if script in command and record_id in command:
-            return True
-    return False
+            try:
+                pids.append(int(pid))
+            except ValueError:
+                continue
+    return pids
+
+
+def has_live_process_for_task_key(task_key, task_info):
+    return bool(live_process_pids_for_task_key(task_key, task_info))
+
+
+def is_waiting_regeneration_request(watch, status):
+    return status == watch.get('trigger_value') == '待生成'
+
+
+def terminate_running_task_for_regeneration(task_key, task_info, running_state=None, watch_name='', record_id=''):
+    terminated = False
+    process_info = running_processes.get(task_key) or {}
+    process = process_info.get('process') if isinstance(process_info, dict) else None
+    process_pid = getattr(process, 'pid', None)
+    if process is not None:
+        try:
+            if process.poll() is None:
+                process.kill()
+                terminated = True
+        except Exception as exc:
+            log.warning(f"[{watch_name}] 终止旧 worker 失败: {record_id or task_key}: {exc}")
+    for pid in live_process_pids_for_task_key(task_key, task_info or {}):
+        if process_pid is not None and str(pid) == str(process_pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            terminated = True
+        except ProcessLookupError:
+            continue
+        except Exception as exc:
+            log.warning(f"[{watch_name}] 终止旧持久 worker 失败: pid={pid} record_id={record_id or task_key}: {exc}")
+    running_processes.pop(task_key, None)
+    if running_state is not None and task_key in running_state:
+        running_state.pop(task_key, None)
+        save_running_tasks(running_state)
+    if terminated:
+        log.info(f"[{watch_name}] 已终止待生成重生请求的旧 worker: {record_id or task_key}")
+    return terminated
 
 
 def prune_stale_running_state():
@@ -2563,21 +2607,30 @@ def check_and_run(token, watch):
             'args': watch.get('args', []) or [],
             'record_id': record_id,
         }
+        waiting_regeneration = is_waiting_regeneration_request(watch, status)
         if task_key in running_processes:
             process = running_processes[task_key].get('process')
             if process is None or process.poll() is None:
-                continue
+                if waiting_regeneration:
+                    terminate_running_task_for_regeneration(task_key, running_info, running_state, watch.get('name', ''), record_id)
+                else:
+                    continue
 
         if pop_legacy_running_state(running_state, watch, record_id):
             continue
 
         if task_key in running_state:
             running_info = running_state.get(task_key) or running_info
-            if has_live_process_for_task_key(task_key, running_info):
-                continue
-            log.warning(f"[{watch['name']}] 清理无活跃进程的 running state，准备接管: {record_id}")
-            running_state.pop(task_key, None)
-            save_running_tasks(running_state)
+            live_persisted_worker = has_live_process_for_task_key(task_key, running_info)
+            if live_persisted_worker:
+                if waiting_regeneration:
+                    terminate_running_task_for_regeneration(task_key, running_info, running_state, watch.get('name', ''), record_id)
+                else:
+                    continue
+            else:
+                log.warning(f"[{watch['name']}] 清理无活跃进程的 running state，准备接管: {record_id}")
+                running_state.pop(task_key, None)
+                save_running_tasks(running_state)
 
         stale_running_candidate = False
         if status == watch.get('running_value') and status != watch.get('trigger_value'):
