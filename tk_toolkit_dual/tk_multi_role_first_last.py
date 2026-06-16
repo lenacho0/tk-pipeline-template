@@ -2390,6 +2390,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
         if channel == "OTU":
             task_id, submit_body = submit_otu_video_task(runtime_cfg, prompt, str(first_path), str(last_path), seconds=seconds, size=size, aspect_ratio=aspect_ratio)
             safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
                 "视频错误信息": f"已提交 OTU 视频任务，正在轮询。task_id={task_id}",
@@ -2408,6 +2409,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
                 reference_urls=reference_urls,
             )
             safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频原始响应JSON": compact_json({"submit": submit_body, "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
                 "视频错误信息": f"已提交 Aitgenne 视频任务，正在轮询。{video_task_route_tag(channel, video_model['display'])} task_id={task_id}",
@@ -2428,6 +2430,7 @@ def render_video_clip(record_id: str, *, dry_run: bool = False) -> Dict[str, Any
             if not task_id:
                 raise RuntimeError(f"Veo 多角色视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
             safe_update_record(token, TABLE_MULTI_ROLE_FIRST_LAST, record_id, filter_existing_fields(token, TABLE_MULTI_ROLE_FIRST_LAST, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频原始响应JSON": compact_json({"submit": operation_to_dict(operation), "first_keyframe": first_type, "last_keyframe": last_type}, 10000),
                 "视频错误信息": f"已提交 AIHubMix Gemini/Veo 视频任务，正在轮询。task_id={task_id}; 视频画面尺寸={size}, native_resolution={native_resolution}",

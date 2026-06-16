@@ -355,13 +355,15 @@ def run_video_edit(
         route = resolve_video_edit_route(token)
     else:
         route = default_video_edit_route()
-    existing_task_id = extract_text(fields.get("视频任务ID")).strip()
+    current_status = extract_text(fields.get("编辑状态")).strip()
+    raw_existing_task_id = extract_text(fields.get("视频任务ID")).strip()
+    existing_task_id = raw_existing_task_id if current_status == "生成中" else ""
     task_id = existing_task_id
     try:
         _update_record_fields(token, table_id, record_id, {"编辑状态": "生成中", "错误信息": ""})
         if not task_id:
             task_id, submit_body = submitter(route, prompt, str(source_path), reference_paths, params)
-            _update_record_fields(token, table_id, record_id, {"视频任务ID": task_id, "错误信息": ""})
+            _update_record_fields(token, table_id, record_id, {"编辑状态": "生成中", "视频任务ID": task_id, "错误信息": ""})
         else:
             submit_body = {"id": task_id, "resumed": True}
 

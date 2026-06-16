@@ -1239,6 +1239,10 @@ class MultiRoleFirstLastTests(unittest.TestCase):
         poll.assert_called_once_with({"api_base": "https://otuapi.com", "api_key": "key", "model": "veo_3_1-fast-fl"}, "task_new")
         self.assertEqual(result["task_id"], "task_new")
         self.assertTrue(any(update.get("视频任务ID") == "" for update in updates))
+        self.assertTrue(any(
+            update.get("视频任务ID") == "task_new" and update.get("视频生成状态") == "生成中"
+            for update in updates
+        ))
         self.assertFalse(any(update.get("视频错误信息", "").startswith("恢复轮询已有") for update in updates))
 
     def test_video_clip_downloads_completed_task_content_when_result_has_no_url(self):

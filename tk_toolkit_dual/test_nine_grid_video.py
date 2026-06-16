@@ -2865,6 +2865,10 @@ class NineGridVideoTests(unittest.TestCase):
         self.assertEqual(poller.call_args.args[1], "task_new_aitgenne")
         self.assertEqual(result["task_id"], "task_new_aitgenne")
         self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
+        self.assertTrue(any(
+            item.get("视频任务ID") == "task_new_aitgenne" and item.get("视频生成状态") == "生成中"
+            for item in updates
+        ))
         self.assertIn("provider=Aitgenne", updates[-2]["视频错误信息"])
 
     def test_render_nine_grid_video_clears_stale_local_path_before_new_submit(self):

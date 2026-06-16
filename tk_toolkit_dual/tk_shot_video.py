@@ -1355,6 +1355,7 @@ def run_shot_video_generation(
             else:
                 task_id, submit_body = otu_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio, last_frame_path=str(last_frame_path) if last_frame_path else None)
                 update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                    "视频生成状态": "生成中",
                     "视频任务ID": task_id,
                     "视频生成原始响应JSON": compact_json({"submit": submit_body}),
                     "视频错误信息": f"已提交 OTU 图生视频任务，正在轮询。task_id={task_id}",
@@ -1425,6 +1426,7 @@ def run_shot_video_generation(
                 if not task_id:
                     raise RuntimeError(f"Aitgenne 视频任务提交未返回任务 ID: {compact_json(submit_body, 1200)}")
                 update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                    "视频生成状态": "生成中",
                     "视频任务ID": task_id,
                     "视频生成原始响应JSON": compact_json({"submit": submit_body}),
                     "视频错误信息": f"已提交 Aitgenne 图生视频任务，正在轮询。task_id={task_id}",
@@ -1463,6 +1465,7 @@ def run_shot_video_generation(
             }))
             task_id, submit_body = seeddance_submitter(runtime_config, prompt, str(image_path), seconds, size, aspect_ratio)
             update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频生成原始响应JSON": compact_json({"submit": submit_body}),
                 "视频错误信息": f"已提交 SeedDance 2.0 图生视频任务，正在轮询。task_id={task_id}",
@@ -1511,6 +1514,7 @@ def run_shot_video_generation(
             if not task_id:
                 raise RuntimeError(f"Veo 首帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
             update_record_fn(token, table_id, record_id, filter_existing_fields(token, table_id, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}),
                 "视频错误信息": f"已提交 AIHubMix Gemini/Veo 首帧视频任务，正在轮询。task_id={task_id}; 视频画面尺寸={size}, native_resolution={native_resolution}",

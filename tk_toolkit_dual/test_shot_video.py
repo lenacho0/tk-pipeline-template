@@ -1327,6 +1327,10 @@ class ShotVideoTest(unittest.TestCase):
         submitter.assert_called_once()
         poller.assert_called_once_with(submitter.call_args.args[0], "task_new_otu")
         self.assertTrue(any(item.get("视频任务ID") == "" for item in updates))
+        self.assertTrue(any(
+            item.get("视频任务ID") == "task_new_otu" and item.get("视频生成状态") == "生成中"
+            for item in updates
+        ))
         self.assertEqual(result["task_id"], "task_new_otu")
         self.assertEqual(result["video_url"], "https://x.test/new-otu.mp4")
 

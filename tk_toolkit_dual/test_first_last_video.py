@@ -1617,6 +1617,10 @@ video prompt exactly
         self.assertEqual(result["model_source"], "视频生成模型")
         self.assertNotIn("首尾帧视频", updates[0])
         self.assertTrue(any(update.get("视频生成模型") == "OTU / veo_3_1-fl" for update in updates))
+        self.assertTrue(any(
+            update.get("视频任务ID") == "task_new" and update.get("视频生成状态") == "生成中"
+            for update in updates
+        ))
 
     def test_render_video_uses_aihubmix_native_veo_when_generation_model_selects_aihubmix(self):
         updates = []

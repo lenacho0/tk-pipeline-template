@@ -213,6 +213,43 @@ class VideoEditWorkerTests(unittest.TestCase):
         self.assertEqual(final_payload["视频任务ID"], "task-123")
         self.assertEqual(final_payload["结果视频"], [{"file_token": "result-token", "name": "rec1_video_edit.mp4"}])
 
+    def test_run_video_edit_waiting_status_ignores_old_task_id_and_submits_new_task(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = os.path.join(tmpdir, "source.mp4")
+            result_path = os.path.join(tmpdir, "result.mp4")
+            Path(source_path).write_bytes(b"source-video")
+            Path(result_path).write_bytes(b"result-video")
+            fields = {
+                "源视频": [{"file_token": "src-token", "name": "source.mp4"}],
+                "编辑指令": "replace the shirt with the reference pattern",
+                "编辑状态": "待生成",
+                "视频任务ID": "task-old",
+            }
+            submitter = Mock(return_value=("task-new", {"id": "task-new"}))
+            poller = Mock(return_value={"data": {"status": "completed", "url": "https://example.com/result.mp4"}})
+
+            with patch.object(video_edit, "ensure_video_edit_table"), \
+                 patch.object(video_edit, "get_feishu_token", return_value="token"), \
+                 patch.object(video_edit, "safe_get_record", return_value=fields), \
+                 patch.object(video_edit, "safe_update_record") as update_record, \
+                 patch.object(video_edit, "filter_existing_fields", side_effect=lambda token, table, payload: payload), \
+                 patch.object(video_edit, "download_feishu_attachment", return_value=Path(source_path)), \
+                 patch.object(video_edit, "download_reference_attachments", return_value=[]), \
+                 patch.object(video_edit, "attachment_tmp_url", return_value="https://x.test/source.mp4"), \
+                 patch.object(video_edit, "download_video", return_value=result_path), \
+                 patch.object(video_edit, "upload_video_to_feishu", return_value="result-token"):
+                result = video_edit.run_video_edit("rec1", work_dir=Path(tmpdir), submitter=submitter, poller=poller)
+
+        submitter.assert_called_once()
+        poller.assert_called_once()
+        self.assertEqual(poller.call_args.args[1], "task-new")
+        self.assertEqual(result["task_id"], "task-new")
+        self.assertFalse(any(call.args[3].get("视频任务ID") == "task-old" for call in update_record.call_args_list))
+        self.assertTrue(any(
+            call.args[3].get("编辑状态") == "生成中" and call.args[3].get("视频任务ID") == "task-new"
+            for call in update_record.call_args_list
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

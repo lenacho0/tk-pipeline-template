@@ -1953,6 +1953,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 aspect_ratio=aspect_ratio,
             )
             safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
@@ -1972,6 +1973,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 reference_urls=reference_urls,
             )
             safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": submit_body}, 10000),
@@ -1993,6 +1995,7 @@ def render_video(record_id: str, *, dry_run: bool = False) -> Dict[str, Any]:
             if not task_id:
                 raise RuntimeError(f"Veo 首尾帧视频任务提交未返回 operation name: {compact_json(operation_to_dict(operation), 1200)}")
             safe_update_record(token, TABLE_FIRST_LAST_VIDEO, record_id, filter_first_last_update_fields(token, {
+                "视频生成状态": "生成中",
                 "视频任务ID": task_id,
                 "视频版本": version,
                 "视频生成原始响应JSON": compact_json({"submit": operation_to_dict(operation)}, 10000),
