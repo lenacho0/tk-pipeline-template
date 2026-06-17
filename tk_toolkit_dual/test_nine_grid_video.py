@@ -237,6 +237,50 @@ Use the uploaded Board 01 storyboard only as the narrative order and action path
 """.strip()
 
 
+def sample_direct_markdown_document_with_scenes():
+    return """
+# 方向1 床上虫灾爆开 4宫格V2纯提示词版
+
+## 参考图生成提示词
+
+### 人物参考图提示词
+
+Create two realistic Thai female character references for a vertical TikTok home drama.
+
+### 宠物参考图提示词
+
+Create a realistic indoor Thai domestic cat reference image.
+
+### 产品参考图提示词
+
+Use the uploaded Uootapet cat product reference image as strict reference.
+
+### 环境参考图提示词
+
+Create a realistic Thai family bedroom reference.
+
+## Board 01 4宫格分镜图提示词
+
+Create one 4-panel 2 x 2 storyboard image for a 10-second vertical TikTok UGC pet-care conflict.
+
+S01: Strong first-second accident. The cat has jumped onto the white bedsheet and is scratching wildly.
+
+S02: The cat startles after the loud reaction and jumps down to the floor mat at the foot of the bed.
+
+S03: Product rescue at the source. The young owner gently holds the cat on the floor mat and applies liquid.
+
+S04: Result reversal. The cat is clean, calm, and no longer scratching near the bed.
+
+Do not include subtitles, text labels, speech bubbles, UI, panel labels, watermark, poster text, or white-background references.
+
+## Board 01 图生视频提示词
+
+Use multiple uploaded images as references. Interpret the 4-panel storyboard as key states, not editing points.
+0.0-2.5s: The cat jumps onto the white bedsheet and scratches hard.
+7.5-10.0s: The mother relaxes and reaches down to pet the cat.
+""".strip()
+
+
 def sample_direct_markdown_document_with_free_reference_titles():
     return """
 # 方向3_猫包放在门槛边_九宫格纯提示词版
@@ -512,6 +556,23 @@ class NineGridVideoTests(unittest.TestCase):
                 self.assertEqual(payload["boards"][0]["grid_count"], cell_count)
                 self.assertEqual(payload["boards"][0]["grid_layout"], layout)
                 self.assertEqual(len(payload["boards"][0]["cells"]), cell_count)
+
+    def test_parse_direct_markdown_document_accepts_s_numbered_scene_cells(self):
+        payload = nine_grid.parse_direct_markdown_document(
+            sample_direct_markdown_document_with_scenes(),
+            requested_grid_count=4,
+        )
+
+        board = payload["boards"][0]
+        self.assertEqual(payload["grid_count"], 4)
+        self.assertEqual(payload["grid_layout"], "2x2")
+        self.assertEqual(board["grid_count"], 4)
+        self.assertEqual(board["grid_layout"], "2x2")
+        self.assertEqual([cell["cell_index"] for cell in board["cells"]], [1, 2, 3, 4])
+        self.assertEqual(
+            board["cells"][0]["visual_node"],
+            "Strong first-second accident. The cat has jumped onto the white bedsheet and is scratching wildly.",
+        )
 
     def test_parse_direct_markdown_document_accepts_free_reference_titles(self):
         payload = nine_grid.parse_direct_markdown_document(

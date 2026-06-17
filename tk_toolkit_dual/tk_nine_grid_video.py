@@ -424,6 +424,29 @@ def _extract_cells_from_image_prompt(prompt: str) -> List[Dict[str, Any]]:
             "camera": "",
             "dialogue_or_voiceover": "",
         })
+    if not cells:
+        for raw_line in prompt.replace("\r\n", "\n").split("\n"):
+            line = raw_line.strip()
+            match = re.match(r"^S(\d{1,2})\s*:\s*(.+)$", line, re.IGNORECASE)
+            if not match:
+                continue
+            try:
+                cell_index = int(match.group(1))
+            except ValueError:
+                continue
+            summary = " ".join(match.group(2).strip().split())
+            if not summary:
+                continue
+            cells.append({
+                "cell_index": cell_index,
+                "visual_node": summary,
+                "character_action": "",
+                "product_state": "",
+                "environment_anchor": "",
+                "emotion": "",
+                "camera": "",
+                "dialogue_or_voiceover": "",
+            })
     cells = sorted(cells, key=lambda item: item["cell_index"])
     if not cells:
         return []
