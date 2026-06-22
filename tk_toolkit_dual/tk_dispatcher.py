@@ -2188,6 +2188,23 @@ def maybe_retry_task(token, watch, record_id, task_key, reason, error_payload=No
         return False
 
 
+def has_subprocess_failure_writeback(token, watch, record_id, failed_value):
+    error_field = watch.get('error_field')
+    status_field = watch.get('status_field')
+    if not error_field or not status_field:
+        return False
+    try:
+        latest = safe_get_record(token, watch['table'], record_id)
+    except Exception as e:
+        log.warning(f"[{watch['name']}] 检查子脚本失败写回失败，继续 dispatcher 兜底: {record_id} error={e}")
+        return False
+    latest_status = extract_text(latest.get(status_field, '')).strip()
+    error_text = extract_text(latest.get(error_field, '')).strip()
+    if latest_status != failed_value or not error_text:
+        return False
+    return not error_text.startswith(SYSTEM_REQUEUE_ERROR_PREFIXES)
+
+
 def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout=False, error_payload=None):
     error_payload = error_payload or build_error_payload(reason, stage=watch.get('script', 'unknown'))
     append_last_error(watch['name'], record_id, f"{error_payload.get('error_code')}: {error_payload.get('message')}")
@@ -2202,6 +2219,13 @@ def mark_task_failed(token, watch, record_id, task_key, reason='failed', timeout
     error_message = error_payload.get('message') if error_payload else str(reason)
     if error_field and error_message:
         payload[error_field] = f"dispatcher兜底失败回写[{error_payload.get('error_code', 'UNKNOWN')}]: {error_message}"[:1000]
+    if has_subprocess_failure_writeback(token, watch, record_id, failed_value):
+        log.info(f"[{watch['name']}] 保留子脚本已写入的失败信息: {record_id}")
+        register_dead_letter(watch, record_id, reason, payload=error_payload)
+        bump_metric('failed', watch['name'])
+        if timeout:
+            bump_metric('timeouts', watch['name'])
+        return
     try:
         safe_update_record(token, watch['table'], record_id, payload)
     except Exception as e:

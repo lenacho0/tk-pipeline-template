@@ -707,6 +707,27 @@ class DispatcherRecoveryTests(unittest.TestCase):
         self.assertFalse(payload["retryable"])
         self.assertEqual(payload["status"], "failed_terminal")
 
+    def test_minimax_verify_voice_failed_is_terminal_config_error(self):
+        payload = common.build_error_payload(
+            "MiniMax HTTP 400: {'error': {'message': 'voice_id tkvoice_recvmzM4mqr0Qg_1781490988 "
+            "is bound to another channel', 'type': 'new_api_error', 'code': 'verify_voice_failed'}}",
+            stage="generate_text_audio",
+        )
+
+        self.assertEqual(payload["error_code"], "CONFIG_INVALID")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_terminal")
+
+    def test_minimax_bound_voice_channel_error_is_terminal_config_error(self):
+        payload = common.build_error_payload(
+            "MiniMax HTTP 400: voice_id cloned_voice_123 is bound to another channel",
+            stage="generate_voiceover",
+        )
+
+        self.assertEqual(payload["error_code"], "CONFIG_INVALID")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["status"], "failed_terminal")
+
     def test_upstream_no_available_channel_503_is_retryable(self):
         payload = common.build_error_payload(
             "Omni 视频任务提交失败: HTTP 503, body={'error': {'code': 'model_not_found', "
@@ -1169,6 +1190,87 @@ class DispatcherRecoveryTests(unittest.TestCase):
         set_retry_count.assert_called_once()
         self.assertEqual(updates[-1]["解析状态"], "失败")
         self.assertIn("dispatcher兜底失败回写[UPSTREAM_NETWORK]", updates[-1]["解析错误信息"])
+        register_dead_letter.assert_called_once()
+
+    def test_mark_task_failed_does_not_overwrite_subprocess_failure_writeback(self):
+        watch = {
+            "name": "文案音频生成",
+            "script": "tk_text_audio.py",
+            "table": "tbl_text_audio",
+            "status_field": "生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "错误信息",
+            "max_retries": 2,
+        }
+        payload = {
+            "status": "failed_terminal",
+            "error_code": "CONFIG_INVALID",
+            "retryable": False,
+            "message": "MiniMax HTTP 400: voice_id cloned_voice is bound to another channel",
+        }
+
+        with patch.object(dispatcher, "append_last_error"), \
+             patch.object(dispatcher, "safe_get_record", return_value={
+                 "生成状态": "失败",
+                 "错误信息": "MiniMax HTTP 400: voice_id cloned_voice is bound to another channel",
+             }) as safe_get_record, \
+             patch.object(dispatcher, "safe_update_record") as safe_update_record, \
+             patch.object(dispatcher, "register_dead_letter") as register_dead_letter, \
+             patch.object(dispatcher, "bump_metric"):
+            dispatcher.mark_task_failed(
+                "token",
+                watch,
+                "rec_text",
+                "tbl_text_audio::生成状态::tk_text_audio.py::::rec_text",
+                reason=payload["message"],
+                error_payload=payload,
+            )
+
+        safe_get_record.assert_called_once_with("token", "tbl_text_audio", "rec_text")
+        safe_update_record.assert_not_called()
+        register_dead_letter.assert_called_once()
+
+    def test_mark_task_failed_writes_fallback_when_subprocess_did_not_write_failure(self):
+        watch = {
+            "name": "文案音频生成",
+            "script": "tk_text_audio.py",
+            "table": "tbl_text_audio",
+            "status_field": "生成状态",
+            "trigger_value": "待生成",
+            "running_value": "生成中",
+            "failed_value": "失败",
+            "error_field": "错误信息",
+            "max_retries": 2,
+        }
+        payload = {
+            "status": "failed_terminal",
+            "error_code": "CONFIG_INVALID",
+            "retryable": False,
+            "message": "MiniMax HTTP 400: voice_id cloned_voice is bound to another channel",
+        }
+        updates = []
+
+        with patch.object(dispatcher, "append_last_error"), \
+             patch.object(dispatcher, "safe_get_record", return_value={
+                 "生成状态": "生成中",
+                 "错误信息": "",
+             }), \
+             patch.object(dispatcher, "safe_update_record", side_effect=lambda token, table, record_id, fields: updates.append(fields)), \
+             patch.object(dispatcher, "register_dead_letter") as register_dead_letter, \
+             patch.object(dispatcher, "bump_metric"):
+            dispatcher.mark_task_failed(
+                "token",
+                watch,
+                "rec_text",
+                "tbl_text_audio::生成状态::tk_text_audio.py::::rec_text",
+                reason=payload["message"],
+                error_payload=payload,
+            )
+
+        self.assertEqual(updates[-1]["生成状态"], "失败")
+        self.assertIn("dispatcher兜底失败回写[CONFIG_INVALID]", updates[-1]["错误信息"])
         register_dead_letter.assert_called_once()
 
     def test_unified_script_doc_video_watch_reclaims_running_records(self):

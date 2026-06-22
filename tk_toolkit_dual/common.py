@@ -7,6 +7,7 @@ import requests
 import time
 import random
 import traceback
+from urllib.parse import urlparse
 
 # ============================================================
 # 配置加载（从 config.json）
@@ -66,10 +67,57 @@ os.makedirs(WORKSPACE, exist_ok=True)
 # ============================================================
 # 飞书 API 工具
 # ============================================================
+FEISHU_API_HOST = 'open.feishu.cn'
+FEISHU_TOKEN_URL = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal'
+
+
+def is_feishu_api_url(url):
+    try:
+        return urlparse(str(url)).hostname == FEISHU_API_HOST
+    except Exception:
+        return False
+
+
+def feishu_request(method, url, **kwargs):
+    """Call Feishu directly, bypassing macOS/system proxy settings."""
+    session = requests.Session()
+    session.trust_env = False
+    try:
+        resp = session.request(method, url, **kwargs)
+        if kwargs.get('stream'):
+            setattr(resp, '_feishu_session', session)
+        else:
+            session.close()
+        return resp
+    except Exception:
+        session.close()
+        raise
+
+
+def _close_feishu_response(resp):
+    try:
+        resp.close()
+    except Exception:
+        pass
+    session = getattr(resp, '_feishu_session', None)
+    if session is not None:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
+def request_with_feishu_proxy_policy(method, url, **kwargs):
+    if is_feishu_api_url(url):
+        return feishu_request(method, url, **kwargs)
+    return requests.request(method, url, **kwargs)
+
+
 def get_feishu_token():
     """获取飞书 tenant_access_token"""
-    r = requests.post(
-        'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+    r = feishu_request(
+        'post',
+        FEISHU_TOKEN_URL,
         json={'app_id': _FEISHU['app_id'], 'app_secret': _FEISHU['app_secret']},
         timeout=10)
     data = r.json()
@@ -105,7 +153,8 @@ def aitgenne_post(url, **kwargs):
     return aitgenne_request("POST", url, **kwargs)
 
 def get_record(token, table_id, record_id):
-    resp = requests.get(
+    resp = feishu_request(
+        'get',
         f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/records/{record_id}',
         headers=feishu_headers(token), timeout=15)
     data = resp.json()
@@ -114,7 +163,8 @@ def get_record(token, table_id, record_id):
     return data['data']['record']['fields']
 
 def update_record(token, table_id, record_id, fields):
-    resp = requests.put(
+    resp = feishu_request(
+        'put',
         f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/records/{record_id}',
         headers=feishu_headers(token),
         json={'fields': fields}, timeout=30)
@@ -127,7 +177,7 @@ def list_records(token, table_id, page_size=100):
         url = f'https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{table_id}/records?page_size={page_size}'
         if page_token:
             url += f'&page_token={page_token}'
-        resp = requests.get(url, headers=feishu_headers(token), timeout=15)
+        resp = feishu_request('get', url, headers=feishu_headers(token), timeout=15)
         data = resp.json()
         if data.get('code') != 0:
             break
@@ -309,15 +359,19 @@ def ensure_task_dir(record_id):
 
 
 def download_attachment(token, file_token, save_path):
-    resp = requests.get(
+    resp = feishu_request(
+        'get',
         f'https://open.feishu.cn/open-apis/drive/v1/medias/{file_token}/download',
         headers={'Authorization': f'Bearer {token}'}, timeout=120, stream=True)
-    if resp.status_code == 200:
-        with open(save_path, 'wb') as f:
-            for chunk in resp.iter_content(8192):
-                f.write(chunk)
-        return True
-    return False
+    try:
+        if resp.status_code == 200:
+            with open(save_path, 'wb') as f:
+                for chunk in resp.iter_content(8192):
+                    f.write(chunk)
+            return True
+        return False
+    finally:
+        _close_feishu_response(resp)
 
 
 def safe_download_attachment(token, file_token, save_path):
@@ -337,7 +391,8 @@ def _download_or_raise(token, file_token, save_path):
 
 def upload_image_to_feishu(token, file_path, file_name):
     with open(file_path, 'rb') as f:
-        resp = requests.post(
+        resp = feishu_request(
+            'post',
             'https://open.feishu.cn/open-apis/drive/v1/medias/upload_all',
             headers={'Authorization': f'Bearer {token}'},
             data={
@@ -385,6 +440,14 @@ def build_error_payload(error, stage='unknown'):
         or 'safety' in lower
     ):
         error_code = 'UPSTREAM_POLICY_BLOCKED'
+        retryable = False
+        failure_status = 'failed_terminal'
+    elif (
+        'verify_voice_failed' in lower
+        or 'bound to another channel' in lower
+        or ('voice_id' in lower and 'another channel' in lower)
+    ):
+        error_code = 'CONFIG_INVALID'
         retryable = False
         failure_status = 'failed_terminal'
     elif ('no available channel' in lower or 'model_not_found' in lower) and 'http 502' not in lower and 'http 503' not in lower:
@@ -501,7 +564,7 @@ def with_retry(fn, max_attempts=3, label='operation', retry_predicate=None):
 
 def safe_request(method, url, *, headers=None, timeout=30, max_attempts=3, acceptable_codes=(0,), **kwargs):
     def _do():
-        resp = requests.request(method, url, headers=headers, timeout=timeout, **kwargs)
+        resp = request_with_feishu_proxy_policy(method, url, headers=headers, timeout=timeout, **kwargs)
         resp.raise_for_status()
         data = resp.json()
         if 'code' in data and acceptable_codes is not None and data.get('code') not in acceptable_codes:
